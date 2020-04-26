@@ -14,8 +14,7 @@ private var nextFeatureUsageId = 0
 /**
  * Data class representing state of accumulated signature changes.
  */
-//TODO: drop data modifier
-data class SuggestedRefactoringState(
+class SuggestedRefactoringState(
   val declaration: PsiElement,
   val refactoringSupport: SuggestedRefactoringSupport,
   val errorLevel: ErrorLevel,
@@ -23,11 +22,13 @@ data class SuggestedRefactoringState(
   val oldImportsText: String?,
   val oldSignature: Signature,
   val newSignature: Signature,
-  val parameterMarkers: List<RangeMarker?>,
+  val parameterMarkers: List<ParameterMarker>,
   val disappearedParameters: Map<String, Any> = emptyMap() /* last known parameter name to its id */,
   val featureUsageId: Int = nextFeatureUsageId++,
   val additionalData: AdditionalData = AdditionalData.Empty
 ) {
+  data class ParameterMarker(val rangeMarker: RangeMarker, val parameterId: Any)
+
   fun withDeclaration(declaration: PsiElement): SuggestedRefactoringState {
     val state = SuggestedRefactoringState(
       declaration, refactoringSupport, errorLevel, oldDeclarationText, oldImportsText,
@@ -64,7 +65,7 @@ data class SuggestedRefactoringState(
     return state
   }
 
-  fun withParameterMarkers(parameterMarkers: List<RangeMarker?>): SuggestedRefactoringState {
+  fun withParameterMarkers(parameterMarkers: List<ParameterMarker>): SuggestedRefactoringState {
     val state = SuggestedRefactoringState(
       declaration, refactoringSupport, errorLevel, oldDeclarationText, oldImportsText,
       oldSignature, newSignature, parameterMarkers, disappearedParameters, featureUsageId, additionalData
@@ -108,12 +109,7 @@ data class SuggestedRefactoringState(
     }
     return restoredDeclarationCopy!!
   }
-
-  @Deprecated("Use restoredDeclarationCopy()", ReplaceWith("restoredDeclarationCopy()"))
-  fun createRestoredDeclarationCopy(refactoringSupport: SuggestedRefactoringSupport): PsiElement {
-    return restoredDeclarationCopy()
-  }
-
+  
   private fun createRestoredDeclarationCopy(): PsiElement {
     val psiFile = declaration.containingFile
     val signatureRange = refactoringSupport.signatureRange(declaration)!!

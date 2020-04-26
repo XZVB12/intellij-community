@@ -1,29 +1,32 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package git4idea.rebase.interactive.dialog
 
+import com.intellij.codeInsight.hint.HintUtil
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CommonShortcuts.CTRL_ENTER
 import com.intellij.openapi.actionSystem.IdeActions
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.keymap.KeymapUtil
+import com.intellij.openapi.keymap.KeymapUtil.getFirstKeyboardShortcutText
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vcs.ui.CommitIconTableCellRenderer
 import com.intellij.openapi.vcs.ui.CommitMessage
 import com.intellij.openapi.wm.IdeFocusManager
-import com.intellij.ui.ColoredTableCellRenderer
-import com.intellij.ui.JBColor
-import com.intellij.ui.SimpleTextAttributes
-import com.intellij.ui.TableSpeedSearch
+import com.intellij.ui.*
+import com.intellij.ui.scale.JBUIScale
 import com.intellij.ui.speedSearch.SpeedSearchUtil
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import com.intellij.util.ui.components.BorderLayoutPanel
 import com.intellij.vcs.log.data.index.IndexedDetails
 import com.intellij.vcs.log.paint.PaintParameters
+import git4idea.i18n.GitBundle
 import git4idea.rebase.interactive.GitRebaseTodoModel
 import git4idea.rebase.interactive.dialog.GitRebaseCommitsTableView.Companion.DEFAULT_CELL_HEIGHT
 import git4idea.rebase.interactive.dialog.GitRebaseCommitsTableView.Companion.GRAPH_COLOR
@@ -44,8 +47,9 @@ internal open class GitRebaseCommitsTableView(
 ) : JBTable(model) {
 
   companion object {
-    const val DEFAULT_CELL_HEIGHT = PaintParameters.ROW_HEIGHT
     const val GRAPH_LINE_WIDTH = 1.5f
+    val DEFAULT_CELL_HEIGHT: Int
+      get() = JBUI.scale(PaintParameters.ROW_HEIGHT)
     val GRAPH_COLOR = JBColor.namedColor("VersionControl.GitCommits.graphColor", JBColor(Color(174, 185, 192), Color(135, 146, 154)))
   }
 
@@ -148,17 +152,17 @@ private class CommitMessageCellEditor(
       stopCellEditing()
     }
   }
-  private val commitMessageField = object : CommitMessage(project, false, false, true) {
-    override fun requestFocus() {
-      IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown { IdeFocusManager.getGlobalInstance().requestFocus(editorField, true) }
-    }
-  }.apply {
+
+  private val commitMessageField = CommitMessage(project, false, false, true).apply {
     editorField.addSettingsProvider { editor ->
+      editor.scrollPane.border = JBUI.Borders.empty()
       registerCloseEditorShortcut(editor, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK))
       registerCloseEditorShortcut(editor, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.META_DOWN_MASK))
     }
     editorField.setCaretPosition(0)
   }
+
+  private val hint = createHint()
 
   init {
     Disposer.register(disposable, commitMessageField)
@@ -174,7 +178,30 @@ private class CommitMessageCellEditor(
     val model = this.table.model
     commitMessageField.text = model.getCommitMessage(row)
     table.setRowHeight(row, DEFAULT_CELL_HEIGHT * 5)
-    return commitMessageField
+    val componentPanel = object : BorderLayoutPanel() {
+      override fun requestFocus() {
+        IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown {
+          IdeFocusManager.getGlobalInstance().requestFocus(commitMessageField.editorField, true)
+        }
+      }
+    }
+    return componentPanel.addToCenter(commitMessageField).addToBottom(hint).apply {
+      background = table.background
+      border = JBUI.Borders.merge(IdeBorderFactory.createBorder(), JBUI.Borders.empty(6, 0, 0, 6), true)
+    }
+  }
+
+  private fun createHint(): JLabel {
+    val hint = GitBundle.message("rebase.interactive.dialog.reword.hint.text", getFirstKeyboardShortcutText(CTRL_ENTER))
+    val hintLabel = HintUtil.createAdComponent(hint, JBUI.CurrentTheme.BigPopup.advertiserBorder(), SwingConstants.LEFT).apply {
+      foreground = JBUI.CurrentTheme.BigPopup.advertiserForeground()
+      background = JBUI.CurrentTheme.BigPopup.advertiserBackground()
+      isOpaque = true
+    }
+    val size = hintLabel.preferredSize
+    size.height = JBUIScale.scale(17)
+    hintLabel.preferredSize = size
+    return hintLabel
   }
 
   override fun getCellEditorValue() = commitMessageField.text
@@ -292,7 +319,8 @@ private class GitRebaseCommitIconTableCellRenderer : CommitIconTableCellRenderer
   companion object {
     private const val NODE_WIDTH = 8
     private const val NODE_CENTER_X = NODE_WIDTH
-    private const val NODE_CENTER_Y = DEFAULT_CELL_HEIGHT / 2
+    private val NODE_CENTER_Y
+      get() = DEFAULT_CELL_HEIGHT / 2
   }
 
   private var isHead = false

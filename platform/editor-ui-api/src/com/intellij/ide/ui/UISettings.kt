@@ -53,9 +53,6 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       state.allowMergeButtons = value
     }
 
-  val alwaysShowWindowsButton: Boolean
-    get() = state.alwaysShowWindowsButton
-
   var animateWindows: Boolean
     get() = state.animateWindows
     set(value) {
@@ -405,6 +402,12 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     get() = state.sortTabsAlphabetically
     set(value) {
       state.sortTabsAlphabetically = value
+    }
+
+  var openTabsAtTheEnd: Boolean
+    get() = state.openTabsAtTheEnd
+    set(value) {
+      state.openTabsAtTheEnd = value
     }
 
   var showInplaceComments: Boolean

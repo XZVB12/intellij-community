@@ -58,6 +58,10 @@ public abstract class InspectionProfileEntry implements BatchSuppressableTool {
   @Override
   public boolean isSuppressedFor(@NotNull PsiElement element) {
     Set<InspectionSuppressor> suppressors = getSuppressors(element);
+    return !suppressors.isEmpty() && isSuppressedFor(element, suppressors);
+  }
+
+  private boolean isSuppressedFor(@NotNull PsiElement element, Set<InspectionSuppressor> suppressors) {
     String toolId = getSuppressId();
     for (InspectionSuppressor suppressor : suppressors) {
       if (isSuppressed(toolId, suppressor, element)) {
@@ -65,19 +69,20 @@ public abstract class InspectionProfileEntry implements BatchSuppressableTool {
       }
     }
 
-    final InspectionElementsMerger merger = InspectionElementsMerger.getMerger(getShortName());
-    if (merger != null) {
-      String[] suppressIds = merger.getSuppressIds();
-      String[] sourceToolIds = suppressIds.length != 0 ? suppressIds : merger.getSourceToolNames();
-      for (String sourceToolId : sourceToolIds) {
-        for (InspectionSuppressor suppressor : suppressors) {
-          if (suppressor.isSuppressedFor(element, sourceToolId)) {
-            return true;
-          }
+    InspectionElementsMerger merger = InspectionElementsMerger.getMerger(getShortName());
+    return merger != null && isSuppressedForMerger(element, suppressors, merger);
+  }
+
+  private static boolean isSuppressedForMerger(PsiElement element, Set<InspectionSuppressor> suppressors, InspectionElementsMerger merger) {
+    String[] suppressIds = merger.getSuppressIds();
+    String[] sourceToolIds = suppressIds.length != 0 ? suppressIds : merger.getSourceToolNames();
+    for (String sourceToolId : sourceToolIds) {
+      for (InspectionSuppressor suppressor : suppressors) {
+        if (suppressor.isSuppressedFor(element, sourceToolId)) {
+          return true;
         }
       }
     }
-
     return false;
   }
 

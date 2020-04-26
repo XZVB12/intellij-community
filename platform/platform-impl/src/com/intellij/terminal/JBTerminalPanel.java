@@ -1,17 +1,17 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 /* -*-mode:java; c-basic-offset:2; -*- */
 
 
 package com.intellij.terminal;
 
-import com.google.common.collect.Lists;
 import com.intellij.ide.GeneralSettings;
 import com.intellij.ide.IdeEventQueue;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.ex.EditorSettingsExternalizable;
@@ -41,6 +41,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.ImageObserver;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -281,7 +282,7 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
 
   @NotNull
   private static List<AnAction> setupActionsToSkip() {
-    List<AnAction> res = Lists.newArrayList();
+    List<AnAction> res = new ArrayList<>();
     ActionManager actionManager = ActionManager.getInstance();
     for (String actionId : ACTIONS_TO_SKIP) {
       AnAction action = actionManager.getAction(actionId);
@@ -323,10 +324,12 @@ public class JBTerminalPanel extends TerminalPanel implements FocusListener, Ter
     mySettingsProvider.removeListener(this);
   }
 
-  public static void refreshAfterExecution() {
+  private static void refreshAfterExecution() {
     if (GeneralSettings.getInstance().isSyncOnFrameActivation()) {
       //we need to refresh local file system after a command has been executed in the terminal
-      LocalFileSystem.getInstance().refresh(true);
+      ApplicationManager.getApplication().invokeLater(() -> {
+        LocalFileSystem.getInstance().refresh(true);
+      }, ModalityState.NON_MODAL); // for write-safe context
     }
   }
 

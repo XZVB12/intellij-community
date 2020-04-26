@@ -2,9 +2,11 @@
 package com.intellij.ide.actions;
 
 import com.intellij.icons.AllIcons;
+import com.intellij.internal.statistic.eventLog.EventPair;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
+import com.intellij.openapi.actionSystem.impl.FusAwareAction;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
@@ -17,8 +19,9 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.util.Arrays;
+import java.util.List;
 
-public final class ToolWindowMoveAction extends DumbAwareAction {
+public final class ToolWindowMoveAction extends DumbAwareAction implements FusAwareAction {
   public enum Anchor {
     LeftTop, LeftBottom, BottomLeft, BottomRight, RightBottom, RightTop, TopRight, TopLeft;
 
@@ -160,6 +163,14 @@ public final class ToolWindowMoveAction extends DumbAwareAction {
   public void update(@NotNull AnActionEvent e) {
     ToolWindow toolWindow = getToolWindow(e);
     e.getPresentation().setEnabled(toolWindow != null && !myAnchor.isApplied(toolWindow));
+  }
+
+  @Override
+  public void addAdditionalUsageData(@NotNull AnActionEvent event, @NotNull List<EventPair> data) {
+    ToolWindow toolWindow = getToolWindow(event);
+    if (toolWindow != null) {
+      data.add(ToolwindowFusEventFields.TOOLWINDOW.with(toolWindow.getId()));
+    }
   }
 
   public static final class Group extends DefaultActionGroup {

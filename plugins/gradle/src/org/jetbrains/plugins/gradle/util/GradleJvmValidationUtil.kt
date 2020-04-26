@@ -11,7 +11,6 @@ import com.intellij.notification.Notification
 import com.intellij.notification.NotificationListener
 import com.intellij.notification.NotificationType.INFORMATION
 import com.intellij.openapi.externalSystem.service.execution.ExternalSystemJdkUtil
-import com.intellij.openapi.externalSystem.util.environment.Environment
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.util.io.FileUtil.*
@@ -36,7 +35,7 @@ fun validateJavaHome(project: Project, externalProjectPath: String, gradleVersio
     }
   }
   else {
-    val javaHome = Environment.getEnvVariable(JAVA_HOME)
+    val javaHome = ExternalSystemJdkUtil.getJavaHome()
     when (val validationStatus = validateGradleJavaHome(gradleVersion, javaHome)) {
       JavaHomeValidationStatus.Invalid -> notifyInvalidJavaHomeInfo(project, validationStatus)
       is JavaHomeValidationStatus.Unsupported -> notifyInvalidJavaHomeInfo(project, validationStatus)
@@ -57,6 +56,7 @@ fun validateGradleJavaHome(gradleVersion: GradleVersion, javaHome: String?): Jav
 fun isSupported(gradleVersion: GradleVersion, javaVersionString: String): Boolean {
   val version = JavaVersion.tryParse(javaVersionString) ?: return false
   return when {
+    gradleVersion >= GradleVersion.version("6.3") -> version.feature in 8..14
     gradleVersion >= GradleVersion.version("6.0") -> version.feature in 8..13
     gradleVersion >= GradleVersion.version("5.4.1") -> version.feature in 8..12
     gradleVersion >= GradleVersion.version("5.0") -> version.feature in 8..11

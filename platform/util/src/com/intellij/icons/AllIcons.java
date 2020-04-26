@@ -21,11 +21,11 @@ public class AllIcons {
   public final static class Actions {
     /** 16x16 */ public static final @NotNull Icon AddMulticaret = load("/actions/AddMulticaret.svg");
     /** 16x16 */ public static final @NotNull Icon AddToDictionary = load("/actions/addToDictionary.svg");
-    /** 16x16 */ public static final @NotNull Icon Amend = load("/actions/amend.svg");
     /** 16x16 */ public static final @NotNull Icon Annotate = load("/actions/annotate.svg");
     /** 16x16 */ public static final @NotNull Icon ArrowCollapse = load("/actions/arrowCollapse.svg");
     /** 16x16 */ public static final @NotNull Icon ArrowExpand = load("/actions/arrowExpand.svg");
     /** 16x16 */ public static final @NotNull Icon Back = load("/actions/back.svg");
+    /** 16x16 */ public static final @NotNull Icon BuildAutoReloadChanges = load("/actions/buildAutoReloadChanges.svg");
     /** 16x16 */ public static final @NotNull Icon BuildLoadChanges = load("/actions/buildLoadChanges.svg");
     /** 16x16 */ public static final @NotNull Icon Cancel = load("/actions/cancel.svg");
     /** 16x16 */ public static final @NotNull Icon ChangeView = load("/actions/changeView.svg");
@@ -53,7 +53,9 @@ public class AllIcons {
     /** 16x16 */ public static final @NotNull Icon Expandall = load("/actions/expandall.svg");
     /** 16x16 */ public static final @NotNull Icon Find = load("/actions/find.svg");
     /** 16x16 */ public static final @NotNull Icon FindAndShowNextMatches = load("/actions/findAndShowNextMatches.svg");
+    /** 16x16 */ public static final @NotNull Icon FindAndShowNextMatchesSmall = load("/actions/findAndShowNextMatchesSmall.svg");
     /** 16x16 */ public static final @NotNull Icon FindAndShowPrevMatches = load("/actions/findAndShowPrevMatches.svg");
+    /** 16x16 */ public static final @NotNull Icon FindAndShowPrevMatchesSmall = load("/actions/findAndShowPrevMatchesSmall.svg");
     /** 16x16 */ public static final @NotNull Icon FindBackward = load("/actions/findBackward.svg");
     /** 16x16 */ public static final @NotNull Icon FindEntireFile = load("/actions/findEntireFile.svg");
     /** 16x16 */ public static final @NotNull Icon FindForward = load("/actions/findForward.svg");
@@ -1060,6 +1062,8 @@ public class AllIcons {
     /** 16x16 */ public static final @NotNull Icon Equal = load("/vcs/equal.svg");
     /** 16x16 */ public static final @NotNull Icon Folders = load("/vcs/folders.svg");
     /** 16x16 */ public static final @NotNull Icon History = load("/vcs/history.svg");
+    /** 16x16 */ public static final @NotNull Icon HistoryInline = load("/vcs/historyInline.svg");
+    /** 16x16 */ public static final @NotNull Icon HistoryInlineHovered = load("/vcs/historyInlineHovered.svg");
     /** 16x16 */ public static final @NotNull Icon Ignore_file = load("/vcs/ignore_file.svg");
     /** 16x16 */ public static final @NotNull Icon Merge = load("/vcs/merge.svg");
     /** 16x16 */ public static final @NotNull Icon Not_equal = load("/vcs/not_equal.svg");
@@ -1126,16 +1130,47 @@ public class AllIcons {
   public final static class Xml {
 
     public final static class Browsers {
-      /** 16x16 */ public static final @NotNull Icon Canary16 = load("/xml/browsers/canary16.svg");
-      /** 16x16 */ public static final @NotNull Icon Chrome16 = load("/xml/browsers/chrome16.svg");
-      /** 16x16 */ public static final @NotNull Icon Chromium16 = load("/xml/browsers/chromium16.svg");
-      /** 16x16 */ public static final @NotNull Icon Edge16 = load("/xml/browsers/edge16.svg");
-      /** 16x16 */ public static final @NotNull Icon Explorer16 = load("/xml/browsers/explorer16.svg");
-      /** 16x16 */ public static final @NotNull Icon Firefox16 = load("/xml/browsers/firefox16.svg");
-      /** 16x16 */ public static final @NotNull Icon Nwjs16 = load("/xml/browsers/nwjs16.svg");
-      /** 16x16 */ public static final @NotNull Icon Opera16 = load("/xml/browsers/opera16.svg");
-      /** 16x16 */ public static final @NotNull Icon Safari16 = load("/xml/browsers/safari16.svg");
-      /** 16x16 */ public static final @NotNull Icon Yandex16 = load("/xml/browsers/yandex16.svg");
+      /** 16x16 */ public static final @NotNull Icon Canary = load("/xml/browsers/canary.svg");
+      /** 16x16 */ public static final @NotNull Icon Chrome = load("/xml/browsers/chrome.svg");
+      /** 16x16 */ public static final @NotNull Icon Chromium = load("/xml/browsers/chromium.svg");
+      /** 16x16 */ public static final @NotNull Icon Edge = load("/xml/browsers/edge.svg");
+      /** 16x16 */ public static final @NotNull Icon Explorer = load("/xml/browsers/explorer.svg");
+      /** 16x16 */ public static final @NotNull Icon Firefox = load("/xml/browsers/firefox.svg");
+      /** 16x16 */ public static final @NotNull Icon FirefoxDeveloper = load("/xml/browsers/firefoxDeveloper.svg");
+      /** 16x16 */ public static final @NotNull Icon Nwjs = load("/xml/browsers/nwjs.svg");
+      /** 16x16 */ public static final @NotNull Icon Opera = load("/xml/browsers/opera.svg");
+      /** 16x16 */ public static final @NotNull Icon Safari = load("/xml/browsers/safari.svg");
+      /** 16x16 */ public static final @NotNull Icon Yandex = load("/xml/browsers/yandex.svg");
+
+      /** @deprecated use {@link #Canary} */
+      @SuppressWarnings("unused")
+      @Deprecated
+      public static final @NotNull Icon Canary16 = Canary;
+
+      /** @deprecated use {@link #Chrome} */
+      @SuppressWarnings("unused")
+      @Deprecated
+      public static final @NotNull Icon Chrome16 = Chrome;
+
+      /** @deprecated use {@link #Chromium} */
+      @SuppressWarnings("unused")
+      @Deprecated
+      public static final @NotNull Icon Chromium16 = Chromium;
+
+      /** @deprecated use {@link #Nwjs} */
+      @SuppressWarnings("unused")
+      @Deprecated
+      public static final @NotNull Icon Nwjs16 = Nwjs;
+
+      /** @deprecated use {@link #Opera} */
+      @SuppressWarnings("unused")
+      @Deprecated
+      public static final @NotNull Icon Opera16 = Opera;
+
+      /** @deprecated use {@link #Yandex} */
+      @SuppressWarnings("unused")
+      @Deprecated
+      public static final @NotNull Icon Yandex16 = Yandex;
 
     }
     /** 16x16 */ public static final @NotNull Icon Css_class = load("/xml/css_class.svg");

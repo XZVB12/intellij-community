@@ -1,7 +1,8 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.scratch;
 
 import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.lang.LangBundle;
 import com.intellij.lang.Language;
 import com.intellij.lang.LanguageUtil;
 import com.intellij.lang.PerFileMappings;
@@ -44,7 +45,7 @@ public abstract class LRUPopupBuilder<T> {
 
   private final String myTitle;
   private final PropertiesComponent myPropertiesComponent;
-  private final Map<T, Pair<String, Icon>> myPresentations = ContainerUtil.newIdentityHashMap();
+  private final Map<T, Pair<String, Icon>> myPresentations = new IdentityHashMap<>();
 
   private T mySelection;
   private Consumer<? super T> myOnChosen;
@@ -61,7 +62,7 @@ public abstract class LRUPopupBuilder<T> {
     Arrays.sort(filesCopy, (o1, o2) -> StringUtil.compare(o1.getName(), o2.getName(), !o1.getFileSystem().isCaseSensitive()));
     return forFileLanguages(project, title, null, t -> {
       try {
-        WriteCommandAction.writeCommandAction(project).withName("Change Language").run(
+        WriteCommandAction.writeCommandAction(project).withName(LangBundle.message("command.name.change.language")).run(
           () -> changeLanguageWithUndo(project, t, filesCopy, mappings));
       }
       catch (UnexpectedUndoException e) {
@@ -168,10 +169,10 @@ public abstract class LRUPopupBuilder<T> {
       }
     }
     if (myComparator != null) {
-      Collections.sort(items, myComparator);
+      items.sort(myComparator);
     }
     if (!lru.isEmpty()) {
-      Collections.sort(lru, Comparator.comparingInt(o -> ids.indexOf(getStorageId(o))));
+      lru.sort(Comparator.comparingInt(o -> ids.indexOf(getStorageId(o))));
     }
     T separator1 = !lru.isEmpty() && !items.isEmpty()? items.get(0) : null;
     T separator2 = !lru.isEmpty() || !items.isEmpty()? ContainerUtil.getFirstItem(extra) : null;

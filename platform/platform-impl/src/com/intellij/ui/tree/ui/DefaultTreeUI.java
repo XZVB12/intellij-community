@@ -17,7 +17,7 @@ import com.intellij.ui.tree.TreePathBackgroundSupplier;
 import com.intellij.util.ui.MouseEventAdapter;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.tree.TreeUtil;
-import org.jetbrains.annotations.ApiStatus.ScheduledForRemoval;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -26,6 +26,7 @@ import javax.swing.plaf.ComponentUI;
 import javax.swing.plaf.basic.BasicTreeUI;
 import javax.swing.tree.AbstractLayoutCache;
 import javax.swing.tree.TreeCellRenderer;
+import javax.swing.tree.TreeModel;
 import javax.swing.tree.TreePath;
 import java.awt.*;
 import java.awt.event.MouseEvent;
@@ -48,8 +49,10 @@ public final class DefaultTreeUI extends BasicTreeUI {
    * @deprecated use {@link RenderingHelper#SHRINK_LONG_RENDERER} instead
    */
   @Deprecated
-  @ScheduledForRemoval(inVersion = "2020.2")
+  @ApiStatus.ScheduledForRemoval(inVersion = "2020.2")
   public static final Key<Boolean> SHRINK_LONG_RENDERER = Key.create("resize renderer component if it exceed a visible area");
+  @ApiStatus.Internal
+  public static final Key<Boolean> LARGE_MODEL_ALLOWED = Key.create("allows to use large model (only for synchronous tree models)");
   private static final Logger LOG = Logger.getInstance(DefaultTreeUI.class);
   private static final Collection<Class<?>> SUSPICIOUS = createWeakSet();
 
@@ -113,6 +116,14 @@ public final class DefaultTreeUI extends BasicTreeUI {
       return Component.class.equals(type) || Container.class.equals(type);
     }
     return true;
+  }
+
+  private static boolean isLeadSelectionNeeded(@NotNull JTree tree, int row) {
+    return 1 < tree.getSelectionCount() && tree.isRowSelected(row - 1) && tree.isRowSelected(row + 1);
+  }
+
+  private static boolean isLargeModelAllowed(@Nullable JTree tree) {
+    return is("ide.tree.large.model.allowed") || UIUtil.isClientPropertyTrue(tree, LARGE_MODEL_ALLOWED);
   }
 
   @SuppressWarnings("MethodOverridesStaticMethodOfSuperclass")
@@ -223,7 +234,7 @@ public final class DefaultTreeUI extends BasicTreeUI {
                 g.setColor(getBackground(tree, path, row, true));
                 DRAW.paint((Graphics2D)g, helper.getX(), bounds.y, helper.getWidth(), bounds.height, 0);
               }
-              else if (1 < tree.getSelectionModel().getSelectionCount()) {
+              else if (isLeadSelectionNeeded(tree, row)) {
                 g.setColor(RenderingUtil.getBackground(tree));
                 DRAW.paint((Graphics2D)g, helper.getX() + 1, bounds.y + 1, helper.getWidth() - 2, bounds.height - 2, 0);
               }
@@ -246,6 +257,7 @@ public final class DefaultTreeUI extends BasicTreeUI {
   @Override
   protected void installDefaults() {
     super.installDefaults();
+    if (!isLargeModelAllowed(getTree())) largeModel = false;
     JTree tree = getTree();
     if (tree != null) {
       LookAndFeel.installBorder(tree, "Tree.border");
@@ -301,6 +313,27 @@ public final class DefaultTreeUI extends BasicTreeUI {
     else {
       super.setRootVisible(newValue);
     }
+  }
+
+  @Override
+  protected void setLargeModel(boolean large) {
+    super.setLargeModel(large && isLargeModelAllowed(getTree()));
+  }
+
+  @Override
+  protected void setModel(TreeModel model) {
+    if (!isLargeModelAllowed(getTree())) largeModel = false;
+    super.setModel(model);
+  }
+
+  @Override
+  protected void updateSize() {
+    if (getTree() != null) super.updateSize();
+  }
+
+  @Override
+  protected void completeEditing() {
+    if (getTree() != null) super.completeEditing();
   }
 
   @Override

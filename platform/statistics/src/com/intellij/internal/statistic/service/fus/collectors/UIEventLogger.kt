@@ -22,7 +22,12 @@ enum class UIEventId {
   DumbModeBalloonRequested,
   DumbModeBalloonShown,
   DumbModeBalloonCancelled,
-  DumbModeBalloonProceededToActions
+  DumbModeBalloonProceededToActions,
+  IncrementalSearchActivated,
+  IncrementalSearchKeyTyped,
+  IncrementalSearchCancelled,
+  IncrementalSearchNextPrevItemSelected,
+  ShowUsagesPopupShowSettings
 }
 
 fun logUIEvent(eventId: UIEventId) {

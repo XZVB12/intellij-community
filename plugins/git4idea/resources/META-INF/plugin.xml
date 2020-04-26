@@ -1,4 +1,4 @@
-<idea-plugin xmlns:xi="http://www.w3.org/2001/XInclude">
+<idea-plugin>
   <name>Git</name>
   <id>Git4Idea</id>
   <description>
@@ -18,10 +18,7 @@
   <resource-bundle>messages.GitBundle</resource-bundle>
 
   <depends>com.intellij.modules.vcs</depends>
-  <xi:include href="/META-INF/remote-servers-git.xml" xpointer="xpointer(/idea-plugin/*)">
-    <xi:fallback/>
-  </xi:include>
-  <depends optional="true" config-file="remote-servers-git-java.xml">com.intellij.java</depends>
+  <depends optional="true" config-file="git-terminal.xml">org.jetbrains.plugins.terminal</depends>
 
   <actions>
     <action id="Git.Init" class="git4idea.actions.GitInit">
@@ -282,7 +279,6 @@
     <lang.commenter language="GitExclude" implementationClass="com.intellij.openapi.vcs.changes.ignore.lang.IgnoreCommenter"/>
      <!--END Git exclude lang-->
 
-    <postStartupActivity implementation="git4idea.conflicts.GitConflictsToolWindowManager$Starter"/>
     <backgroundPostStartupActivity implementation="git4idea.ignore.GitIgnoreInStoreDirGeneratorActivity"/>
     <backgroundPostStartupActivity implementation="git4idea.config.GitSetupProjectConfig" />
 
@@ -296,7 +292,6 @@
                  description="Use Log to collect Rebase Entries"/>
 
     <vcs.actions.ScheduleForAdditionActionExtension implementation="git4idea.actions.GitAdd"/>
-    <terminal.shellCommandHandler implementation="git4idea.log.GitLogTerminalCustomCommandHandler"/>
     <completion.contributor language="TEXT" implementationClass="git4idea.commit.GitCommitCompletionContributor"
                             order="first, before commitCompletion"/>
 
@@ -306,16 +301,24 @@
     <lightEditTabAttributesProvider implementation="git4idea.light.LightGitTabAttributesProvider"/>
     <statusBarWidgetFactory id="gitWidget"
                             implementation="git4idea.ui.branch.GitBranchWidget$Factory"
-                            order="after selectionModeWidget,before notificationsWidget"/>
+                            order="after codeStyleWidget,before readOnlyWidget"/>
   </extensions>
 
   <extensionPoints>
-    <extensionPoint qualifiedName="Git4Idea.GitHttpAuthDataProvider" interface="git4idea.remote.GitHttpAuthDataProvider"/>
-    <extensionPoint qualifiedName="Git4Idea.gitRepositoryHostingService" interface="git4idea.remote.GitRepositoryHostingService"/>
-    <extensionPoint qualifiedName="Git4Idea.GitCheckinExplicitMovementProvider" interface="git4idea.checkin.GitCheckinExplicitMovementProvider"/>
+    <extensionPoint interface="git4idea.remote.GitHttpAuthDataProvider" name="GitHttpAuthDataProvider" dynamic="true"/>
+    <extensionPoint interface="git4idea.remote.GitRepositoryHostingService" name="gitRepositoryHostingService" dynamic="true"/>
+    <extensionPoint interface="git4idea.checkin.GitCheckinExplicitMovementProvider"
+                    name="GitCheckinExplicitMovementProvider"
+                    dynamic="true"/>
   </extensionPoints>
 
   <projectListeners>
+    <listener class="git4idea.conflicts.GitConflictsToolWindowManager$MyConflictsListener"
+              topic="git4idea.repo.GitConflictsHolder$ConflictsListener"
+              activeInHeadlessMode="false"/>
+    <listener class="git4idea.conflicts.GitConflictsToolWindowManager$MyRepositoryListener"
+              topic="com.intellij.dvcs.repo.VcsRepositoryMappingListener"
+              activeInHeadlessMode="false"/>
     <listener class="git4idea.ui.branch.GitBranchWidget$Listener"
               topic="com.intellij.dvcs.repo.VcsRepositoryMappingListener"
               activeInHeadlessMode="false" activeInTestMode="false"/>

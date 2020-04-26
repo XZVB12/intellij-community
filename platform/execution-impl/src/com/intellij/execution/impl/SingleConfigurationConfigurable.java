@@ -29,7 +29,6 @@ import com.intellij.openapi.ui.popup.Balloon;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.JBPopupListener;
 import com.intellij.openapi.ui.popup.LightweightWindowEvent;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.text.StringUtil;
@@ -65,6 +64,7 @@ import java.awt.event.ActionListener;
 import java.io.File;
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 public final class SingleConfigurationConfigurable<Config extends RunConfiguration> extends BaseRCSettingsConfigurable {
@@ -437,7 +437,7 @@ public final class SingleConfigurationConfigurable<Config extends RunConfigurati
   }
 
   public void setFolderName(@Nullable String folderName) {
-    if (!Comparing.equal(myFolderName, folderName)) {
+    if (!Objects.equals(myFolderName, folderName)) {
       myFolderName = folderName;
       setModified(true);
     }
@@ -565,6 +565,7 @@ public final class SingleConfigurationConfigurable<Config extends RunConfigurati
     private JPanel myRunOnPanelInner;
 
     private Runnable myQuickFix = null;
+    private boolean myWindowResizedOnce = false;
 
     MyValidatableComponent() {
       myNameLabel.setLabelFor(myNameText);
@@ -674,7 +675,8 @@ public final class SingleConfigurationConfigurable<Config extends RunConfigurati
       myIsAllowRunningInParallel = configuration.isAllowRunningInParallel();
       myIsAllowRunningInParallelCheckBox.setEnabled(isManagedRunConfiguration);
       myIsAllowRunningInParallelCheckBox.setSelected(myIsAllowRunningInParallel);
-      myIsAllowRunningInParallelCheckBox.setVisible(settings.getFactory().getSingletonPolicy().isPolicyConfigurable());
+      myIsAllowRunningInParallelCheckBox.setVisible(!((ConfigurationSettingsEditorWrapper)getEditor()).isFragmented() &&
+                                                    settings.getFactory().getSingletonPolicy().isPolicyConfigurable());
     }
 
     private void resetRunOnComboBox(@Nullable String targetNameToChoose) {
@@ -712,6 +714,12 @@ public final class SingleConfigurationConfigurable<Config extends RunConfigurati
           myQuickFix = quickFix;
         }
         myValidationPanel.setVisible(true);
+        Window window = UIUtil.getWindow(myWholePanel);
+        if (!myWindowResizedOnce && window != null && window.isShowing()) {
+          Dimension size = window.getSize();
+          window.setSize(size.width, size.height + myValidationPanel.getPreferredSize().height);
+          myWindowResizedOnce = true;
+        }
       }
       else {
         mySeparator.setVisible(false);
@@ -779,6 +787,7 @@ public final class SingleConfigurationConfigurable<Config extends RunConfigurati
         .setHideOnAction(false)
         .setHideOnLinkClick(false)
         .setHideOnKeyOutside(false) // otherwise any keypress in file chooser hides the underlying balloon
+        .setBlockClicksThroughBalloon(true)
         .setRequestFocus(true)
         .createBalloon();
       balloon.setAnimationEnabled(false);

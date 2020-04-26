@@ -14,8 +14,9 @@ import com.intellij.openapi.wm.impl.content.ToolWindowContentUi
 import com.intellij.ui.DoubleClickListener
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.UIBundle
-import com.intellij.ui.layout.migLayout.createLayoutConstraints
-import com.intellij.ui.layout.migLayout.patched.MigLayout
+import com.intellij.ui.layout.migLayout.*
+import com.intellij.ui.layout.migLayout.patched.*
+import com.intellij.ui.popup.util.PopupState
 import com.intellij.ui.tabs.impl.MorePopupAware
 import com.intellij.ui.tabs.impl.SingleHeightTabs
 import com.intellij.util.ui.*
@@ -176,9 +177,9 @@ abstract class ToolWindowHeader internal constructor(
     toolbarWest?.updateActionsImmediately()
   }
 
-  fun setAdditionalTitleActions(actions: Array<AnAction>) {
+  fun setAdditionalTitleActions(actions: List<AnAction>) {
     actionGroup.removeAll()
-    actionGroup.addAll(*actions)
+    actionGroup.addAll(actions)
     if (actions.isNotEmpty()) {
       actionGroup.addSeparator()
     }
@@ -250,7 +251,9 @@ abstract class ToolWindowHeader internal constructor(
   }
 
   private inner class ShowOptionsAction : DumbAwareAction() {
+    val myPopupState = PopupState()
     override fun actionPerformed(e: AnActionEvent) {
+      if (myPopupState.isRecentlyHidden) return // do not show new popup
       val inputEvent = e.inputEvent
       val popupMenu = ActionManager.getInstance().createActionPopupMenu(ActionPlaces.TOOLWINDOW_POPUP, gearProducer.get())
       var x = 0
@@ -259,6 +262,7 @@ abstract class ToolWindowHeader internal constructor(
         x = inputEvent.x
         y = inputEvent.y
       }
+      popupMenu.component.addPopupMenuListener(myPopupState)
       popupMenu.component.show(inputEvent.component, x, y)
     }
 

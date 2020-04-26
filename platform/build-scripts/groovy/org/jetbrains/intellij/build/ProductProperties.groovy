@@ -155,8 +155,6 @@ abstract class ProductProperties {
    */
   abstract MacDistributionCustomizer createMacCustomizer(String projectHome)
 
-  boolean setPluginAndIDEVersionInPluginXml = true
-
   /**
    * If {@code true} a zip archive containing sources of all modules included into the product will be produced.
    */
@@ -187,6 +185,8 @@ abstract class ProductProperties {
    * todo[nik] get rid of this
    */
   List<String> additionalModulesRequiredForScrambling = []
+
+  JetBrainsRuntimeDistribution jbrDistribution = JetBrainsRuntimeDistribution.VANILLA
 
   /**
    * Prefix for names of environment variables used by Windows and Linux distributions to allow users customize location of the product JDK

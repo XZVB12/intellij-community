@@ -2,6 +2,7 @@
 package com.intellij.execution.util;
 
 import com.intellij.execution.CommonProgramRunConfigurationParameters;
+import com.intellij.execution.ExecutionBundle;
 import com.intellij.execution.configurations.ModuleBasedConfiguration;
 import com.intellij.execution.configurations.RuntimeConfigurationWarning;
 import com.intellij.execution.configurations.SimpleProgramParameters;
@@ -21,6 +22,7 @@ import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.util.io.PathUtil;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.EnvironmentUtil;
 import com.intellij.util.execution.ParametersListUtil;
@@ -66,8 +68,10 @@ public class ProgramParametersConfigurator {
 
   @Contract("!null, _, _ -> !null")
   public @Nullable String expandPathAndMacros(String s, @Nullable Module module, @NotNull Project project) {
-    String path = expandPath(s, module, project);
-    return path != null ? expandMacros(path, projectContext(project, module), false) : null;
+    String path = s;
+    if (path != null) path = expandPath(path, module, project);
+    if (path != null) path = expandMacros(path, projectContext(project, module), false);
+    return path;
   }
 
   private static DataContext projectContext(Project project, Module module) {
@@ -133,41 +137,35 @@ public class ProgramParametersConfigurator {
                                         @Nullable Module module) {
     String workingDirectory = configuration.getWorkingDirectory();
 
-    String defaultWorkingDir = getDefaultWorkingDir(project);
+    String projectDirectory = getDefaultWorkingDir(project);
     if (StringUtil.isEmptyOrSpaces(workingDirectory)) {
-      workingDirectory = defaultWorkingDir;
+      workingDirectory = projectDirectory;
       if (workingDirectory == null) return null;
     }
 
     workingDirectory = expandPathAndMacros(workingDirectory, module, project);
 
-    if (!PathUtil.isAbsolute(workingDirectory) && defaultWorkingDir != null) {
-      if (PathMacroUtil.DEPRECATED_MODULE_DIR.equals(workingDirectory)) {
-        return defaultWorkingDir;
+    if (MODULE_WORKING_DIR.equals(workingDirectory) || PathMacroUtil.DEPRECATED_MODULE_DIR.equals(workingDirectory)) {
+      workingDirectory = PathMacroUtil.MODULE_WORKING_DIR;
+    }
+    if (PathMacroUtil.MODULE_WORKING_DIR.equals(workingDirectory)) {
+      if (module != null) {
+        String moduleDirectory = getDefaultWorkingDir(module);
+        if (moduleDirectory != null) return moduleDirectory;
       }
+      if (projectDirectory != null) return projectDirectory;
+    }
 
-      if (MODULE_WORKING_DIR.equals(workingDirectory)) {
-        workingDirectory = PathMacroUtil.MODULE_WORKING_DIR;
-      }
-
-      if (PathMacroUtil.MODULE_WORKING_DIR.equals(workingDirectory)) {
-        if (module == null) {
-          return defaultWorkingDir;
-        }
-        else {
-          String workingDir = getDefaultWorkingDir(module);
-          if (workingDir != null) return workingDir;
-        }
-      }
-
-      workingDirectory = defaultWorkingDir + "/" + workingDirectory;
+    if (projectDirectory != null && !PathUtil.isAbsolute(workingDirectory)) {
+      workingDirectory = projectDirectory + '/' + workingDirectory;
     }
 
     return workingDirectory;
   }
 
   protected @Nullable String getDefaultWorkingDir(@NotNull Project project) {
-    return project.getBasePath();
+    String path = project.getBasePath();
+    return path != null && LocalFileSystem.getInstance().findFileByPath(path) != null ? path : null;
   }
 
   protected @Nullable String getDefaultWorkingDir(@NotNull Module module) {
@@ -187,11 +185,12 @@ public class ProgramParametersConfigurator {
                                          @Nullable Module module) throws RuntimeConfigurationWarning {
     String workingDir = getWorkingDir(configuration, project, module);
     if (workingDir == null) {
-      throw new RuntimeConfigurationWarning("Working directory is null for project '" + project.getName() + "' (" + project.getBasePath() + ")," +
-                                            " module " + (module == null ? "null" : "'" + module.getName() + "' (" + module.getModuleFilePath() + ")"));
+      throw new RuntimeConfigurationWarning(
+        ExecutionBundle.message("dialog.message.working.directory.null.for.project.module", project.getName(), project.getBasePath(),
+                                module == null ? "null" : "'" + module.getName() + "' (" + module.getModuleFilePath() + ")"));
     }
     if (!new File(workingDir).exists()) {
-      throw new RuntimeConfigurationWarning("Working directory '" + workingDir + "' doesn't exist");
+      throw new RuntimeConfigurationWarning(ExecutionBundle.message("dialog.message.working.directory.doesn.t.exist", workingDir));
     }
   }
 

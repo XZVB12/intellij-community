@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+@file:Suppress("JAVA_MODULE_DOES_NOT_EXPORT_PACKAGE")
+
 package com.intellij.ui.colorpicker
 
 import com.intellij.ui.ColorUtil
@@ -38,7 +40,7 @@ class SaturationBrightnessComponent(private val myModel: ColorPickerModel) : JCo
     private set
   var saturation = 0f
     private set
-  var alpha: Int = 0
+  var alpha: Int = 255
     private set
 
   init {

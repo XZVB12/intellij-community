@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs.roots;
 
 import com.intellij.openapi.application.ReadAction;
@@ -24,6 +10,7 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.ProjectLevelVcsManager;
 import com.intellij.openapi.vcs.VcsRootChecker;
+import com.intellij.openapi.vcs.impl.VcsEP;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileVisitor;
@@ -49,33 +36,37 @@ public class VcsRootScanner implements AsyncVfsEventsListener {
   @NotNull private final VcsRootProblemNotifier myRootProblemNotifier;
   @NotNull private final Project myProject;
   @NotNull private final ProjectRootManager myProjectManager;
-  @NotNull private final List<? extends VcsRootChecker> myCheckers;
 
   @NotNull private final Alarm myAlarm;
   private static final long WAIT_BEFORE_SCAN = TimeUnit.SECONDS.toMillis(1);
 
-  public static void start(@NotNull Project project, @NotNull List<? extends VcsRootChecker> checkers) {
-    new VcsRootScanner(project, checkers).scheduleScan();
+  public static void start(@NotNull Project project) {
+    new VcsRootScanner(project).scheduleScan();
   }
 
-  private VcsRootScanner(@NotNull Project project, @NotNull List<? extends VcsRootChecker> checkers) {
+  private VcsRootScanner(@NotNull Project project) {
     myProject = project;
     myProjectManager = ProjectRootManager.getInstance(project);
     myRootProblemNotifier = VcsRootProblemNotifier.getInstance(project);
-    myCheckers = checkers;
 
     AsyncVfsEventsPostProcessor.getInstance().addListener(this, project);
 
     myAlarm = new Alarm(Alarm.ThreadToUse.POOLED_THREAD, project);
+
+    VcsRootChecker.EXTENSION_POINT_NAME.addChangeListener(() -> scheduleScan(), project);
+    VcsEP.EP_NAME.addChangeListener(() -> scheduleScan(), project);
   }
 
   @Override
   public void filesChanged(@NotNull List<? extends VFileEvent> events) {
+    List<VcsRootChecker> checkers = VcsRootChecker.EXTENSION_POINT_NAME.getExtensionList();
+    if (checkers.isEmpty()) return;
+
     for (VFileEvent event : events) {
       VirtualFile file = event.getFile();
       if (file != null && file.isDirectory()) {
         visitDirsRecursivelyWithoutExcluded(myProject, myProjectManager, file, dir -> {
-          if (isVcsDir(dir.getName())) {
+          if (isVcsDir(checkers, dir.getName())) {
             scheduleScan();
             return skipTo(file);
           }
@@ -116,14 +107,13 @@ public class VcsRootScanner implements AsyncVfsEventsListener {
     });
   }
 
-  private boolean isVcsDir(@NotNull String filePath) {
-    return myCheckers.stream().anyMatch(it -> it.isVcsDir(filePath));
+  private static boolean isVcsDir(@NotNull List<VcsRootChecker> checkers, @NotNull String filePath) {
+    return checkers.stream().anyMatch(it -> it.isVcsDir(filePath));
   }
 
   private void scheduleScan() {
-    if (myAlarm.isDisposed()) {
-      return;
-    }
+    if (myAlarm.isDisposed()) return;
+    if (VcsRootChecker.EXTENSION_POINT_NAME.getExtensionList().isEmpty()) return;
 
     myAlarm.cancelAllRequests(); // one scan is enough, no need to queue, they all do the same
     myAlarm.addRequest(() -> BackgroundTaskUtil.runUnderDisposeAwareIndicator(myAlarm, () ->

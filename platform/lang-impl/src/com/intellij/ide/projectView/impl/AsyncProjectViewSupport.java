@@ -49,9 +49,9 @@ public class AsyncProjectViewSupport {
   private final AsyncTreeModel myAsyncTreeModel;
 
   public AsyncProjectViewSupport(@NotNull Disposable parent,
-                                 @NotNull Project project,
-                                 @NotNull AbstractTreeStructure structure,
-                                 @NotNull Comparator<NodeDescriptor<?>> comparator) {
+                          @NotNull Project project,
+                          @NotNull AbstractTreeStructure structure,
+                          @NotNull Comparator<NodeDescriptor<?>> comparator) {
     myStructureTreeModel = new StructureTreeModel<>(structure, comparator, parent);
     myAsyncTreeModel = new AsyncTreeModel(myStructureTreeModel, parent);
     myAsyncTreeModel.setRootImmediately(myStructureTreeModel.getRootImmediately());
@@ -211,7 +211,7 @@ public class AsyncProjectViewSupport {
     }
     TreePath path = paths.get(0);
     tree.expandPath(path); // request to expand found path
-    TreeUtil.selectPath(tree, path); // select and scroll to center
+    TreeUtil.selectPaths(tree, path); // select and scroll to center
     return true;
   }
 

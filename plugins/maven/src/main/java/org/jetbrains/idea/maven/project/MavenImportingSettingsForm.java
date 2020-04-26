@@ -74,10 +74,11 @@ public class MavenImportingSettingsForm {
     myUpdateFoldersOnImportPhaseComboBox.setModel(new DefaultComboBoxModel<>(MavenImportingSettings.UPDATE_FOLDERS_PHASES));
 
     myGeneratedSourcesComboBox.setModel(new EnumComboBoxModel<>(MavenImportingSettings.GeneratedSourcesFolder.class));
-    myGeneratedSourcesComboBox.setRenderer(SimpleListCellRenderer.create("", value -> value.title));
+    myGeneratedSourcesComboBox.setRenderer(SimpleListCellRenderer.create("", value -> value.getTitle()));
 
     LabelTextReplacingUtil.replaceText(myPanel);
     myAutoDetectCompilerCheckBox.setVisible(Registry.is("maven.import.compiler.arguments", true));
+    myJdkForImporterComboBox.setHighlightInternalJdk(false);
   }
 
   private void createUIComponents() {

@@ -14,7 +14,7 @@ import com.intellij.ui.EditorNotifications;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public final class LargeFileNotificationProvider extends EditorNotifications.Provider {
+public final class LargeFileNotificationProvider extends EditorNotifications.Provider<EditorNotificationPanel> {
   private static final Key<EditorNotificationPanel> KEY = Key.create("large.file.editor.notification");
   private static final Key<String> HIDDEN_KEY = Key.create("large.file.editor.notification.hidden");
   private static final String DISABLE_KEY = "large.file.editor.notification.disabled";
@@ -37,16 +37,16 @@ public final class LargeFileNotificationProvider extends EditorNotifications.Pro
     }
 
     EditorNotificationPanel panel = new EditorNotificationPanel();
-    panel.createActionLabel(EditorBundle.message("large.file.editor.hide.notification.action.text"), () -> {
+    panel.createActionLabel(EditorBundle.message("notification.hide.message"), () -> {
       editor.putUserData(HIDDEN_KEY, "true");
       update(file, project);
     });
-    panel.createActionLabel(EditorBundle.message("large.file.editor.dont.show.again.action.text"), () -> {
+    panel.createActionLabel(EditorBundle.message("notification.dont.show.again.message"), () -> {
       PropertiesComponent.getInstance().setValue(DISABLE_KEY, "true");
       update(file, project);
     });
     return panel.text(EditorBundle.message("large.file.editor.notification.text.the.file.is.too.large.so.showing.in.read.only.mode",
-                                        StringUtil.formatFileSize(file.getLength())));
+                                           StringUtil.formatFileSize(file.getLength())));
   }
 
   private static void update(@NotNull VirtualFile file, @NotNull Project project) {

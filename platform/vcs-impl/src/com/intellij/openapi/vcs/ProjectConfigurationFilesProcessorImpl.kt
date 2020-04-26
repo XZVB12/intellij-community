@@ -25,8 +25,8 @@ private val LOG = Logger.getInstance(ProjectConfigurationFilesProcessorImpl::cla
 private val configurationFilesExtensionsOutsideStoreDirectory =
   ContainerUtil.newHashSet(ProjectFileType.DEFAULT_EXTENSION, ModuleFileType.DEFAULT_EXTENSION)
 
-private const val SHARE_PROJECT_CONFIGURATION_FILES_PROPERTY = "SHARE_PROJECT_CONFIGURATION_FILES"
-private const val ASKED_SHARE_PROJECT_CONFIGURATION_FILES_PROPERTY = "ASKED_SHARE_PROJECT_CONFIGURATION_FILES"
+internal const val SHARE_PROJECT_CONFIGURATION_FILES_PROPERTY = "SHARE_PROJECT_CONFIGURATION_FILES"
+internal const val ASKED_SHARE_PROJECT_CONFIGURATION_FILES_PROPERTY = "ASKED_SHARE_PROJECT_CONFIGURATION_FILES"
 
 class ProjectConfigurationFilesProcessorImpl(project: Project,
                                              private val parentDisposable: Disposable,
@@ -51,7 +51,11 @@ class ProjectConfigurationFilesProcessorImpl(project: Project,
   fun filterNotProjectConfigurationFiles(files: List<VirtualFile>): List<VirtualFile> {
     val projectConfigurationFiles = doFilterFiles(files)
 
-    foundProjectConfigurationFiles.set(projectConfigurationFiles.isNotEmpty())
+    if (projectConfigurationFiles.isNotEmpty()) {
+      if (foundProjectConfigurationFiles.compareAndSet(false, true)) {
+        LOG.debug("Found new project configuration files ", projectConfigurationFiles)
+      }
+    }
 
     return files - projectConfigurationFiles
   }
@@ -81,6 +85,8 @@ class ProjectConfigurationFilesProcessorImpl(project: Project,
   override fun doActionOnChosenFiles(files: Collection<VirtualFile>) {
     addChosenFiles(files)
   }
+
+  override val notificationDisplayId: String = "project.configuration.files.added.notification"
 
   override val askedBeforeProperty = ASKED_SHARE_PROJECT_CONFIGURATION_FILES_PROPERTY
 

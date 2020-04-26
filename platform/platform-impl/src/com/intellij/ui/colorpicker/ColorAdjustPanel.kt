@@ -52,7 +52,7 @@ class ColorAdjustPanel(private val model: ColorPickerModel,
       border = PIPETTE_BUTTON_BORDER
       background = PICKER_BACKGROUND_COLOR
 
-      ui = BasicButtonUI()
+      setUI(BasicButtonUI())
 
       isFocusable = false
       preferredSize = COLOR_INDICATOR_SIZE
@@ -72,11 +72,14 @@ class ColorAdjustPanel(private val model: ColorPickerModel,
     background = PICKER_BACKGROUND_COLOR
 
     addListener {
+      if (model.color.red == model.color.green && model.color.green == model.color.blue) {
+        return@addListener
+      }
       val hue = it / 360f
       val hsbValues = Color.RGBtoHSB(model.color.red, model.color.green, model.color.blue, null)
       val rgb = Color.HSBtoRGB(hue, hsbValues[1], hsbValues[2])
       val argb = (model.color.alpha shl 24) or (rgb and 0x00FFFFFF)
-      val newColor = Color(argb, true)
+      val newColor = if (showAlpha) Color(argb, true) else Color(rgb)
       model.setColor(newColor, this@ColorAdjustPanel)
     }
   }

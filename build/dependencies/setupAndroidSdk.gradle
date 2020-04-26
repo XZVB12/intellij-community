@@ -21,6 +21,8 @@ import javax.inject.Inject
 repositories {
   maven { url 'https://cache-redirector.jetbrains.com/repo.maven.apache.org/maven2/' }
   maven { url 'https://cache-redirector.jetbrains.com/kotlin.bintray.com/kotlin-plugin/' }
+  maven { url 'https://cache-redirector.jetbrains.com/dl.bintray.com/kotlin/kotlin-eap' }
+  maven { url 'https://cache-redirector.jetbrains.com/dl.bintray.com/kotlin/kotlin-bootstrap' }
   maven { url 'https://cache-redirector.jetbrains.com/jetbrains.bintray.com/intellij-third-party-dependencies/' }
 }
 
@@ -45,7 +47,7 @@ if (kotlinVersionLen == -1) {
 }
 
 ext.kotlin_version = kotlinPluginBuild.substring(0, kotlinVersionLen)
-ext.android_m2_version = "26.6.0.1"
+ext.android_m2_version = "26.6.0.2"
 ext.android_sdk_version = "${osFamily}.3.6.0.0"
 
 dependencies {
@@ -101,6 +103,16 @@ task syncToolsBaseTemplates(dependsOn: [configurations.androidToolsBaseTemplates
   from { zipTree(configurations.androidToolsBaseTemplates.singleFile) }
   into "${project.buildDir}/android-sdk/tools-base/templates"
   versionFile = android_m2_version
+}
+
+task syncToolsBaseTemplatesOnly(dependsOn: [configurations.androidToolsBaseTemplates], type: VersionedLazyCopyTask) {
+  from { zipTree(configurations.androidToolsBaseTemplates.singleFile) }
+  into "${project.buildDir}/android-sdk/tools-base/templates"
+  versionFile = android_m2_version
+}
+
+task setupAndroidPluginRuntimeForIdea(dependsOn: [syncToolsBaseTemplatesOnly, setupKotlinPlugin]){
+
 }
 
 task syncKotlinPluginForAndroid(dependsOn: [setupKotlinPlugin, syncAndroidSdk], type: Sync) {

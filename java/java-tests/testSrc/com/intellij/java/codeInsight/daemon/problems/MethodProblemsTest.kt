@@ -137,7 +137,7 @@ internal class MethodProblemsTest: ProjectProblemsViewTest() {
         method.returnTypeElement?.replace(newReturnType)
       }
 
-      assertTrue(hasReportedProblems<PsiAnnotation>(targetClass, refClass))
+      assertTrue(hasReportedProblems<PsiMethod>(targetClass, refClass))
     }
   }
 
@@ -261,6 +261,58 @@ internal class MethodProblemsTest: ProjectProblemsViewTest() {
     }
 
     assertTrue(hasReportedProblems<PsiDeclarationStatement>(targetClass, refClass))
+  }
+
+  fun testInheritedGenericMethodClashInParameterizedClasses() {
+    myFixture.addClass("""
+      package foo;
+
+      import java.io.Reader;
+      import java.util.*;
+
+      public abstract class Parent<T extends Reader> {
+          protected void test(Map<String, String> out) {}
+
+          protected abstract void foo(T t);
+      }
+    """.trimIndent())
+
+    val targetClass = myFixture.addClass("""
+      package foo;
+
+      import java.io.Reader;
+      import java.util.Map;
+
+      public abstract class A<T extends Reader> extends Parent<T> {
+          @Override
+          protected void test(Map<String, String> out) {
+          }
+      }
+    """.trimIndent())
+
+    val refClass = myFixture.addClass("""
+      package foo;
+
+      import java.io.Reader;
+      
+      public class B {
+          public static class Nested extends A {
+              @Override
+              protected void foo(Reader s) {
+              }
+          }
+      }
+    """.trimIndent())
+
+    doTest(targetClass) {
+      changeMethod(targetClass) { method, factory ->
+        val param = method.parameterList.getParameter(0)!!
+        val typeElement = param.typeElement!!
+        val newTypeElement = factory.createTypeElementFromText("Map<Integer, String>", targetClass)
+        typeElement.replace(newTypeElement)
+      }
+      assertTrue(hasReportedProblems<PsiClass>(targetClass, refClass))
+    }
   }
 
   private fun doMethodTest(methodChangeAction: (PsiMethod, PsiElementFactory) -> Unit) {

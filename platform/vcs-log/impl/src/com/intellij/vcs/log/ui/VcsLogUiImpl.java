@@ -22,7 +22,6 @@ import com.intellij.vcs.log.ui.filter.VcsLogClassicFilterUi;
 import com.intellij.vcs.log.ui.filter.VcsLogFilterUiEx;
 import com.intellij.vcs.log.ui.frame.MainFrame;
 import com.intellij.vcs.log.ui.frame.VcsLogEditorDiffPreview;
-import com.intellij.vcs.log.ui.highlighters.VcsLogHighlighterFactory;
 import com.intellij.vcs.log.ui.table.GraphTableModel;
 import com.intellij.vcs.log.ui.table.VcsLogColumn;
 import com.intellij.vcs.log.ui.table.VcsLogGraphTable;
@@ -59,7 +58,7 @@ public class VcsLogUiImpl extends AbstractVcsLogUi implements MainVcsLogUi {
     VcsLogFilterUiEx filterUi = createFilterUi(filters -> applyFiltersAndUpdateUi(filters), initialFilters, this);
     myMainFrame = createMainFrame(logData, uiProperties, filterUi);
 
-    VcsLogUiUtil.installHighlighters(myProject, this, f -> true);
+    VcsLogUiUtil.installHighlighters(this, f -> true);
 
     myPropertiesListener = new MyVcsLogUiPropertiesListener();
     myUiProperties.addChangeListener(myPropertiesListener);
@@ -94,7 +93,7 @@ public class VcsLogUiImpl extends AbstractVcsLogUi implements MainVcsLogUi {
   }
 
   @NotNull
-  public MainFrame getMainFrame() {
+  protected MainFrame getMainFrame() {
     return myMainFrame;
   }
 
@@ -111,7 +110,7 @@ public class VcsLogUiImpl extends AbstractVcsLogUi implements MainVcsLogUi {
     runnables.add(new NamedRunnable(VcsLogBundle.message("vcs.log.commit.does.not.match.view.and.reset.link")) {
       @Override
       public void run() {
-        getFilterUi().setFilter(null);
+        getFilterUi().clearFilters();
         invokeOnChange(() -> jumpTo(commitId, rowGetter, SettableFuture.create(), false),
                        pack -> pack.getFilters().isEmpty());
       }

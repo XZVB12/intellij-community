@@ -2,6 +2,7 @@
 package com.intellij.ide.impl;
 
 import com.intellij.CommonBundle;
+import com.intellij.featureStatistics.fusCollectors.LifecycleUsageTriggerCollector;
 import com.intellij.ide.GeneralSettings;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.RecentProjectsManager;
@@ -39,10 +40,7 @@ import com.intellij.util.PlatformUtils;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.io.PathKt;
 import com.intellij.util.ui.FocusUtil;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.PropertyKey;
+import org.jetbrains.annotations.*;
 
 import javax.swing.*;
 import java.awt.*;
@@ -56,6 +54,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 
 import static com.intellij.platform.PlatformProjectOpenProcessor.PROJECT_OPENED_BY_PLATFORM_PROCESSOR;
+import static com.intellij.util.containers.ContainerUtil.filter;
+import static java.util.Collections.singletonList;
 
 public final class ProjectUtil {
   private static final Logger LOG = Logger.getInstance(ProjectUtil.class);
@@ -134,7 +134,7 @@ public final class ProjectUtil {
         }
 
         if (provider.canOpenProject(virtualFile)) {
-          return openUsingProvider(provider, virtualFile, options);
+          return chooseProcessorAndOpen(singletonList(provider), virtualFile, options);
         }
       }
     }
@@ -161,18 +161,14 @@ public final class ProjectUtil {
       return null;
     }
 
-    ProjectOpenProcessor provider = ProjectOpenProcessor.getImportProvider(virtualFile, /* onlyIfExistingProjectFile = */ false);
-    if (provider == null) {
+    List<ProjectOpenProcessor> processors = ProjectOpenProcessor.getOpenProcessors(virtualFile, /* onlyIfExistingProjectFile = */ false);
+    if (processors.isEmpty()) {
       return null;
     }
 
-    Project project = openUsingProvider(provider, virtualFile, options);
+    Project project = chooseProcessorAndOpen(processors, virtualFile, options);
     if (project == null) {
       return null;
-    }
-
-    if (provider instanceof PlatformProjectOpenProcessor) {
-      project.putUserData(PROJECT_OPENED_BY_PLATFORM_PROCESSOR, Boolean.TRUE);
     }
 
     StartupManager.getInstance(project).runAfterOpened(() -> {
@@ -187,14 +183,37 @@ public final class ProjectUtil {
   }
 
   @Nullable
-  private static Project openUsingProvider(@NotNull ProjectOpenProcessor provider,
-                                           @NotNull VirtualFile virtualFile,
-                                           @NotNull OpenProjectTask options) {
+  private static Project chooseProcessorAndOpen(@NotNull List<ProjectOpenProcessor> processors,
+                                                @NotNull VirtualFile virtualFile,
+                                                @NotNull OpenProjectTask options) {
     Ref<Project> result = new Ref<>();
     ApplicationManager.getApplication().invokeAndWait(() -> {
-      result.set(provider.doOpenProject(virtualFile, options.projectToClose, options.forceOpenInNewFrame));
+      ProjectOpenProcessor processor = selectOpenProcessor(processors, virtualFile);
+
+      if (processor != null) {
+        Project project = processor.doOpenProject(virtualFile, options.projectToClose, options.forceOpenInNewFrame);
+
+        if (project != null && processor instanceof PlatformProjectOpenProcessor) {
+          project.putUserData(PROJECT_OPENED_BY_PLATFORM_PROCESSOR, Boolean.TRUE);
+        }
+
+        result.set(project);
+      }
     });
     return result.get();
+  }
+
+  @CalledInAwt
+  @Nullable
+  private static ProjectOpenProcessor selectOpenProcessor(@NotNull List<ProjectOpenProcessor> processors, @NotNull VirtualFile file) {
+    if (processors.size() == 1) {
+      return processors.get(0);
+    }
+    List<ProjectOpenProcessor> notDefaultProcessors = filter(processors, p -> !(p instanceof PlatformProjectOpenProcessor));
+    if (notDefaultProcessors.size() == 1) {
+      return notDefaultProcessors.get(0);
+    }
+    return new SelectProjectOpenProcessorDialog(notDefaultProcessors, file).showAndGetChoice();
   }
 
   @Nullable
@@ -279,7 +298,7 @@ public final class ProjectUtil {
     return path.contains("://") || path.contains("\\\\");
   }
 
-  public static Project @NotNull [] getOpenProjects() {
+  public static @NotNull Project @NotNull [] getOpenProjects() {
     ProjectManager projectManager = ProjectManager.getInstanceIfCreated();
     return projectManager == null ? new Project[0] : projectManager.getOpenProjects();
   }
@@ -318,6 +337,7 @@ public final class ProjectUtil {
                                                 IdeBundle.message("button.new.frame"),
                                                 Messages.getQuestionIcon(),
                                                 new ProjectNewWindowDoNotAskOption());
+        LifecycleUsageTriggerCollector.onProjectFrameSelected(exitCode);
         return exitCode == Messages.YES ? GeneralSettings.OPEN_PROJECT_SAME_WINDOW : GeneralSettings.OPEN_PROJECT_NEW_WINDOW;
       }
       else {
@@ -328,6 +348,7 @@ public final class ProjectUtil {
                                                       CommonBundle.getCancelButtonText(),
                                                       Messages.getQuestionIcon(),
                                                       new ProjectNewWindowDoNotAskOption());
+        LifecycleUsageTriggerCollector.onProjectFrameSelected(exitCode);
         return exitCode == Messages.YES ? GeneralSettings.OPEN_PROJECT_SAME_WINDOW :
                exitCode == Messages.NO ? GeneralSettings.OPEN_PROJECT_NEW_WINDOW : Messages.CANCEL;
       }
@@ -354,6 +375,7 @@ public final class ProjectUtil {
       },
       MODE_NEW.equals(mode) ? 1 : MODE_REPLACE.equals(mode) ? 0 : MODE_ATTACH.equals(mode) ? 2 : 0,
       Messages.getQuestionIcon());
+    LifecycleUsageTriggerCollector.onProjectFrameSelected(exitCode);
     return exitCode == 0 ? GeneralSettings.OPEN_PROJECT_SAME_WINDOW :
            exitCode == 1 ? GeneralSettings.OPEN_PROJECT_NEW_WINDOW :
            exitCode == 2 ? GeneralSettings.OPEN_PROJECT_SAME_WINDOW_ATTACH :
@@ -396,7 +418,12 @@ public final class ProjectUtil {
       AppIcon.getInstance().requestFocus((IdeFrame)WindowManager.getInstance().getFrame(project));
       frame.toFront();
       if (!SystemInfo.isMac && !frame.isAutoRequestFocus()) {
-        IdeFocusManager.getInstance(project).requestFocus(mostRecentFocusOwner, true);
+        if (mostRecentFocusOwner != null) {
+          IdeFocusManager.getInstance(project).requestFocus(mostRecentFocusOwner, true);
+        }
+        else {
+          LOG.warn("frame.getMostRecentFocusOwner() is null");
+        }
       }
     }
     else {

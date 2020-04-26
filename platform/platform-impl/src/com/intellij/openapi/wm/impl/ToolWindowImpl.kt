@@ -7,10 +7,13 @@ import com.intellij.ide.IdeBundle
 import com.intellij.ide.actions.*
 import com.intellij.ide.impl.ContentManagerWatcher
 import com.intellij.idea.ActionsBundle
+import com.intellij.internal.statistic.eventLog.EventPair
+import com.intellij.internal.statistic.eventLog.FeatureUsageData
 import com.intellij.notification.EventLog
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.impl.FusAwareAction
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbService
@@ -298,7 +301,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     additionalGearActions = value
   }
 
-  override fun setTitleActions(vararg actions: AnAction) {
+  override fun setTitleActions(actions: List<AnAction>) {
     ensureContentManagerInitialized()
     decorator!!.setTitleActions(actions)
   }
@@ -540,7 +543,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     return group
   }
 
-  private inner class GearActionGroup internal constructor() : DefaultActionGroup(), DumbAware {
+  private inner class GearActionGroup : DefaultActionGroup(), DumbAware {
     init {
       templatePresentation.icon = AllIcons.General.GearPlain
       templatePresentation.text = IdeBundle.message("show.options.menu")
@@ -570,7 +573,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     }
   }
 
-  private inner class HideAction internal constructor() : AnAction(), DumbAware {
+  private inner class HideAction : AnAction(), DumbAware {
     override fun actionPerformed(e: AnActionEvent) {
       toolWindowManager.hideToolWindow(id, false)
     }
@@ -607,7 +610,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
   }
 
   private inner class RemoveStripeButtonAction : AnAction(ActionsBundle.message("action.RemoveStripeButton.text"),
-                                                          ActionsBundle.message("action.RemoveStripeButton.description"), null), DumbAware {
+                                                          ActionsBundle.message("action.RemoveStripeButton.description"), null), DumbAware, FusAwareAction {
     override fun update(e: AnActionEvent) {
       e.presentation.isEnabledAndVisible = isShowStripeButton
     }
@@ -615,9 +618,13 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     override fun actionPerformed(e: AnActionEvent) {
       toolWindowManager.removeFromSideBar(id)
     }
+
+    override fun addAdditionalUsageData(event: AnActionEvent, data: MutableList<EventPair<*>>) {
+      data.add(ToolwindowFusEventFields.TOOLWINDOW with id)
+    }
   }
 
-  private inner class ToggleContentUiTypeAction : ToggleAction(), DumbAware {
+  private inner class ToggleContentUiTypeAction : ToggleAction(), DumbAware, FusAwareAction {
     private var hadSeveralContents = false
 
     init {
@@ -636,6 +643,10 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
 
     override fun setSelected(e: AnActionEvent, state: Boolean) {
       toolWindowManager.setContentUiType(id, if (state) ToolWindowContentUiType.COMBO else ToolWindowContentUiType.TABBED)
+    }
+
+    override fun addAdditionalUsageData(event: AnActionEvent, data: MutableList<EventPair<*>>) {
+      data.add(ToolwindowFusEventFields.TOOLWINDOW with id)
     }
   }
 

@@ -7,10 +7,12 @@
                     interface="com.intellij.openapi.vcs.VcsCheckoutProcessor"
                     dynamic="true"/>
     <extensionPoint name="vcsRootChecker"
-                    interface="com.intellij.openapi.vcs.VcsRootChecker"/>
+                    interface="com.intellij.openapi.vcs.VcsRootChecker"
+                    dynamic="true"/>
     <extensionPoint name="vcsIgnoreChecker"
                     interface="com.intellij.openapi.vcs.VcsIgnoreChecker"
-                    area="IDEA_PROJECT"/>
+                    area="IDEA_PROJECT"
+                    dynamic="true"/>
     <extensionPoint name="checkoutListener"
                     interface="com.intellij.openapi.vcs.checkout.CheckoutListener"
                     dynamic="true"/>
@@ -23,7 +25,7 @@
 
     <extensionPoint name="vcs"
                     beanClass="com.intellij.openapi.vcs.impl.VcsEP"
-                    area="IDEA_PROJECT">
+                    dynamic="true">
       <with attribute="vcsClass" implements="com.intellij.openapi.vcs.AbstractVcs"/>
     </extensionPoint>
 
@@ -33,7 +35,8 @@
                     dynamic="true"/>
 
     <extensionPoint name="vcsCheckinHandlerFactory"
-                    interface="com.intellij.openapi.vcs.checkin.VcsCheckinHandlerFactory"/>
+                    interface="com.intellij.openapi.vcs.checkin.VcsCheckinHandlerFactory"
+                    dynamic="true"/>
 
     <extensionPoint name="unresolvedMergeCheckProvider"
                     interface="com.intellij.openapi.vcs.checkin.UnresolvedMergeCheckProvider"
@@ -69,6 +72,8 @@
     <extensionPoint name="vcsSelectionProvider"
                     interface="com.intellij.vcsUtil.VcsSelectionProvider"
                     dynamic="true"/>
+    <extensionPoint name="vcs.changes.localCommitExecutor" interface="com.intellij.openapi.vcs.changes.LocalCommitExecutor"
+                    area="IDEA_PROJECT" dynamic="true"/>
 
     <extensionPoint name="vcsConfigurableProvider"
                     interface="com.intellij.openapi.vcs.VcsConfigurableProvider"
@@ -112,7 +117,15 @@
                     interface="com.intellij.openapi.vcs.annotate.AnnotationGutterColumnProvider"
                     dynamic="true"/>
 
-    <extensionPoint name="vcs.taskHandler" interface="com.intellij.openapi.vcs.VcsTaskHandler" area="IDEA_PROJECT"/>
+    <extensionPoint name="vcs.taskHandler"
+                    interface="com.intellij.openapi.vcs.VcsTaskHandler"
+                    area="IDEA_PROJECT"
+                    dynamic="true"/>
+
+    <extensionPoint name="vcs.changeListDecorator"
+                    interface="com.intellij.openapi.vcs.changes.ChangeListDecorator"
+                    area="IDEA_PROJECT"
+                    dynamic="true"/>
 
     <extensionPoint name="openapi.vcs.changes.actions.diff.ChangeDiffRequestProvider"
                     interface="com.intellij.openapi.vcs.changes.actions.diff.ChangeDiffRequestProvider"
@@ -160,5 +173,6 @@
     <extensionPoint name="vcs.actions.ScheduleForAdditionActionExtension"
                     interface="com.intellij.openapi.vcs.changes.actions.ScheduleForAdditionActionExtension"
                     dynamic="true"/>
+    <extensionPoint name="vcsStartupActivity" interface="com.intellij.openapi.vcs.impl.VcsStartupActivity" dynamic="false"/>
   </extensionPoints>
 </idea-plugin>

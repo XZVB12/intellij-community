@@ -8,6 +8,7 @@ import com.google.gson.stream.JsonReader;
 import com.intellij.ide.BrowserUtil;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.plugins.*;
+import com.intellij.ide.plugins.marketplace.MarketplaceRequests;
 import com.intellij.notification.NotificationDisplayType;
 import com.intellij.notification.NotificationGroup;
 import com.intellij.openapi.application.IdeUrlTrackingParametersProvider;
@@ -51,13 +52,14 @@ public final class PluginsAdvertiser {
   public static final String FUS_GROUP_ID = "plugins.advertiser";
 
   private static SoftReference<KnownExtensions> ourKnownExtensions = new SoftReference<>(null);
+  private static boolean extensionsHaveBeenUpdated = false;
 
   @Nullable
   public static List<Plugin> retrieve(@NotNull UnknownFeature unknownFeature) throws IOException {
     Map<String, String> map = new HashMap<>();
     map.put("featureType", unknownFeature.getFeatureType());
     map.put("implementationName", unknownFeature.getImplementationName());
-    map.put("build", PluginRepositoryRequests.getBuildForPluginRepositoryRequests());
+    map.put("build", MarketplaceRequests.getBuildForPluginRepositoryRequests());
     return processFeatureRequest(map, request -> {
       JsonReader jsonReader = new JsonReader(request.getReader());
       jsonReader.setLenient(true);
@@ -144,6 +146,7 @@ public final class PluginsAdvertiser {
   }
 
   public static @Nullable KnownExtensions loadExtensions() {
+    if (!extensionsHaveBeenUpdated) return null;
     KnownExtensions knownExtensions = ourKnownExtensions.get();
     if (knownExtensions != null) return knownExtensions;
     try {
@@ -170,6 +173,7 @@ public final class PluginsAdvertiser {
       FileUtil.ensureCanCreateFile(plugins);
     }
     JDOMUtil.write(XmlSerializer.serialize(new KnownExtensions(extensions)), plugins);
+    extensionsHaveBeenUpdated = true;
   }
 
   public static void openDownloadPage() {
@@ -220,18 +224,18 @@ public final class PluginsAdvertiser {
   public static void installAndEnable(@Nullable Project project, @NotNull Set<PluginId> pluginIds, boolean showDialog, @NotNull Runnable onSuccess) {
     ProgressManager.getInstance().run(new Task.Modal(project, IdeBundle.message("plugins.advertiser.task.searching.for.plugins"), true) {
       private final Set<PluginDownloader> myPlugins = new HashSet<>();
-      private List<IdeaPluginDescriptor> myAllPlugins;
+      private List<IdeaPluginDescriptor> myCustomPlugins;
 
       @Override
       public void run(@NotNull ProgressIndicator indicator) {
         try {
-          myAllPlugins = RepositoryHelper.loadPluginsFromAllRepositories(indicator);
+          myCustomPlugins = RepositoryHelper.loadPluginsFromAllRepositories(indicator);
           for (IdeaPluginDescriptor descriptor : PluginManagerCore.getPlugins()) {
             if (!descriptor.isEnabled() && pluginIds.contains(descriptor.getPluginId())) {
               myPlugins.add(PluginDownloader.createDownloader(descriptor));
             }
           }
-          for (IdeaPluginDescriptor loadedPlugin : myAllPlugins) {
+          for (IdeaPluginDescriptor loadedPlugin : myCustomPlugins) {
             if (pluginIds.contains(loadedPlugin.getPluginId())) {
               myPlugins.add(PluginDownloader.createDownloader(loadedPlugin));
             }
@@ -244,14 +248,14 @@ public final class PluginsAdvertiser {
 
       @Override
       public void onSuccess() {
-        if (myAllPlugins == null) {
+        if (myCustomPlugins == null) {
           return;
         }
 
         PluginsAdvertiserDialog advertiserDialog =
           new PluginsAdvertiserDialog(null,
                                       myPlugins.toArray(new PluginDownloader[0]),
-                                      myAllPlugins);
+                                      myCustomPlugins);
         if (showDialog) {
           if (advertiserDialog.showAndGet()) {
             onSuccess.run();

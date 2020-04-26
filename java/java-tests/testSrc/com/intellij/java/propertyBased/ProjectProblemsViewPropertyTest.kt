@@ -4,19 +4,17 @@ package com.intellij.java.propertyBased
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.daemon.problems.MemberCollector
 import com.intellij.codeInsight.daemon.problems.MemberUsageCollector
-import com.intellij.codeInsight.daemon.problems.pass.ProjectProblemPassUtils.ReportedChange
-import com.intellij.codeInsight.daemon.problems.pass.ProjectProblemPassUtils.getReportedChanges
+import com.intellij.codeInsight.daemon.problems.pass.ProjectProblemPassUtils
 import com.intellij.codeInsight.hints.BlockInlayRenderer
-import com.intellij.codeInsight.hints.presentation.DynamicDelegatePresentation
-import com.intellij.codeInsight.hints.presentation.OnClickPresentation
-import com.intellij.codeInsight.hints.presentation.OnHoverPresentation
-import com.intellij.codeInsight.hints.presentation.RecursivelyUpdatingRootPresentation
+import com.intellij.codeInsight.hints.presentation.*
 import com.intellij.codeInsight.javadoc.JavaDocUtil
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.Inlay
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.RecursionManager
@@ -37,6 +35,7 @@ import com.intellij.usages.UsageInfo2UsageAdapter
 import com.intellij.usages.UsageViewManager
 import com.intellij.util.ArrayUtilRt
 import com.siyeh.ig.psiutils.TypeUtils
+import junit.framework.TestCase
 import one.util.streamex.StreamEx
 import org.jetbrains.jetCheck.Generator
 import org.jetbrains.jetCheck.ImperativeCommand
@@ -53,6 +52,7 @@ class ProjectProblemsViewPropertyTest : BaseUnivocityTest() {
   fun testAllFilesWithMemberNameReported() {
     RecursionManager.disableMissedCacheAssertions(testRootDisposable)
     PropertyChecker.customized()
+      .withIterationCount(50)
       .checkScenarios { ImperativeCommand(this::doTestAllFilesWithMemberNameReported) }
   }
 
@@ -69,6 +69,10 @@ class ProjectProblemsViewPropertyTest : BaseUnivocityTest() {
 
         val members = findMembers(fileToChange)
         if (members.isEmpty()) continue
+
+        val editor = openEditor(fileToChange.virtualFile)
+        rehighlight(fileToChange, editor)
+        if (getFilesReportedByProblemSearch(editor, fileToChange).isNotEmpty()) continue
 
         env.logMessage("Selected file: ${fileToChange.name}")
 
@@ -87,13 +91,16 @@ class ProjectProblemsViewPropertyTest : BaseUnivocityTest() {
     val psiManager = PsiManager.getInstance(myProject)
     for (changedFile in changedFiles) {
       val psiFile = psiManager.findFile(changedFile)!!
-      rehighlight(psiFile)
-      val reportedChanges = getReportedChanges(psiFile)
-      for ((pointer, reportedChange) in reportedChanges) {
-        assertNull("Problems are still reported even after the fix. " +
-                   "File: ${changedFile.name}, " +
-                   "Member: ${JavaDocUtil.getReferenceText(myProject, pointer.element)}, " +
-                   "Previous member: ${reportedChange.prevMember}", reportedChange.inlay)
+      val editor = openEditor(changedFile)
+      rehighlight(psiFile, editor)
+      val reportedChanges = ProjectProblemPassUtils.getInlays(editor)
+      for ((member, inlay) in reportedChanges) {
+        if (inlay != null) {
+          TestCase.fail("Problems are still reported even after the fix. " +
+                        "File: ${changedFile.name}, " +
+                        "Member: ${JavaDocUtil.getReferenceText(myProject, member)}, " +
+                        "Reported problems: ${extractProblems(changedFile, inlay)}")
+        }
       }
     }
   }
@@ -104,6 +111,7 @@ class ProjectProblemsViewPropertyTest : BaseUnivocityTest() {
     val reportedFiles = mutableSetOf<VirtualFile>()
     val nChanges = env.generateValue(Generator.integers(1, 5), "Changes to make: %s")
     for (j in 0 until nChanges) {
+      val editor = (FileEditorManager.getInstance(myProject).selectedEditor as TextEditor).editor
       val member = env.generateValue(Generator.sampledFrom(members), null)
       env.logMessage("Changing member: ${JavaDocUtil.getReferenceText(myProject, member)}")
       val usages = findUsages(member)
@@ -126,24 +134,22 @@ class ProjectProblemsViewPropertyTest : BaseUnivocityTest() {
         continue
       }
 
-      rehighlight(fileToChange)
+      rehighlight(fileToChange, editor)
       WriteCommandAction.runWriteCommandAction(myProject) { modification.apply(myProject) }
       env.logMessage("Modification applied")
-      rehighlight(fileToChange)
-      reportedFiles.addAll(getFilesReportedByProblemSearch(fileToChange))
+      rehighlight(fileToChange, editor)
+      reportedFiles.addAll(getFilesReportedByProblemSearch(editor, fileToChange))
     }
     return reportedFiles
   }
 
-  private fun getMembersToSearch(member: PsiMember,
-                                 modification: Modification,
-                                 members: List<PsiMember>): List<PsiMember>? {
+  private fun getMembersToSearch(member: PsiMember, modification: Modification, members: List<PsiMember>): List<PsiMember>? {
     if (!modification.searchAllMembers()) return listOf(member)
     if (members.any { !isCheapToSearch(it) }) return null
     return members
   }
 
-  private fun rehighlight(psiFile: PsiFile, editor: Editor = openEditor(psiFile.virtualFile)): List<HighlightInfo> {
+  private fun rehighlight(psiFile: PsiFile, editor: Editor): List<HighlightInfo> {
     PsiDocumentManager.getInstance(myProject).commitAllDocuments()
     return CodeInsightTestFixtureImpl.instantiateAndRun(psiFile, editor, ArrayUtilRt.EMPTY_INT_ARRAY, false)
   }
@@ -224,7 +230,7 @@ class ProjectProblemsViewPropertyTest : BaseUnivocityTest() {
   }
 
   private fun hasErrors(psiFile: PsiFile, members: List<PsiMember>? = null): Boolean {
-    val infos = rehighlight(psiFile)
+    val infos = rehighlight(psiFile, openEditor(psiFile.virtualFile))
     return infos.any { info ->
       if (info.severity != HighlightSeverity.ERROR) return@any false
       if (members == null) return@any true
@@ -241,23 +247,42 @@ class ProjectProblemsViewPropertyTest : BaseUnivocityTest() {
     }
   }
 
-  private fun getFilesReportedByProblemSearch(psiFile: PsiFile): Set<VirtualFile> {
-    val reportedChanges: Map<SmartPsiElementPointer<PsiMember>, ReportedChange> = getReportedChanges(psiFile)
+  private fun extractProblems(virtualFile: VirtualFile, inlay: Inlay<*>): String {
+    data class Problem(val fileName: String, val offset: Int, val selectedElement: String, val context: String?)
+
+    fun getProblem(openedFile: VirtualFile, textEditor: TextEditor): Problem {
+      val editor = textEditor.editor
+      val psiFile = PsiManager.getInstance(myProject).findFile(openedFile)!!
+      val offset = editor.caretModel.offset
+      val selectedElement = psiFile.findElementAt(offset)!!
+      val context = PsiTreeUtil.getParentOfType(selectedElement,
+                                                PsiStatement::class.java, PsiExpression::class.java,
+                                                PsiMethod::class.java, PsiClass::class.java)
+      return Problem(openedFile.name, offset, selectedElement.text, context?.text)
+    }
+
+    clickOnInlay(inlay)
+
+    val textEditor = FileEditorManager.getInstance(myProject).selectedEditor as TextEditor
+    val openedFile = textEditor.file!!
+    if (openedFile != virtualFile) return getProblem(openedFile, textEditor).toString()
+
+    val usageView = UsageViewManager.getInstance(myProject).selectedUsageView!!
+    val problems = usageView.usages.map { usage ->
+      usage.navigate(true)
+      val editor = FileEditorManager.getInstance(myProject).selectedEditor as TextEditor
+      val file = editor.file!!
+      getProblem(file, editor)
+    }
+    return problems.joinToString { it.toString() }
+  }
+
+  private fun getFilesReportedByProblemSearch(editor: Editor, psiFile: PsiFile): Set<VirtualFile> {
+    val reportedChanges: Map<PsiMember, Inlay<*>> = ProjectProblemPassUtils.getInlays(editor)
     val virtualFile = psiFile.virtualFile
     val filesWithProblems = mutableSetOf<VirtualFile>()
-    val click = MouseEvent(JPanel(), 0, 0, 0, 0, 0, 0, true, MouseEvent.BUTTON1)
-    val point = Point(0, 0)
-    for (change in reportedChanges.values) {
-      val inlay = change.inlay ?: continue
-      val renderer = inlay.renderer as BlockInlayRenderer
-      val constrainedPresentations = renderer.getConstrainedPresentations()
-      val presentation = constrainedPresentations[0]
-      val root = presentation.root as RecursivelyUpdatingRootPresentation
-      val hoverPresentation = root.content as OnHoverPresentation
-      hoverPresentation.mouseMoved(click, point)
-      val delegatePresentation = hoverPresentation.presentation as DynamicDelegatePresentation
-      val onClickPresentation = delegatePresentation.delegate as OnClickPresentation
-      onClickPresentation.mouseClicked(click, point)
+    for (inlay in reportedChanges.values) {
+      clickOnInlay(inlay)
       val openedFile = FileEditorManager.getInstance(myProject).selectedEditor!!.file!!
       if (openedFile != virtualFile) {
         filesWithProblems.add(openedFile)
@@ -272,6 +297,25 @@ class ProjectProblemsViewPropertyTest : BaseUnivocityTest() {
       }
     }
     return filesWithProblems
+  }
+
+  companion object {
+    private fun clickOnInlay(inlay: Inlay<*>) {
+      val click = MouseEvent(JPanel(), 0, 0, 0, 0, 0, 0, true, MouseEvent.BUTTON1)
+      val point = Point(0, 0)
+      val renderer = inlay.renderer as BlockInlayRenderer
+      val constrainedPresentations = renderer.getConstrainedPresentations()
+      val presentation = constrainedPresentations[0]
+      val root = presentation.root as RecursivelyUpdatingRootPresentation
+      val hoverPresentation = root.content as OnHoverPresentation
+      hoverPresentation.mouseMoved(click, point)
+      val usagesSequencePresentation = (hoverPresentation.presentation as SequencePresentation).presentations[0] as SequencePresentation
+      val usagesHoverPresentation = usagesSequencePresentation.presentations[1] as OnHoverPresentation
+      usagesHoverPresentation.mouseMoved(click, point)
+      val delegatePresentation = usagesHoverPresentation.presentation as DynamicDelegatePresentation
+      val onClickPresentation = delegatePresentation.delegate as OnClickPresentation
+      onClickPresentation.mouseClicked(click, point)
+    }
   }
 
   private sealed class Modification(protected val member: PsiMember, env: ImperativeCommand.Environment) {

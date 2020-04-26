@@ -10,6 +10,7 @@ import com.intellij.ide.util.EditSourceUtil;
 import com.intellij.ide.util.gotoByName.*;
 import com.intellij.ide.util.scopeChooser.ScopeChooserCombo;
 import com.intellij.ide.util.scopeChooser.ScopeDescriptor;
+import com.intellij.lang.LangBundle;
 import com.intellij.navigation.NavigationItem;
 import com.intellij.openapi.MnemonicHelper;
 import com.intellij.openapi.actionSystem.*;
@@ -28,7 +29,6 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.PopupStep;
 import com.intellij.openapi.ui.popup.util.BaseListPopupStep;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
@@ -506,8 +506,7 @@ public abstract class AbstractGotoSEContributor implements WeightedSearchEverywh
         CHOOSE, MnemonicHelper.getFocusAcceleratorKeyMask(), true));
       String shortcutText2 = KeymapUtil.getKeystrokeText(KeyStroke.getKeyStroke(
         TOGGLE, MnemonicHelper.getFocusAcceleratorKeyMask(), true));
-      e.getPresentation().setDescription("Choose scope (" + shortcutText + ")<p/>" +
-                                         "Toggle scope (" + shortcutText2 + ")");
+      e.getPresentation().setDescription(LangBundle.message("action.choose.scope.p.toggle.scope.description", shortcutText, shortcutText2));
       JComponent button = e.getPresentation().getClientProperty(CustomComponentAction.COMPONENT_KEY);
       if (button != null) {
         button.setBackground(selection.getColor());
@@ -572,8 +571,7 @@ public abstract class AbstractGotoSEContributor implements WeightedSearchEverywh
         }
       };
       ScopeDescriptor selection = getSelectedScope();
-      step.setDefaultOptionIndex(ContainerUtil.indexOf(items, o ->
-        Comparing.equal(o.getDisplayName(), selection.getDisplayName())));
+      step.setDefaultOptionIndex(ContainerUtil.indexOf(items, o -> Objects.equals(o.getDisplayName(), selection.getDisplayName())));
       ListPopupImpl popup = new ListPopupImpl(e.getProject(), step);
       popup.setMaxRowCount(10);
       //noinspection unchecked

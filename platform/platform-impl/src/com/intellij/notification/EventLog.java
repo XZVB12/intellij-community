@@ -5,6 +5,7 @@ package com.intellij.notification;
 import com.intellij.execution.filters.HyperlinkInfo;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.impl.ProjectUtil;
+import com.intellij.notification.impl.NotificationCollector;
 import com.intellij.notification.impl.NotificationsConfigurationImpl;
 import com.intellij.notification.impl.NotificationsManagerImpl;
 import com.intellij.openapi.Disposable;
@@ -46,6 +47,7 @@ import javax.swing.event.HyperlinkEvent;
 import java.awt.*;
 import java.util.List;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -58,7 +60,7 @@ public final class EventLog {
   private static final String A_CLOSING = "</a>";
   private static final Pattern TAG_PATTERN = Pattern.compile("<[^>]*>");
   private static final Pattern A_PATTERN = Pattern.compile("<a ([^>]* )?href=[\"']([^>]*)[\"'][^>]*>");
-  private static final @NonNls Set<String> NEW_LINES = ContainerUtil.newHashSet("<br>", "</br>", "<br/>", "<p>", "</p>", "<p/>", "<pre>", "</pre>");
+  @NonNls private static final Set<String> NEW_LINES = ContainerUtil.newHashSet("<br>", "</br>", "<br/>", "<p>", "</p>", "<p/>", "<pre>", "</pre>");
   private static final String DEFAULT_CATEGORY = "";
 
   private final LogModel myModel = new LogModel(null);
@@ -107,12 +109,11 @@ public final class EventLog {
     getProjectService(project).clearNMore(groups);
   }
 
-  @Nullable
-  public static Trinity<Notification, String, Long> getStatusMessage(@Nullable Project project) {
+  public static @Nullable Trinity<Notification, String, Long> getStatusMessage(@Nullable Project project) {
     return getLogModel(project).getStatusMessage();
   }
 
-  public static LogEntry formatForLog(@NotNull final Notification notification, final String indent) {
+  public static LogEntry formatForLog(final @NotNull Notification notification, final String indent) {
     DocumentImpl logDoc = new DocumentImpl("",true);
     AtomicBoolean showMore = new AtomicBoolean(false);
     Map<RangeMarker, HyperlinkInfo> links = new LinkedHashMap<>();
@@ -153,7 +154,10 @@ public final class EventLog {
         public void hyperlinkUpdate(@NotNull Notification n, @NotNull HyperlinkEvent event) {
           Object source = event.getSource();
           DataContext context = source instanceof Component ? DataManager.getInstance().getDataContext((Component)source) : null;
-          Notification.fire(notification, notification.getActions().get(Integer.parseInt(event.getDescription())), context);
+          AnAction action = notification.getActions().get(Integer.parseInt(event.getDescription()));
+          NotificationCollector.getInstance()
+            .logNotificationActionInvoked(notification, action, NotificationCollector.NotificationPlace.EVENT_LOG);
+          Notification.fire(notification, action, context);
         }
       });
       if (title.length() > 0 || content.length() > 0) {
@@ -188,8 +192,7 @@ public final class EventLog {
     return new LogEntry(logDoc.getText(), status, list, titleLength);
   }
 
-  @NotNull
-  private static String addIndents(@NotNull String text, @NotNull String indent) {
+  private static @NotNull String addIndents(@NotNull String text, @NotNull String indent) {
     return StringUtil.replace(text, "\n", "\n" + indent);
   }
 
@@ -208,8 +211,7 @@ public final class EventLog {
     return false;
   }
 
-  @NotNull
-  private static String truncateLongString(AtomicBoolean showMore, String title) {
+  private static @NotNull String truncateLongString(AtomicBoolean showMore, String title) {
     if (title.length() > 1000) {
       showMore.set(true);
       return title.substring(0, 1000) + "...";
@@ -318,7 +320,7 @@ public final class EventLog {
     return hasHtml;
   }
 
-  private static final @NonNls String[] HTML_TAGS =
+  @NonNls private static final String[] HTML_TAGS =
     {"a", "abbr", "acronym", "address", "applet", "area", "article", "aside", "audio", "b", "base", "basefont", "bdi", "bdo", "big",
       "blockquote", "body", "br", "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "command", "datalist", "dd",
       "del", "details", "dfn", "dir", "div", "dl", "dt", "em", "embed", "fieldset", "figcaption", "figure", "font", "footer", "form",
@@ -328,7 +330,7 @@ public final class EventLog {
       "section", "select", "small", "source", "span", "strike", "strong", "style", "sub", "summary", "sup", "table", "tbody", "td",
       "textarea", "tfoot", "th", "thead", "time", "title", "tr", "track", "tt", "u", "ul", "var", "video", "wbr"};
 
-  private static final @NonNls String[] SKIP_TAGS = {"html", "body", "b", "i", "font"};
+  @NonNls private static final String[] SKIP_TAGS = {"html", "body", "b", "i", "font"};
 
   private static boolean isTag(String @NotNull [] tags, @NotNull String tag) {
     tag = tag.substring(1, tag.length() - 1); // skip <>
@@ -414,7 +416,7 @@ public final class EventLog {
     return project == null ? null : ToolWindowManager.getInstance(project).getToolWindow(LOG_TOOL_WINDOW_ID);
   }
 
-  public static void toggleLog(@Nullable final Project project, @Nullable final Notification notification) {
+  public static void toggleLog(final @Nullable Project project, final @Nullable Notification notification) {
     final ToolWindow eventLog = getEventLog(project);
     if (eventLog != null) {
       if (!eventLog.isVisible()) {
@@ -440,13 +442,11 @@ public final class EventLog {
     }, true);
   }
 
-  @Service
   static final class ProjectTracker implements Disposable {
-    private final Map<String, EventLogConsole> myCategoryMap = ContainerUtil.newConcurrentMap();
+    private final Map<String, EventLogConsole> myCategoryMap = new ConcurrentHashMap<>();
     private final List<Notification> myInitial = ContainerUtil.createLockFreeCopyOnWriteList();
     private final LogModel myProjectModel;
-    @NotNull
-    private final Project myProject;
+    private final @NotNull Project myProject;
 
     ProjectTracker(@NotNull Project project) {
       myProjectModel = new LogModel(project);
@@ -504,6 +504,7 @@ public final class EventLog {
 
       myProjectModel.addNotification(notification);
 
+      NotificationCollector.getInstance().logNotificationLoggedInEventLog(myProject, notification);
       EventLogConsole console = getConsole(notification);
       if (console == null) {
         myInitial.add(notification);
@@ -517,7 +518,7 @@ public final class EventLog {
       }
     }
 
-    private void showNotification(@NotNull final String groupId, @NotNull final List<String> ids) {
+    private void showNotification(final @NotNull String groupId, final @NotNull List<String> ids) {
       ToolWindow eventLog = getEventLog(myProject);
       if (eventLog != null) {
         activate(eventLog, groupId, () -> {
@@ -538,13 +539,11 @@ public final class EventLog {
       }
     }
 
-    @Nullable
-    private EventLogConsole getConsole(@NotNull Notification notification) {
+    private @Nullable EventLogConsole getConsole(@NotNull Notification notification) {
       return getConsole(notification.getGroupId());
     }
 
-    @Nullable
-    private EventLogConsole getConsole(@NotNull String groupId) {
+    private @Nullable EventLogConsole getConsole(@NotNull String groupId) {
       if (myCategoryMap.get(DEFAULT_CATEGORY) == null) {
         // still not initialized
         return null;
@@ -555,8 +554,7 @@ public final class EventLog {
       return console == null ? createNewContent(name) : console;
     }
 
-    @NotNull
-    private EventLogConsole createNewContent(@NotNull String name) {
+    private @NotNull EventLogConsole createNewContent(@NotNull String name) {
       ApplicationManager.getApplication().assertIsDispatchThread();
       ToolWindow toolWindow = Objects.requireNonNull(ToolWindowManager.getInstance(myProject).getToolWindow(LOG_TOOL_WINDOW_ID));
       EventLogConsole newConsole = new EventLogConsole(myProjectModel, toolWindow.getDisposable());
@@ -566,8 +564,7 @@ public final class EventLog {
     }
   }
 
-  @NotNull
-  private static String getContentName(@NotNull String groupId) {
+  private static @NotNull String getContentName(@NotNull String groupId) {
     for (EventLogCategory category : EventLogCategory.EP_NAME.getExtensionList()) {
       if (category.acceptsNotification(groupId)) {
         return category.getDisplayName();
@@ -631,6 +628,7 @@ public final class EventLog {
         Balloon balloon =
           NotificationsManagerImpl.createBalloon(frame, myNotification, true, true, BalloonLayoutData.fullContent(), project);
         balloon.show(target, Balloon.Position.above);
+        NotificationCollector.getInstance().logBalloonShownFromEventLog(myNotification);
       }
     }
 

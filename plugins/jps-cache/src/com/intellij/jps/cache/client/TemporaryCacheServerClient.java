@@ -30,6 +30,7 @@ import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.zip.GZIPInputStream;
 
 public class TemporaryCacheServerClient implements JpsServerClient {
   private static final Logger LOG = Logger.getInstance("com.intellij.jps.cache.client.TemporaryCacheServerClient");
@@ -39,7 +40,7 @@ public class TemporaryCacheServerClient implements JpsServerClient {
   private final String stringThree;
 
   private TemporaryCacheServerClient() {
-    byte[] decodedBytes = Base64.getDecoder().decode("aHR0cHM6Ly90ZW1wb3JhcnktY2FjaGUubGFicy5pbnRlbGxpai5uZXQvY2FjaGUv");
+    byte[] decodedBytes = Base64.getDecoder().decode("aHR0cHM6Ly90ZW1wb3JhcnktZmlsZXMtY2FjaGUubGFicy5qYi5nZy9jYWNoZS8=");
     stringThree = new String(decodedBytes, CharsetToolkit.UTF8_CHARSET);
   }
 
@@ -154,7 +155,8 @@ public class TemporaryCacheServerClient implements JpsServerClient {
             HttpURLConnection httpConnection = (HttpURLConnection)connection;
             if (httpConnection.getResponseCode() == 200) {
               InputStream inputStream = httpConnection.getInputStream();
-              return OBJECT_MAPPER.readValue(inputStream, new TypeReference<Map<String, List<String>>>() {});
+              GZIPInputStream gzipInputStream = new GZIPInputStream(inputStream);
+              return OBJECT_MAPPER.readValue(gzipInputStream, new TypeReference<Map<String, List<String>>>() {});
             }
 
             else {

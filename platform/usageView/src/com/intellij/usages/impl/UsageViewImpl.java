@@ -390,7 +390,7 @@ public class UsageViewImpl implements UsageViewEx {
   }
 
   @NotNull
-  UsageViewSettings getUsageViewSettings() {
+  public UsageViewSettings getUsageViewSettings() {
     return UsageViewSettings.getInstance();
   }
 
@@ -1078,12 +1078,15 @@ public class UsageViewImpl implements UsageViewEx {
       final ConfigurableUsageTarget configurableUsageTarget = getConfigurableTarget(myTargets);
       String description = null;
       try {
-        description = configurableUsageTarget == null ? null : "Show settings for " + configurableUsageTarget.getLongDescriptiveName();
+        description = configurableUsageTarget == null
+                      ? null
+                      : UsageViewBundle.message("action.ShowSettings.show.settings.for.description") + " " +
+                        configurableUsageTarget.getLongDescriptiveName();
       }
       catch (IndexNotReadyException ignored) {
       }
       if (description == null) {
-        description = "Show find usages settings dialog";
+        description = UsageViewBundle.message("action.ShowSettings.show.find.usages.settings.dialog.description");
       }
       getTemplatePresentation().setDescription(description);
       KeyboardShortcut shortcut =
@@ -1445,7 +1448,10 @@ public class UsageViewImpl implements UsageViewEx {
 
     if (!smartPointers.isEmpty()) {
       for (SmartPsiElementPointer<?> pointer : smartPointers) {
-        SmartPointerManager.getInstance(pointer.getProject()).removePointer(pointer);
+        Project project = pointer.getProject();
+        if (!project.isDisposed()) {
+          SmartPointerManager.getInstance(project).removePointer(pointer);
+        }
       }
     }
     myUsageNodes.clear();

@@ -2,15 +2,13 @@
 package org.intellij.lang.regexp.psi.impl;
 
 import com.intellij.lang.ASTNode;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.SyntaxTraverser;
-import com.intellij.psi.search.PsiElementProcessor;
 import com.intellij.psi.tree.TokenSet;
-import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
+import java.util.Objects;
 import org.intellij.lang.regexp.RegExpTT;
 import org.intellij.lang.regexp.psi.RegExpElementVisitor;
 import org.intellij.lang.regexp.psi.RegExpGroup;
@@ -38,17 +36,9 @@ public class RegExpNamedGroupRefImpl extends RegExpElementImpl implements RegExp
   @Override
   @Nullable
   public RegExpGroup resolve() {
-    final PsiElementProcessor.FindFilteredElement<PsiElement> processor = new PsiElementProcessor.FindFilteredElement<>(
-      element -> {
-        if (!(element instanceof RegExpGroup)) {
-          return false;
-        }
-        final RegExpGroup group = (RegExpGroup)element;
-        return group.isAnyNamedGroup() && Comparing.equal(getGroupName(), group.getGroupName());
-      }
-    );
-    PsiTreeUtil.processElements(getContainingFile(), processor);
-    return (RegExpGroup)processor.getFoundElement();
+    return SyntaxTraverser.psiTraverser(getContainingFile()).filter(RegExpGroup.class)
+      .filter(group -> group.isAnyNamedGroup() && Objects.equals(getGroupName(), group.getGroupName()))
+      .first();
   }
 
   @Override

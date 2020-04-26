@@ -15,6 +15,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.indexing.impl.*;
 import com.intellij.util.indexing.impl.forward.*;
 import com.intellij.util.indexing.impl.perFileVersion.PersistentSubIndexerRetriever;
+import com.intellij.util.indexing.memory.InMemoryForwardIndex;
 import com.intellij.util.indexing.snapshot.*;
 import com.intellij.util.io.IOUtil;
 import gnu.trove.THashSet;
@@ -63,7 +64,7 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
                                 @NotNull IndexStorage<Key, Value> storage) throws IOException {
     this(extension,
          storage,
-         hasSnapshotMapping(extension) ? new SnapshotInputMappings<>(extension) : null);
+         hasSnapshotMapping(extension) ? new SnapshotInputMappings<>(extension, getForwardIndexAccessor(extension)) : null);
     if (!(myIndexId instanceof ID<?, ?>)) {
       throw new IllegalArgumentException("myIndexId should be instance of com.intellij.util.indexing.ID");
     }
@@ -74,7 +75,7 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
                                 @Nullable SnapshotInputMappings<Key, Value> snapshotInputMappings) throws IOException {
     this(extension,
          storage,
-         snapshotInputMappings != null ? new SharedIntMapForwardIndex(extension, snapshotInputMappings.getInputIndexStorageFile(), true)
+         snapshotInputMappings != null ? new IntMapForwardIndex(snapshotInputMappings.getInputIndexStorageFile(), true)
                                        : getForwardIndexMap(extension),
          snapshotInputMappings != null ? snapshotInputMappings.getForwardIndexAccessor() : getForwardIndexAccessor(extension),
          snapshotInputMappings, null);
@@ -87,11 +88,8 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
                                 @Nullable SnapshotInputMappings<Key, Value> snapshotInputMappings,
                                 @Nullable ReadWriteLock lock) {
     super(extension, storage, forwardIndexMap, forwardIndexAccessor, lock);
-    if (myIndexId instanceof ID) {
-      SharedIndicesData.registerIndex((ID<Key, Value>)myIndexId, extension);
-    }
-    if (storage instanceof MemoryIndexStorage && snapshotInputMappings != null) {
-      VfsAwareIndexStorage<Key, Value> backendStorage = ((MemoryIndexStorage<Key, Value>)storage).getBackendStorage();
+    if (storage instanceof TransientChangesIndexStorage && snapshotInputMappings != null) {
+      VfsAwareIndexStorage<Key, Value> backendStorage = ((TransientChangesIndexStorage<Key, Value>)storage).getBackendStorage();
       if (backendStorage instanceof SnapshotSingleValueIndexStorage) {
         LOG.assertTrue(forwardIndexMap instanceof IntForwardIndex);
         ((SnapshotSingleValueIndexStorage<Key, Value>)backendStorage).init(snapshotInputMappings, ((IntForwardIndex)forwardIndexMap));
@@ -120,13 +118,14 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
   }
 
   public static boolean isCompositeIndexer(@NotNull DataIndexer<?, ?, ?> indexer) {
-    return indexer instanceof CompositeDataIndexer && InvertedIndex.ARE_COMPOSITE_INDEXERS_ENABLED;
+    return indexer instanceof CompositeDataIndexer && !FileBasedIndex.USE_IN_MEMORY_INDEX;
   }
 
-  static <Key, Value> boolean hasSnapshotMapping(@NotNull IndexExtension<Key, Value, ?> indexExtension) {
+  public static <Key, Value> boolean hasSnapshotMapping(@NotNull IndexExtension<Key, Value, ?> indexExtension) {
     return indexExtension instanceof FileBasedIndexExtension &&
            ((FileBasedIndexExtension<Key, Value>)indexExtension).hasSnapshotMapping() &&
-           FileBasedIndex.ourSnapshotMappingsEnabled;
+           FileBasedIndex.ourSnapshotMappingsEnabled &&
+           !FileBasedIndex.USE_IN_MEMORY_INDEX;
   }
 
   @NotNull
@@ -169,7 +168,7 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
       synchronized (myInMemoryKeysAndValues) {
         Map<Key, Value> keysAndValues = myInMemoryKeysAndValues.get(inputId);
         if (keysAndValues != null) {
-          return getKeysDiffBuilderInMemoryMode(inputId, keysAndValues);
+          return getKeysDiffBuilder(inputId, keysAndValues);
         }
       }
     }
@@ -177,9 +176,8 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
   }
 
   @NotNull
-  protected InputDataDiffBuilder<Key, Value> getKeysDiffBuilderInMemoryMode(int inputId, @NotNull Map<Key, Value> keysAndValues) {
-    return mySingleEntryIndex ? new SingleEntryIndexForwardIndexAccessor.SingleValueDiffBuilder(inputId, keysAndValues)
-                              : new MapInputDataDiffBuilder<>(inputId, keysAndValues);
+  public InputDataDiffBuilder<Key, Value> getKeysDiffBuilder(int inputId, @NotNull Map<Key, Value> keysAndValues) throws IOException {
+    return ((AbstractMapForwardIndexAccessor<Key, Value, ?>)getForwardIndexAccessor()).createDiffBuilderByMap(inputId, keysAndValues);
   }
 
   @Override
@@ -212,22 +210,23 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
   }
 
   @Override
-  public boolean isIndexedStateForFile(int fileId, @NotNull IndexedFile file) {
-    if (!IndexingStamp.isFileIndexedStateCurrent(fileId, (ID<?, ?>)myIndexId)) {
-      return false;
+  public @NotNull FileIndexingState getIndexingStateForFile(int fileId, @NotNull IndexedFile file) {
+    FileIndexingState baseState = IndexingStamp.isFileIndexedStateCurrent(fileId, (ID<?, ?>)myIndexId);
+    if (baseState != FileIndexingState.UP_TO_DATE) {
+      return baseState;
     }
-    if (mySubIndexerRetriever == null) return true;
+    if (mySubIndexerRetriever == null) return FileIndexingState.UP_TO_DATE;
     if (!(file instanceof FileContent)) {
       if (((CompositeDataIndexer)myIndexer).requiresContentForSubIndexerEvaluation(file)) {
-        return isIndexConfigurationUpToDate(fileId, file);
+        return isIndexConfigurationUpToDate(fileId, file) ? FileIndexingState.UP_TO_DATE : FileIndexingState.OUT_DATED;
       }
     }
     try {
-      return mySubIndexerRetriever.isIndexed(fileId, file);
+      return mySubIndexerRetriever.isIndexed(fileId, file) ? FileIndexingState.UP_TO_DATE : FileIndexingState.OUT_DATED;
     }
     catch (IOException e) {
       LOG.error(e);
-      return false;
+      return FileIndexingState.OUT_DATED;
     }
   }
 
@@ -265,7 +264,7 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
 
   @Override
   public void removeTransientDataForKeys(int inputId, @NotNull Collection<? extends Key> keys) {
-    MemoryIndexStorage<Key, Value> memoryIndexStorage = (MemoryIndexStorage<Key, Value>)getStorage();
+    TransientChangesIndexStorage<Key, Value> memoryIndexStorage = (TransientChangesIndexStorage<Key, Value>)getStorage();
     boolean modified = false;
     for (Key key : keys) {
       if (memoryIndexStorage.clearMemoryMapForId(key, inputId) && !modified) {
@@ -280,12 +279,12 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
 
   @Override
   public void setBufferingEnabled(boolean enabled) {
-    ((MemoryIndexStorage<Key, Value>)getStorage()).setBufferingEnabled(enabled);
+    ((TransientChangesIndexStorage<Key, Value>)getStorage()).setBufferingEnabled(enabled);
   }
 
   @Override
   public void cleanupMemoryStorage() {
-    MemoryIndexStorage<Key, Value> memStorage = (MemoryIndexStorage<Key, Value>)getStorage();
+    TransientChangesIndexStorage<Key, Value> memStorage = (TransientChangesIndexStorage<Key, Value>)getStorage();
     ConcurrencyUtil.withLock(getWriteLock(), () -> {
       if (memStorage.clearMemoryMap()) {
         myModificationStamp.incrementAndGet();
@@ -297,7 +296,7 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
   @TestOnly
   @Override
   public void cleanupForNextTest() {
-    MemoryIndexStorage<Key, Value> memStorage = (MemoryIndexStorage<Key, Value>)getStorage();
+    TransientChangesIndexStorage<Key, Value> memStorage = (TransientChangesIndexStorage<Key, Value>)getStorage();
     ConcurrencyUtil.withLock(getReadLock(), () -> memStorage.clearCaches());
   }
 
@@ -332,13 +331,8 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
       Map<Key, Value> map = myInMemoryKeysAndValues.get(fileId);
       if (map != null) return map;
     }
-    if (getForwardIndexAccessor() instanceof AbstractMapForwardIndexAccessor) {
-      ByteArraySequence serializedInputData = getForwardIndex().get(fileId);
-      AbstractMapForwardIndexAccessor<Key, Value, ?> forwardIndexAccessor = (AbstractMapForwardIndexAccessor<Key, Value, ?>)getForwardIndexAccessor();
-      return forwardIndexAccessor.convertToInputDataMap(serializedInputData);
-    }
     // in future we will get rid of forward index for SingleEntryFileBasedIndexExtension
-    if (myExtension instanceof SingleEntryFileBasedIndexExtension) {
+    if (mySingleEntryIndex) {
       Key key = (Key)(Object)fileId;
       final Map<Key, Value>[] result = new Map[]{Collections.emptyMap()};
       ValueContainer<Value> container = getData(key);
@@ -347,6 +341,11 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
         return false;
       });
       return result[0];
+    }
+    if (getForwardIndexAccessor() instanceof AbstractMapForwardIndexAccessor) {
+      ByteArraySequence serializedInputData = getForwardIndex().get(fileId);
+      AbstractMapForwardIndexAccessor<Key, Value, ?> forwardIndexAccessor = (AbstractMapForwardIndexAccessor<Key, Value, ?>)getForwardIndexAccessor();
+      return forwardIndexAccessor.convertToInputDataMap(fileId, serializedInputData);
     }
     LOG.error("Can't fetch indexed data for index " + myIndexId.getName());
     return null;
@@ -410,17 +409,20 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
     }
   }
 
-  @Nullable
-  private static <Key, Value> ForwardIndexAccessor<Key, Value> getForwardIndexAccessor(@NotNull IndexExtension<Key, Value, ?> indexExtension) {
-    if (!shouldCreateForwardIndex(indexExtension)) return null;
-    if (indexExtension instanceof SingleEntryFileBasedIndexExtension) return new SingleEntryIndexForwardIndexAccessor(indexExtension);
-    return new MapForwardIndexAccessor<>(new InputMapExternalizer<>(indexExtension));
+  @ApiStatus.Internal
+  @NotNull
+  public static <Key, Value> AbstractMapForwardIndexAccessor<Key, Value, ?> getForwardIndexAccessor(@NotNull IndexExtension<Key, Value, ?> indexExtension) {
+    if (!(indexExtension instanceof SingleEntryFileBasedIndexExtension) || FileBasedIndex.USE_IN_MEMORY_INDEX) {
+      return new MapForwardIndexAccessor<>(new InputMapExternalizer<>(indexExtension));
+    }
+    return new SingleEntryIndexForwardIndexAccessor(indexExtension);
   }
 
   @Nullable
   private static ForwardIndex getForwardIndexMap(@NotNull IndexExtension<?, ?, ?> indexExtension)
     throws IOException {
     if (!shouldCreateForwardIndex(indexExtension)) return null;
+    if (FileBasedIndex.USE_IN_MEMORY_INDEX) return new InMemoryForwardIndex();
     if (indexExtension instanceof SingleEntryFileBasedIndexExtension<?>) return new EmptyForwardIndex(); // indexStorage and forwardIndex are same here
     File indexStorageFile = IndexInfrastructure.getInputIndexStorageFile((ID<?, ?>)indexExtension.getName());
     return new PersistentMapBasedForwardIndex(indexStorageFile.toPath(), false, false);
@@ -432,8 +434,8 @@ public class VfsAwareMapReduceIndex<Key, Value> extends MapReduceIndex<Key, Valu
 
   private void installMemoryModeListener() {
     IndexStorage<Key, Value> storage = getStorage();
-    if (storage instanceof MemoryIndexStorage) {
-      ((MemoryIndexStorage<Key, Value>)storage).addBufferingStateListener(new MemoryIndexStorage.BufferingStateListener() {
+    if (storage instanceof TransientChangesIndexStorage) {
+      ((TransientChangesIndexStorage<Key, Value>)storage).addBufferingStateListener(new TransientChangesIndexStorage.BufferingStateListener() {
         @Override
         public void bufferingStateChanged(boolean newState) {
           myInMemoryMode.set(newState);
