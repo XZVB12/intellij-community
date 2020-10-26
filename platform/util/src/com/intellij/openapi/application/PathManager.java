@@ -1,25 +1,27 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.application;
 
-import com.intellij.openapi.util.Pair;
+import com.intellij.diagnostic.StartUpMeasurer;
 import com.intellij.openapi.util.PropertiesUtil;
 import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.openapi.util.text.StringUtilRt;
+import com.intellij.openapi.util.text.Strings;
+import com.intellij.psi.codeStyle.MinusculeMatcher;
 import com.intellij.util.SystemProperties;
+import com.intellij.util.containers.FList;
 import com.intellij.util.io.URLUtil;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.Reader;
+import java.io.*;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,23 +38,24 @@ public final class PathManager {
   public static final String PROPERTY_LOG_CONFIG_FILE = "idea.log.config.file";
   public static final String PROPERTY_PATHS_SELECTOR = "idea.paths.selector";
 
-  public static final String OPTIONS_DIRECTORY = "options";
+  public static final @NonNls String OPTIONS_DIRECTORY = "options";
   public static final String DEFAULT_EXT = ".xml";
   public static final String DEFAULT_OPTIONS_FILE = "other" + DEFAULT_EXT;
 
   private static final String KOTLIN_IDE_IML_RELATIVE_PATH = "kotlin/idea/kotlin.idea.iml";
-  private static final String INTELLIJ_SUB_REPO_NAME = "intellij";
+  private static final @NonNls String KOTLIN_COMMUNITY_IDE_IML_RELATIVE_PATH = "idea/kotlin.idea.iml";
+  private static final @NonNls String INTELLIJ_SUB_REPO_NAME = "intellij";
 
   private static final String PROPERTY_HOME = "idea.home";  // reduced variant of PROPERTY_HOME_PATH, now deprecated
+  private static final String PROPERTY_VENDOR_NAME = "idea.vendor.name";
 
-  private static final String LIB_DIRECTORY = "lib";
-  private static final String PLUGINS_DIRECTORY = "plugins";
-  private static final String BIN_DIRECTORY = "bin";
-  private static final String LOG_DIRECTORY = "log";
-  private static final String CONFIG_DIRECTORY = "config";
+  private static final @NonNls String LIB_DIRECTORY = "lib";
+  private static final @NonNls String PLUGINS_DIRECTORY = "plugins";
+  private static final @NonNls String BIN_DIRECTORY = "bin";
+  private static final @NonNls String LOG_DIRECTORY = "log";
+  private static final @NonNls String CONFIG_DIRECTORY = "config";
   private static final String SYSTEM_DIRECTORY = "system";
   private static final String PATHS_SELECTOR = System.getProperty(PROPERTY_PATHS_SELECTOR);
-  private static final String IDE_VENDOR_NAME = System.getProperty("idea.vendor.name", "JetBrains");
 
   private static class Lazy {
     private static final Pattern PROPERTY_REF = Pattern.compile("\\$\\{(.+?)}");
@@ -60,6 +63,7 @@ public final class PathManager {
 
   private static volatile String ourHomePath;
   private static volatile List<Path> ourBinDirectories;
+  private static Path ourCommonDataPath;
   private static String ourConfigPath;
   private static String ourSystemPath;
   private static String ourScratchPath;
@@ -97,8 +101,7 @@ public final class PathManager {
       else if (insideIde) {
         result = getHomePathFor(PathManager.class);
         if (result == null) {
-          String advice =
-            SystemInfoRt.isMac ? "reinstall the software." : "make sure bin/idea.properties is present in the installation directory.";
+          String advice = SystemInfoRt.isMac ? "reinstall the software." : "make sure bin/idea.properties is present in the installation directory.";
           throw new RuntimeException("Could not find installation home path. Please " + advice);
         }
       }
@@ -157,8 +160,11 @@ public final class PathManager {
    * This is temp util method and it's supposed to be removed when kotlin-20202 experiment is over
    */
   private static boolean isKotlinIdeRepoHome(@NotNull Path path) {
+    boolean containsRootKotlinModuleFile = Files.isRegularFile(path.resolve(KOTLIN_IDE_IML_RELATIVE_PATH)) ||
+                                           Files.isRegularFile(path.resolve(KOTLIN_COMMUNITY_IDE_IML_RELATIVE_PATH));
+
     return Files.isDirectory(path) &&
-           Files.isRegularFile(path.resolve(KOTLIN_IDE_IML_RELATIVE_PATH)) &&
+           containsRootKotlinModuleFile &&
            Files.isDirectory(path.resolve(INTELLIJ_SUB_REPO_NAME)) &&
            isIdeaHome(path.resolve(INTELLIJ_SUB_REPO_NAME));
   }
@@ -175,7 +181,7 @@ public final class PathManager {
   private static List<Path> getBinDirectories(Path root) {
     List<Path> binDirs = new ArrayList<>();
 
-    String[] subDirs = {BIN_DIRECTORY, "community/bin", "ultimate/community/bin"};
+    @NonNls String[] subDirs = {BIN_DIRECTORY, "community/bin", "ultimate/community/bin"};
     String osSuffix = SystemInfoRt.isWindows ? "win" : SystemInfoRt.isMac ? "mac" : "linux";
 
     for (String subDir : subDirs) {
@@ -228,7 +234,7 @@ public final class PathManager {
       return file;
     }
 
-    StringBuilder message = new StringBuilder();
+    @NonNls StringBuilder message = new StringBuilder();
     message.append('\'').append(fileName).append("' not found in directories:");
     for (Path directory : getBinDirectories()) {
       message.append('\n').append(directory);
@@ -245,6 +251,22 @@ public final class PathManager {
   }
 
   // config paths
+
+  public static synchronized @NotNull Path getCommonDataPath() {
+    if (ourCommonDataPath == null) {
+      Path path = Paths.get(platformPath("", "Application Support", "", "APPDATA", "", "XDG_DATA_HOME", ".local/share", ""));
+      if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+        try {
+          Files.createDirectories(path);
+        }
+        catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      }
+      ourCommonDataPath = path;
+    }
+    return ourCommonDataPath;
+  }
 
   public static @Nullable String getPathsSelector() {
     return PATHS_SELECTOR;
@@ -346,7 +368,7 @@ public final class PathManager {
     return platformPath(selector, "Caches", "", "LOCALAPPDATA", "", "XDG_CACHE_HOME", ".cache", "");
   }
 
-  public static @NotNull String getTempPath() {
+  public static @NotNull @NonNls String getTempPath() {
     return getSystemPath() + "/tmp";
   }
 
@@ -410,7 +432,14 @@ public final class PathManager {
     String resultPath = null;
     String protocol = resourceURL.getProtocol();
     if (URLUtil.FILE_PROTOCOL.equals(protocol)) {
-      String path = URLUtil.urlToFile(resourceURL).getPath();
+      File result;
+      try {
+        result = new File(resourceURL.toURI().getSchemeSpecificPart());
+      }
+      catch (URISyntaxException e) {
+        throw new IllegalArgumentException("URL='" + resourceURL.toString() + "'", e);
+      }
+      String path = result.getPath();
       String testPath = path.replace('\\', '/');
       String testResourcePath = resourcePath.replace('\\', '/');
       if (StringUtilRt.endsWithIgnoreCase(testPath, testResourcePath)) {
@@ -418,9 +447,10 @@ public final class PathManager {
       }
     }
     else if (URLUtil.JAR_PROTOCOL.equals(protocol)) {
-      Pair<String, String> paths = URLUtil.splitJarUrl(resourceURL.getFile());
-      if (paths != null && paths.first != null) {
-        resultPath = paths.first;
+      // do not use URLUtil.splitJarUrl here - used in bootstrap
+      String jarPath = splitJarUrl(resourceURL.getFile());
+      if (jarPath != null) {
+        resultPath = jarPath;
       }
     }
     else if (URLUtil.JRT_PROTOCOL.equals(protocol)) {
@@ -435,6 +465,58 @@ public final class PathManager {
     return Paths.get(resultPath).normalize().toString();
   }
 
+  // do not use URLUtil.splitJarUrl here - used in bootstrap
+  private static @Nullable String splitJarUrl(@NotNull String url) {
+    int pivot = url.indexOf(URLUtil.JAR_SEPARATOR);
+    if (pivot < 0) {
+      return null;
+    }
+
+    String jarPath = url.substring(0, pivot);
+
+    boolean startsWithConcatenation = true;
+    int offset = 0;
+    for (String prefix : new String[]{URLUtil.JAR_PROTOCOL, ":"}) {
+      int prefixLen = prefix.length();
+      if (!jarPath.regionMatches(offset, prefix, 0, prefixLen)) {
+        startsWithConcatenation = false;
+        break;
+      }
+      offset += prefixLen;
+    }
+    if (startsWithConcatenation) {
+      jarPath = jarPath.substring(URLUtil.JAR_PROTOCOL.length() + 1);
+    }
+
+    if (!jarPath.startsWith(URLUtil.FILE_PROTOCOL)) {
+      return jarPath;
+    }
+
+    try {
+      File result;
+      URL parsedUrl = new URL(jarPath);
+      try {
+        result = new File(parsedUrl.toURI().getSchemeSpecificPart());
+      }
+      catch (URISyntaxException e) {
+        throw new IllegalArgumentException("URL='" + parsedUrl.toString() + "'", e);
+      }
+      return result.getPath().replace('\\', '/');
+    }
+    catch (Exception e) {
+      jarPath = jarPath.substring(URLUtil.FILE_PROTOCOL.length());
+      if (jarPath.startsWith(URLUtil.SCHEME_SEPARATOR)) {
+        return jarPath.substring(URLUtil.SCHEME_SEPARATOR.length());
+      }
+      else if (!jarPath.isEmpty() && jarPath.charAt(0) == ':') {
+        return jarPath.substring(1);
+      }
+      else {
+        return jarPath;
+      }
+    }
+  }
+
   public static void loadProperties() {
     Set<String> paths = new LinkedHashSet<>();
     paths.add(System.getProperty(PROPERTIES_FILE));
@@ -446,8 +528,8 @@ public final class PathManager {
 
     Properties sysProperties = System.getProperties();
     for (String path : paths) {
-      Path file = path != null ? Paths.get(path) : null;
-      if (file != null && Files.exists(file)) {
+      Path file = path == null ? null : Paths.get(path);
+      if (file != null) {
         try (Reader reader = Files.newBufferedReader(file)) {
           Map<String, String> properties = PropertiesUtil.loadProperties(reader);
           for (Map.Entry<String, String> entry : properties.entrySet()) {
@@ -459,6 +541,8 @@ public final class PathManager {
               sysProperties.setProperty(key, substituteVars(entry.getValue()));
             }
           }
+        }
+        catch (NoSuchFileException | AccessDeniedException ignore) {
         }
         catch (IOException e) {
           log("Can't read property file '" + path + "': " + e.getMessage());
@@ -526,7 +610,7 @@ public final class PathManager {
   /**
    * @return path to 'community' project home irrespective of current project
    */
-  public static @NotNull String getCommunityHomePath() {
+  public static @NotNull @NonNls String getCommunityHomePath() {
     String path = getHomePath();
     if (Files.isDirectory(Paths.get(path, "community/.idea"))) {
       return path + "/community";
@@ -547,12 +631,17 @@ public final class PathManager {
 
     @SuppressWarnings("UnnecessaryFullyQualifiedName") Class<?>[] classes = {
       PathManager.class,                               // module 'intellij.platform.util'
+      Strings.class,                                   // module 'intellij.platform.util.strings'
+      FList.class,                                     // module 'intellij.platform.util.collections'
+      MinusculeMatcher.class,                          // module 'intellij.platform.util.text.matching'
+      StartUpMeasurer.class,                           // module 'intellij.platform.util.diagnostic'
       com.intellij.openapi.util.SystemInfoRt.class,    // module 'intellij.platform.util.rt'
       com.intellij.util.lang.UrlClassLoader.class,     // module 'intellij.platform.util.classLoader'
       org.intellij.lang.annotations.Flow.class,        // jetbrains-annotations-java5
       org.jdom.Document.class,                         // jDOM
       org.apache.log4j.Appender.class,                 // Log4J
       gnu.trove.THashSet.class,                        // Trove
+      Object2IntMap.class,                             // fastutil
       com.sun.jna.TypeMapper.class,                    // JNA
       com.sun.jna.platform.FileUtils.class,            // JNA (jna-platform)
       org.apache.oro.text.regex.PatternMatcher.class,  // OROMatcher
@@ -576,7 +665,7 @@ public final class PathManager {
   // helpers
 
   @SuppressWarnings("UseOfSystemOutOrSystemErr")
-  private static void log(String x) {
+  private static void log(@NonNls String x) {
     System.err.println(x);
   }
 
@@ -592,19 +681,24 @@ public final class PathManager {
     return path != null ? getAbsolutePath(StringUtilRt.unquoteString(path, '"')) : null;
   }
 
-  private static String platformPath(String selector, String macDir, String macSub, String winVar, String winSub, String xdgVar, String xdgDfl, String xdgSub) {
-    String userHome = SystemProperties.getUserHome();
+  private static String platformPath(@NonNls String selector,
+                                     @NonNls String macDir, @NonNls String macSub,
+                                     @NonNls String winVar, @NonNls String winSub,
+                                     @NonNls String xdgVar, @NonNls String xdgDfl, @NonNls String xdgSub) {
+    String userHome = SystemProperties.getUserHome(), vendorName = vendorName();
 
     if (SystemInfoRt.isMac) {
-      String dir = userHome + "/Library/" + macDir + '/' + IDE_VENDOR_NAME + '/' + selector;
+      @NonNls String dir = userHome + "/Library/" + macDir + '/' + vendorName;
+      if (!selector.isEmpty()) dir = dir + '/' + selector;
       if (!macSub.isEmpty()) dir = dir + '/' + macSub;
       return dir;
     }
 
     if (SystemInfoRt.isWindows) {
-      String dir = System.getenv(winVar);
+      @NonNls String dir = System.getenv(winVar);
       if (dir == null || dir.isEmpty()) dir = userHome + "\\AppData\\" + (winVar.startsWith("LOCAL") ? "Local" : "Roaming");
-      dir = dir + '\\' + IDE_VENDOR_NAME + '\\' + selector;
+      dir = dir + '\\' + vendorName;
+      if (!selector.isEmpty()) dir = dir + '\\' + selector;
       if (!winSub.isEmpty()) dir = dir + '\\' + winSub;
       return dir;
     }
@@ -612,11 +706,28 @@ public final class PathManager {
     if (SystemInfoRt.isUnix) {
       String dir = System.getenv(xdgVar);
       if (dir == null || dir.isEmpty()) dir = userHome + '/' + xdgDfl;
-      dir = dir + '/' + IDE_VENDOR_NAME + '/' + selector;
+      dir = dir + '/' + vendorName;
+      if (!selector.isEmpty()) dir = dir + '/' + selector;
       if (!xdgSub.isEmpty()) dir = dir + '/' + xdgSub;
       return dir;
     }
 
     throw new UnsupportedOperationException("Unsupported OS: " + SystemInfoRt.OS_NAME);
+  }
+
+  private static String vendorName() {
+    String property = System.getProperty(PROPERTY_VENDOR_NAME);
+    if (property == null) {
+      try {
+        Class<?> ex = Class.forName("com.intellij.openapi.application.ex.ApplicationInfoEx");
+        Class<?> impl = Class.forName("com.intellij.openapi.application.impl.ApplicationInfoImpl");
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        Object instance = lookup.findStatic(impl, "getShadowInstance", MethodType.methodType(ex)).invoke();
+        property = (String)lookup.findVirtual(impl, "getShortCompanyName", MethodType.methodType(String.class)).invoke(instance);
+      }
+      catch (Throwable ignored) { }
+      System.setProperty(PROPERTY_VENDOR_NAME, property != null ? property : "JetBrains");
+    }
+    return property;
   }
 }

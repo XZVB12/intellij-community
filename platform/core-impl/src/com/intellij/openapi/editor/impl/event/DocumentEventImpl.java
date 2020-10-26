@@ -9,8 +9,10 @@ import org.jetbrains.annotations.NotNull;
 
 public class DocumentEventImpl extends DocumentEvent {
   private final int myOffset;
+  @NotNull
   private final CharSequence myOldString;
   private final int myOldLength;
+  @NotNull
   private final CharSequence myNewString;
   private final int myNewLength;
 
@@ -59,7 +61,7 @@ public class DocumentEventImpl extends DocumentEvent {
     myIsWholeDocReplaced = getDocument().getTextLength() != 0 && wholeTextReplaced;
     assert initialStartOffset >= 0 : initialStartOffset;
     assert initialOldLength >= 0 : initialOldLength;
-    assert moveOffset == offset || myOldLength == 0 || myNewLength == 0;
+    assert moveOffset == offset || myOldLength == 0 || myNewLength == 0 : this;
   }
 
   @Override
@@ -116,10 +118,9 @@ public class DocumentEventImpl extends DocumentEvent {
   }
 
   @Override
-  @SuppressWarnings("HardCodedStringLiteral")
   public String toString() {
     return "DocumentEventImpl[myOffset=" + myOffset + ", myOldLength=" + myOldLength + ", myNewLength=" + myNewLength +
-           ", myOldString='" + myOldString + "', myNewString='" + myNewString + "']" + (isWholeTextReplaced() ? " Whole." : ".");
+           "]" + (isWholeTextReplaced() ? " Whole." : ".");
   }
 
   @Override
@@ -175,6 +176,4 @@ public class DocumentEventImpl extends DocumentEvent {
     }
     return myChange;
   }
-
-
 }

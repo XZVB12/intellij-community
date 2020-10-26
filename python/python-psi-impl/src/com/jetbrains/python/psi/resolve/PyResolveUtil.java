@@ -55,7 +55,7 @@ import java.util.stream.Stream;
  * <p>
  * TODO: Merge it with {@link ScopeUtil}
  */
-public class PyResolveUtil {
+public final class PyResolveUtil {
   private PyResolveUtil() {
   }
 
@@ -64,15 +64,7 @@ public class PyResolveUtil {
    */
   public static void scopeCrawlUp(@NotNull PsiScopeProcessor processor, @NotNull PsiElement element, @Nullable String name,
                                   @Nullable PsiElement roof) {
-    // Use real context here to enable correct completion and resolve in case of PyExpressionCodeFragment!!!
-    final PsiElement realContext = PyPsiUtils.getRealContext(element);
-    final ScopeOwner originalOwner;
-    if (realContext != element && realContext instanceof PyFile) {
-      originalOwner = (PyFile)realContext;
-    }
-    else {
-      originalOwner = ScopeUtil.getScopeOwner(realContext);
-    }
+    final ScopeOwner originalOwner = ScopeUtil.getScopeOwner(element);
     final PsiElement parent = element.getParent();
     ScopeOwner owner = originalOwner;
     if (parent instanceof PyNonlocalStatement) {
@@ -379,7 +371,7 @@ public class PyResolveUtil {
   @Nullable
   public static ScopeOwner parentScopeForUnresolvedClassLevelName(@NotNull PyClass cls, @NotNull String name) {
     // com.jetbrains.python.codeInsight.dataflow.scope.Scope.containsDeclaration could not be used
-    // because it runs resolve on imports that is forbidden while indexing
+    // because it runs resolve on imports that is forbidden during indexing
     return containsDeclaration(cls, name) ? PyUtil.as(cls.getContainingFile(), PyFile.class) : ScopeUtil.getScopeOwner(cls);
   }
 
@@ -394,7 +386,9 @@ public class PyResolveUtil {
       .anyMatch(e -> name.equals(e.getVisibleName()));
   }
 
-  public static void addImplicitResolveResults(String referencedName, ResolveResultList ret, PyQualifiedExpression element) {
+  public static void addImplicitResolveResults(@NotNull String referencedName,
+                                               @NotNull ResolveResultList ret,
+                                               @NotNull PyQualifiedExpression element) {
     final Project project = element.getProject();
     final GlobalSearchScope scope = PySearchUtilBase.excludeSdkTestsScope(project);
     final Collection<PyFunction> functions = PyFunctionNameIndex.find(referencedName, project, scope);

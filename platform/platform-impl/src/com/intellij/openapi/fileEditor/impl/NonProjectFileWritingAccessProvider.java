@@ -147,7 +147,7 @@ public class NonProjectFileWritingAccessProvider extends WritingAccessProvider {
 
       String filePath = file.getPath();
       for (Module module : ModuleManager.getInstance(project).getModules()) {
-        if (FileUtil.namesEqual(filePath, module.getModuleFilePath())) {
+        if (VfsUtilCore.pathEqualsTo(file, module.getModuleFilePath())) {
           return true;
         }
       }

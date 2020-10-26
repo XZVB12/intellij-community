@@ -26,7 +26,8 @@
     },
     {
       "key": "CompletionPopup.matchForeground",
-      "description": "The string in the completion suggestions list that matches the entered string "
+      "description": "The string in the completion suggestions list that matches the entered string ",
+      "since": "2019.2"
     },
     {
       "key": "CompletionPopup.matchSelectionForeground",
@@ -40,24 +41,32 @@
     },
     {
       "key": "CompletionPopup.foreground",
-      "description": "Gray text at the right border. Completion suggestions foreground is Label.foreground."
+      "description": "Gray text at the right border. Completion suggestions foreground is Label.foreground.",
+      "since": "2019.2"
     },
     {
       "key": "CompletionPopup.nonFocusedMask",
-      "description": "Color mask with alpha to draw over not focused completion list"
+      "description": "Color mask with alpha to draw over not focused completion list",
+      "since": "2019.2"
     },
     {
-      "key": "CompletionPopup.selectionBackground"
+      "key": "CompletionPopup.selectionBackground",
+      "description": "Selected item background color of focused completion popup",
+      "since": "2019.2"
     },
     {
       "key": "CompletionPopup.selectionForeground",
+      "description": "Not used, selection foreground doesn't change",
       "deprecated": true
     },
     {
-      "key": "CompletionPopup.selectionInactiveBackground"
+      "key": "CompletionPopup.selectionInactiveBackground",
+      "description": "Selected item background color of non focused completion popup",
+      "since": "2019.2"
     },
     {
       "key": "CompletionPopup.selectionInfoForeground",
+      "description": "Not used, selection foreground doesn't change",
       "deprecated": true
     },
     {
@@ -218,6 +227,10 @@
       "description": "Background for the selected tab"
     },
     {
+      "key": "EditorTabs.tabInsets",
+      "description": "Inner insets around each editor tab"
+    },
+    {
       "key": "FileColor.Blue",
       "description": "Settings | Appearance & Behavior | File colors"
     },
@@ -238,61 +251,84 @@
     },
     {
       "key": "FlameGraph.frameForeground",
-      "description": "Java profiler flame graph"
+      "description": "Java profiler flame graph",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.JVMBackground"
+      "key": "FlameGraph.JVMBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.JVMFocusBackground"
+      "key": "FlameGraph.JVMFocusBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.JVMFocusedFrameForeground"
+      "key": "FlameGraph.JVMFocusedFrameForeground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.JVMFocusSearchNotMatchedBackground"
+      "key": "FlameGraph.JVMFocusSearchNotMatchedBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.JVMFrameForeground"
+      "key": "FlameGraph.JVMFrameForeground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.JVMSearchNotMatchedBackground"
+      "key": "FlameGraph.JVMSearchNotMatchedBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.nativeBackground"
+      "key": "FlameGraph.nativeBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.nativeFocusBackground"
+      "key": "FlameGraph.nativeFocusBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.nativeFocusedFrameForeground"
+      "key": "FlameGraph.nativeFocusedFrameForeground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.nativeFocusSearchNotMatchedBackground"
+      "key": "FlameGraph.nativeFocusSearchNotMatchedBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.nativeFrameForeground"
+      "key": "FlameGraph.nativeFrameForeground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.nativeSearchNotMatchedBackground"
+      "key": "FlameGraph.nativeSearchNotMatchedBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.parentBackground"
+      "key": "FlameGraph.parentBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.parentFocusBackground"
+      "key": "FlameGraph.parentFocusBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.parentFocusedFrameForeground"
+      "key": "FlameGraph.parentFocusedFrameForeground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.parentFocusSearchNotMatchedBackground"
+      "key": "FlameGraph.parentFocusSearchNotMatchedBackground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.parentFrameForeground"
+      "key": "FlameGraph.parentFrameForeground",
+      "deprecated": true
     },
     {
-      "key": "FlameGraph.parentSearchNotMatchedBackground"
+      "key": "FlameGraph.parentSearchNotMatchedBackground",
+      "deprecated": true
+    },
+    {
+      "key": "GotItTooltip.borderColor",
+      "description": "GotIt tooltip border color if different from ToolTip.borderColor"
     },
     {
       "key": "Group.disabledSeparatorColor"
@@ -319,21 +355,28 @@
     },
     {
       "key": "HelpTooltip.background",
+      "description": "Use ToolTip.background instead",
       "deprecated": true
     },
     {
-      "key": "HelpTooltip.borderColor"
+      "key": "HelpTooltip.borderColor",
+      "description": "Use ToolTip.borderColor instead",
+      "deprecated": false
     },
     {
       "key": "HelpTooltip.foreground",
+      "description": "Use ToolTip.foreground instead",
       "deprecated": true
     },
     {
       "key": "HelpTooltip.shortcutForeground",
+      "description": "Use ToolTip.shortcutForeground instead",
       "deprecated": true
     },
     {
-      "key": "HelpTooltip.infoForeground"
+      "key": "HelpTooltip.infoForeground",
+      "description": "Use ToolTip.infoForeground instead",
+      "deprecated": true
     },
     {
       "key": "InformationHint.borderColor"
@@ -359,10 +402,12 @@
     },
     {
       "key": "MemoryIndicator.usedBackground",
+      "description": "Memory indicator color for used memory rectangle",
       "since": "2019.2"
     },
     {
       "key": "MemoryIndicator.allocatedBackground",
+      "description": "Memory indicator color for allocated memory rectangle",
       "since": "2019.2"
     },
     {
@@ -374,20 +419,24 @@
       "description": "Notification that appears in in bottom-right corner. Use the \"Add Test Notification\" action in internal mode to show notifications on demand."
     },
     {
-      "key": "Notification.borderColor"
+      "key": "Notification.borderColor",
+      "description": "Color of the border around notification balloon"
     },
     {
       "key": "Notification.errorBackground",
       "description": "Exception notifications. Use the \"Drop an error\" action in internal mode to show notifications on demand."
     },
     {
-      "key": "Notification.errorBorderColor"
+      "key": "Notification.errorBorderColor",
+      "description": "Color of the border around exception notification balloon"
     },
     {
-      "key": "Notification.errorForeground"
+      "key": "Notification.errorForeground",
+      "description": "Color of the text in exception notification balloon"
     },
     {
-      "key": "Notification.foreground"
+      "key": "Notification.foreground",
+      "description": "Color of the text in notification balloon"
     },
     {
       "key": "Notification.MoreButton.background",
@@ -499,6 +548,10 @@
     {
       "key": "Plugins.lightSelectionBackground",
       "description": "Selection background"
+    },
+    {
+      "key": "Plugins.hoverBackground",
+      "description": "A background of a hovered plugin row."
     },
     {
       "key": "Plugins.SearchField.background"
@@ -613,14 +666,32 @@
       "key": "SearchEverywhere.Tab.selectedForeground"
     },
     {
-      "key": "SearchField.errorBackground"
+      "key": "SearchField.errorBackground",
+      "description": "Inplace search field background of not found entries",
+      "since": "2019.1"
     },
     {
       "key": "SearchMatch.endBackground",
       "description": "The yellow rectangle under the search match text"
     },
     {
+      "key": "SearchOption.selectedBackground",
+      "description": "Button background to highlight chosen search option"
+    },
+    {
+      "key": "SearchResults.Ordinal.File.Foreground",
+      "description": "Filename foreground in 'Find in Path' (the first file row) and line number (all rows)"
+    },
+    {
+      "key": "SearchResults.Repeated.File.Foreground",
+      "description": "Filename foreground in 'Find in Path' (all file rows except the first one)"
+    },
+    {
       "key": "SearchMatch.startBackground"
+    },
+    {
+      "key": "Settings.Spotlight.borderColor",
+      "description": "Color of the border around highlighted items when searching in the Settings dialog"
     },
     {
       "key": "SidePanel.background",
@@ -653,6 +724,36 @@
       "key": "SpeedSearch.foreground"
     },
     {
+      "key": "List.hoverBackground",
+      "since": "2020.3",
+      "description": "A background of a hovered row in a focused list if hover is allowed."
+    },
+    {
+      "key": "List.hoverInactiveBackground",
+      "since": "2020.3",
+      "description": "A background of a hovered row in an unfocused list if hover is allowed."
+    },
+    {
+      "key": "Tree.hoverBackground",
+      "since": "2020.3",
+      "description": "A background of a hovered row in a focused tree if hover is allowed."
+    },
+    {
+      "key": "Tree.hoverInactiveBackground",
+      "since": "2020.3",
+      "description": "A background of a hovered row in an unfocused tree if hover is allowed."
+    },
+    {
+      "key": "Table.hoverBackground",
+      "since": "2020.3",
+      "description": "A background of a hovered row in a focused table if hover is allowed."
+    },
+    {
+      "key": "Table.hoverInactiveBackground",
+      "since": "2020.3",
+      "description": "A background of a hovered row in an unfocused table if hover is allowed."
+    },
+    {
       "key": "Table.lightSelectionBackground",
       "description": "A lighter selection. See Settings | GitHub and the GitHub Pull Requests tool window"
     },
@@ -664,6 +765,10 @@
     },
     {
       "key": "Table.lightSelectionInactiveForeground"
+    },
+    {
+      "key": "Table.alternativeRowBackground",
+      "description": "Contrast background color for lists with tall rows, e.g. View | Tool Windows | Endpoints"
     },
     {
       "key": "Table.stripeColor"
@@ -711,16 +816,23 @@
     },
     {
       "key": "ToolTip.infoForeground",
-      "description": "\"Inspection Info\" text in inspection error tooltips"
+      "description": "\"Inspection Info\" text in inspection error tooltips",
+      "since": "2019.2"
     },
     {
-      "key": "ToolTip.shortcutForeground"
+      "key": "ToolTip.shortcutForeground",
+      "description": "Shortcut text foreground color in compound tooltips",
+      "since": "2019.2"
     },
     {
-      "key": "ToolTip.borderColor"
+      "key": "ToolTip.borderColor",
+      "description": "Tooltip border color",
+      "since": "2019.2"
     },
     {
-      "key": "ToolTip.paintBorder"
+      "key": "ToolTip.paintBorder",
+      "description": "True if tooltip should paint its border, false otherwise",
+      "since": "2019.2"
     },
     {
       "key": "ToolTip.Actions.background",
@@ -815,66 +927,98 @@
     },
     {
       "key": "VersionControl.FileHistory.Commit.selectedBranchBackground",
-      "description": "The VCS | Git | Show History action, the \"Show All Branches\" setting"
+      "description": "Background color for the selected branch in \"History Up to Here\" when \"Show All Branches\" option is turned on",
+      "since": "2019.1"
     },
     {
       "key": "VersionControl.GitLog.headIconColor",
-      "description": "A label-like icon in the ref label"
+      "description": "A color for the label-like icon in the HEAD label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.GitLog.localBranchIconColor"
+      "key": "VersionControl.GitLog.localBranchIconColor",
+      "description": "A color for the label-like icon in the local branch label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.GitLog.otherIconColor"
+      "key": "VersionControl.GitLog.otherIconColor",
+      "description": "A color for the label-like icon in the reference labels of other kinds",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.GitLog.remoteBranchIconColor"
+      "key": "VersionControl.GitLog.remoteBranchIconColor",
+      "description": "A color for the label-like icon in the remote branch label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.GitLog.tagIconColor"
+      "key": "VersionControl.GitLog.tagIconColor",
+      "description": "A color for the label-like icon in the tag label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.HgLog.bookmarkIconColor"
+      "key": "VersionControl.HgLog.bookmarkIconColor",
+      "description": "A color for the label-like icon in the bookmark label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.HgLog.branchIconColor"
+      "key": "VersionControl.HgLog.branchIconColor",
+      "description": "A color for the label-like icon in the branch label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.HgLog.closedBranchIconColor"
+      "key": "VersionControl.HgLog.closedBranchIconColor",
+      "description": "A color for the label-like icon in the closed branch label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.HgLog.headIconColor"
+      "key": "VersionControl.HgLog.headIconColor",
+      "description": "A color for the label-like icon in the head label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.HgLog.localTagIconColor"
+      "key": "VersionControl.HgLog.localTagIconColor",
+      "description": "A color for the label-like icon in the local tag label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.HgLog.mqTagIconColor"
+      "key": "VersionControl.HgLog.mqTagIconColor",
+      "description": "A color for the label-like icon in the MQ tag label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.HgLog.tagIconColor"
+      "key": "VersionControl.HgLog.tagIconColor",
+      "description": "A color for the label-like icon in the tag label",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.HgLog.tipIconColor"
+      "key": "VersionControl.HgLog.tipIconColor",
+      "description": "A color for the label-like icon in the tip label",
+      "since": "2019.1"
     },
     {
       "key": "VersionControl.Log.Commit.currentBranchBackground",
-      "description": "Version Control tool window | Log tab, the \"Current branch\" setting under the \"eye\" icon"
+      "description": "Background color for the commits in the current branch in the Version Control | Log tab (\"Highlight Current Branch\" setting under the \"eye\" icon)",
+      "since": "2019.1"
     },
     {
       "key": "VersionControl.Log.Commit.unmatchedForeground",
-      "description": "Version Control tool window | Log tab, the \"Merge commits\" setting under the \"eye\" icon"
+      "description": "Text color for the \"unmatched\" commits (such as merge commits or cherry-picked commits) in the Version Control | Log tab (\"Highlight Merge commits\" and \"Highlight Not Cherry-Picked Commits\" settings under the \"eye\" icon",
+      "since": "2019.1"
     },
     {
       "key": "VersionControl.RefLabel.backgroundBase",
-      "description": "Ref label background"
+      "description": "Reference label background base color",
+      "since": "2019.1"
     },
     {
       "key": "VersionControl.RefLabel.backgroundBrightness",
-      "description": "Transparency of the ref label. 0 is transparent, 1 is opaque."
+      "description": "Transparency of the reference label background (0 is transparent, 1 is opaque)",
+      "since": "2019.1"
     },
     {
-      "key": "VersionControl.RefLabel.foreground"
+      "key": "VersionControl.RefLabel.foreground",
+      "description": "Reference label text color",
+      "since": "2019.1"
     },
     {
       "key": "WelcomeScreen.background"
@@ -916,8 +1060,24 @@
       "key": "WelcomeScreen.separatorColor"
     },
     {
+      "key": "WelcomeScreen.SidePanel.background",
+      "description": "Tab list and side panel background"
+    },
+    {
+      "key": "WelcomeScreen.Details.background",
+      "description": "Associated panel for selected tab background"
+    },
+    {
+      "key": "WelcomeScreen.Projects.actions.selectionBackground",
+      "description": "Selection background for project actions buttons"
+    },
+    {
+      "key": "WelcomeScreen.Projects.actions.background",
+      "description": "Background for project actions buttons"
+    },
+    {
       "key": "Window.border",
-      "description": "Dialog border. Format: \"top, left, bottom, right, hex\", e.g. \"1,1,1,1,FFFFFF\". Sizes in pixels"
+      "description": "Dialog border. Format: \"top,left,bottom,right,hex\", e.g. \"1,1,1,1,FFFFFF\". Sizes in pixels"
     }
   ]
 }

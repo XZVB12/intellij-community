@@ -42,13 +42,13 @@ import com.intellij.usages.Usage;
 import com.intellij.usages.rules.PsiElementUsage;
 import com.intellij.util.CommonProcessors.CollectProcessor;
 import com.intellij.util.IncorrectOperationException;
-import com.jetbrains.python.PythonDialectsTokenSetProvider;
 import com.jetbrains.python.PythonHelpersLocator;
 import com.jetbrains.python.PythonLanguage;
 import com.jetbrains.python.PythonTestUtil;
 import com.jetbrains.python.documentation.PyDocumentationSettings;
 import com.jetbrains.python.documentation.PythonDocumentationProvider;
 import com.jetbrains.python.documentation.docstrings.DocStringFormat;
+import com.jetbrains.python.namespacePackages.PyNamespacePackagesService;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.PyFileImpl;
 import com.jetbrains.python.psi.impl.PythonLanguageLevelPusher;
@@ -134,7 +134,6 @@ public abstract class PyTestCase extends UsefulTestCase {
     final IdeaProjectTestFixture fixture = fixtureBuilder.getFixture();
     myFixture = IdeaTestFixtureFactory.getFixtureFactory().createCodeInsightFixture(fixture, createTempDirFixture());
     myFixture.setTestDataPath(getTestDataPath());
-    PythonDialectsTokenSetProvider.reset();
     if (SwingUtilities.isEventDispatchThread()) {
       myFixture.setUp();
     }
@@ -267,6 +266,7 @@ public abstract class PyTestCase extends UsefulTestCase {
   @Override
   protected void tearDown() throws Exception {
     try {
+      PyNamespacePackagesService.getInstance(myFixture.getModule()).resetAllNamespacePackages();
       setLanguageLevel(null);
       myFixture.tearDown();
       myFixture = null;

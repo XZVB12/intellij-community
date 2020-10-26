@@ -25,6 +25,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.SimpleToolWindowPanel;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Factory;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.registry.RegistryValue;
 import com.intellij.openapi.util.registry.RegistryValueListener;
@@ -36,6 +37,8 @@ import com.intellij.openapi.vcs.impl.LineStatusTrackerSettingListener;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.openapi.wm.ex.ToolWindowManagerListener;
 import com.intellij.problems.ProblemListener;
 import com.intellij.ui.ExpandableItemsHandler;
 import com.intellij.ui.GuiUtils;
@@ -43,6 +46,8 @@ import com.intellij.ui.JBColor;
 import com.intellij.ui.components.panels.Wrapper;
 import com.intellij.ui.content.Content;
 import com.intellij.util.Alarm;
+import com.intellij.util.NotNullFunction;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.ui.JBUI;
@@ -52,7 +57,6 @@ import com.intellij.util.ui.tree.TreeUtil;
 import com.intellij.util.xmlb.annotations.Attribute;
 import com.intellij.util.xmlb.annotations.XCollection;
 import com.intellij.vcs.commit.*;
-import org.jetbrains.annotations.CalledInAwt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -78,6 +82,7 @@ import static com.intellij.util.containers.ContainerUtil.set;
 import static com.intellij.util.ui.JBUI.Panels.simplePanel;
 import static com.intellij.vcs.commit.ToggleChangesViewCommitUiActionKt.isToggleCommitUi;
 import static java.util.Arrays.asList;
+import static java.util.Objects.requireNonNull;
 
 @State(
   name = "ChangesViewManager",
@@ -124,10 +129,28 @@ public class ChangesViewManager implements ChangesViewEx,
     }
   }
 
+  public static class ContentPredicate implements NotNullFunction<Project, Boolean> {
+    @NotNull
+    @Override
+    public Boolean fun(Project project) {
+      ProjectLevelVcsManager vcsManager = ProjectLevelVcsManager.getInstance(project);
+      if (!vcsManager.hasActiveVcss()) return false;
+      AbstractVcs singleVcs = vcsManager.getSingleVCS();
+      if (singleVcs != null && singleVcs.isWithCustomLocalChanges()) return false;
+      return true;
+    }
+  }
+
   public static class DisplayNameSupplier implements Supplier<String> {
+    private final @NotNull Project myProject;
+
+    public DisplayNameSupplier(@NotNull Project project) {
+      myProject = project;
+    }
+
     @Override
     public String get() {
-      return VcsBundle.getString("local.changes.tab");
+      return isCommitToolWindow(myProject) ? VcsBundle.message("tab.title.commit") : VcsBundle.message("local.changes.tab");
     }
   }
 
@@ -150,19 +173,20 @@ public class ChangesViewManager implements ChangesViewEx,
   }
 
   @NotNull
-  @CalledInAwt
+  @RequiresEdt
   private ChangesViewToolWindowPanel initToolWindowPanel() {
     if (myToolWindowPanel == null) {
       ChangesViewToolWindowPanel panel = new ChangesViewToolWindowPanel(myProject, this);
-      Disposer.register(myProject, panel);
+      Disposer.register(this, panel);
+
       myToolWindowPanel = panel;
+      Disposer.register(panel, () -> myToolWindowPanel = null);
     }
     return myToolWindowPanel;
   }
 
   @Override
   public void dispose() {
-    myToolWindowPanel = null;
   }
 
   @NotNull
@@ -220,7 +244,7 @@ public class ChangesViewManager implements ChangesViewEx,
   }
 
   @Override
-  public void updateProgressText(String text, boolean isError) {
+  public void updateProgressText(@NlsContexts.Label String text, boolean isError) {
     if (myToolWindowPanel == null) return;
     myToolWindowPanel.updateProgressText(text, isError);
   }
@@ -268,15 +292,8 @@ public class ChangesViewManager implements ChangesViewEx,
     return myToolWindowPanel.isAllowExcludeFromCommit();
   }
 
-  public void closeEditorPreview() {
-    if (myToolWindowPanel == null) {
-      return;
-    }
-
-    DiffPreview diffPreview = myToolWindowPanel.myDiffPreview;
-    if (diffPreview instanceof EditorTabPreview) {
-      ((EditorTabPreview)diffPreview).closePreview();
-    }
+  public boolean isEditorPreview() {
+    return myToolWindowPanel != null && !myToolWindowPanel.isSplitterPreview();
   }
 
   public void openEditorPreview() {
@@ -284,10 +301,17 @@ public class ChangesViewManager implements ChangesViewEx,
     myToolWindowPanel.openEditorPreview();
   }
 
-  public static class ChangesViewToolWindowPanel extends SimpleToolWindowPanel implements ChangesViewContentManagerListener, Disposable {
+  public void closeEditorPreview() {
+    closeEditorPreview(false);
+  }
+
+  public void closeEditorPreview(boolean onlyIfEmpty) {
+    if (myToolWindowPanel == null) return;
+    myToolWindowPanel.closeEditorPreview(onlyIfEmpty);
+  }
+
+  public static final class ChangesViewToolWindowPanel extends SimpleToolWindowPanel implements ChangesViewContentManagerListener, Disposable {
     @NotNull private static final RegistryValue isToolbarHorizontalSetting = Registry.get("vcs.local.changes.toolbar.horizontal");
-    @NotNull private static final RegistryValue isCommitSplitHorizontal =
-      Registry.get("vcs.non.modal.commit.split.horizontal.if.no.diff.preview");
     @NotNull private static final RegistryValue isEditorDiffPreview = Registry.get("show.diff.preview.as.editor.tab");
     @NotNull private static final RegistryValue isOpenEditorDiffPreviewWithSingleClick =
       Registry.get("show.diff.preview.as.editor.tab.with.single.click");
@@ -333,7 +357,7 @@ public class ChangesViewManager implements ChangesViewEx,
         myChangesViewManager.myState.groupingKeys = myView.getGroupingSupport().getGroupingKeys();
         scheduleRefresh();
       });
-      ChangesDnDSupport.install(myProject, myView);
+      ChangesViewDnDSupport.install(myProject, myView, this);
 
       myChangesPanel.getToolbarActionGroup().addAll(createChangesToolbarActions(myView.getTreeExpander()));
       myChangesPanel.setToolbarHorizontal(commitWorkflowManager.isNonModal() && isToolbarHorizontalSetting.asBoolean());
@@ -381,13 +405,12 @@ public class ChangesViewManager implements ChangesViewEx,
 
       setContent(myMainPanel.addToBottom(myProgressLabel));
 
-      setCommitSplitOrientation();
-      isCommitSplitHorizontal.addListener(new RegistryValueListener() {
+      project.getMessageBus().connect(this).subscribe(ToolWindowManagerListener.TOPIC, new ToolWindowManagerListener() {
         @Override
-        public void afterValueChanged(@NotNull RegistryValue value) {
+        public void stateChanged(@NotNull ToolWindowManager toolWindowManager) {
           setCommitSplitOrientation();
         }
-      }, this);
+      });
 
       isToggleCommitUi().addListener(new RegistryValueListener() {
         @Override
@@ -445,6 +468,8 @@ public class ChangesViewManager implements ChangesViewEx,
     }
 
     private void setDiffPreview(boolean force) {
+      if (myDisposed) return;
+
       boolean isEditorPreview = isCommitToolWindow(myProject) || isEditorDiffPreview.asBoolean();
       if (!force) {
         if (isEditorPreview && myDiffPreview instanceof EditorTabPreview) return;
@@ -541,16 +566,28 @@ public class ChangesViewManager implements ChangesViewEx,
       ((EditorTabPreview)myDiffPreview).openPreview(false);
     }
 
+    private void closeEditorPreview(boolean onlyIfEmpty) {
+      if (isSplitterPreview()) return;
+
+      EditorTabPreview editorPreview = (EditorTabPreview)myDiffPreview;
+
+      if (onlyIfEmpty && editorPreview.hasContent()) return;
+      editorPreview.closePreview();
+    }
+
     @Nullable
     public ChangesViewCommitWorkflowHandler getCommitWorkflowHandler() {
       return myCommitWorkflowHandler;
     }
 
     public void updateCommitWorkflow(boolean isNonModal) {
+      ApplicationManager.getApplication().assertIsDispatchThread();
+      if (myDisposed) return;
+
       if (isNonModal) {
         if (myCommitPanel == null) {
           myChangesPanel.setToolbarHorizontal(isToolbarHorizontalSetting.asBoolean());
-          myCommitPanel = myChangesViewManager.createCommitPanel(myView, this);
+          myCommitPanel = new ChangesViewCommitPanel(myChangesPanel, this);
           myCommitPanel.setToolbarHorizontal(isToolbarHorizontalSetting.asBoolean());
           myCommitWorkflowHandler = new ChangesViewCommitWorkflowHandler(new ChangesViewCommitWorkflow(myProject), myCommitPanel);
           if (isToggleCommitUi().asBoolean()) myCommitWorkflowHandler.deactivate(false);
@@ -585,7 +622,9 @@ public class ChangesViewManager implements ChangesViewEx,
 
     private void setCommitSplitOrientation() {
       boolean hasPreviewPanel = myVcsConfiguration.LOCAL_CHANGES_DETAILS_PREVIEW_SHOWN && isSplitterPreview();
-      myCommitPanelSplitter.setOrientation(hasPreviewPanel || !isCommitSplitHorizontal.asBoolean());
+      ToolWindow tw = requireNonNull(getToolWindowFor(myProject, LOCAL_CHANGES));
+      boolean toolwindowIsHorizontal = tw.getAnchor().isHorizontal();
+      myCommitPanelSplitter.setOrientation(hasPreviewPanel || !toolwindowIsHorizontal);
     }
 
     @NotNull
@@ -647,7 +686,7 @@ public class ChangesViewManager implements ChangesViewEx,
       });
     }
 
-    public void updateProgressText(String text, boolean isError) {
+    public void updateProgressText(@NlsContexts.Label String text, boolean isError) {
       updateProgressComponent(createTextStatusFactory(text, isError));
     }
 
@@ -681,7 +720,6 @@ public class ChangesViewManager implements ChangesViewEx,
 
       ProgressManager.getInstance().executeProcessUnderProgress(() -> {
         if (myDisposed || !myProject.isInitialized() || ApplicationManager.getApplication().isUnitTestMode()) return;
-        if (!ProjectLevelVcsManager.getInstance(myProject).hasActiveVcss()) return;
 
         ChangeListManagerImpl changeListManager = ChangeListManagerImpl.getInstanceImpl(myProject);
         List<LocalChangeList> changeLists = changeListManager.getChangeListsCopy();
@@ -702,7 +740,7 @@ public class ChangesViewManager implements ChangesViewEx,
 
         invokeLaterIfNeeded(() -> {
           if (myDisposed) return;
-          indicator.checkCanceled();
+          if (canBeCancelled) indicator.checkCanceled();
 
           for (ChangesViewModifier extension : ChangesViewModifier.KEY.getExtensions(myProject)) {
             extension.modifyTreeModelBuilder(treeModelBuilder);
@@ -836,11 +874,7 @@ public class ChangesViewManager implements ChangesViewEx,
     }
   }
 
-  protected ChangesViewCommitPanel createCommitPanel(@NotNull ChangesListView myView, @NotNull ChangesViewToolWindowPanel changesViewToolWindowPanel) {
-      return new ChangesViewCommitPanel(myView, changesViewToolWindowPanel);
-  }
-
-  private static class MyContentDnDTarget extends VcsToolwindowDnDTarget {
+  private static final class MyContentDnDTarget extends VcsToolwindowDnDTarget {
     private MyContentDnDTarget(@NotNull Project project, @NotNull Content content) {
       super(project, content);
     }
@@ -852,8 +886,8 @@ public class ChangesViewManager implements ChangesViewEx,
       if (attachedObject instanceof ShelvedChangeListDragBean) {
         ChangesViewToolWindowPanel panel = ((ChangesViewManager)getInstance(myProject)).initToolWindowPanel();
         ShelveChangesManager.unshelveSilentlyWithDnd(myProject, (ShelvedChangeListDragBean)attachedObject,
-                                                     ChangesDnDSupport.getDropRootNode(panel.myView, event),
-                                                     !ChangesDnDSupport.isCopyAction(event));
+                                                     ChangesTreeDnDSupport.getDropRootNode(panel.myView, event),
+                                                     !ChangesTreeDnDSupport.isCopyAction(event));
       }
     }
 
@@ -868,7 +902,7 @@ public class ChangesViewManager implements ChangesViewEx,
   }
 
   @NotNull
-  public static Factory<JComponent> createTextStatusFactory(final String text, final boolean isError) {
+  public static Factory<JComponent> createTextStatusFactory(@NlsContexts.Label String text, final boolean isError) {
     return () -> {
       JLabel label = new JLabel(text);
       label.setForeground(isError ? JBColor.RED : UIUtil.getLabelForeground());

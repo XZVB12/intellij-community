@@ -35,6 +35,7 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.util.ActionCallback;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindowId;
@@ -64,8 +65,10 @@ import javax.swing.border.Border;
 import javax.swing.event.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
-import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
@@ -91,7 +94,6 @@ public class RunAnythingPopupUI extends BigPopupUI {
   private JLabel myTextFieldTitle;
   private boolean myIsItemSelected;
   private String myLastInputText = null;
-  private final Project myProject;
   private final Module myModule;
 
   private RunAnythingContext mySelectedExecutingContext;
@@ -518,15 +520,14 @@ public class RunAnythingPopupUI extends BigPopupUI {
 
   public static void adjustEmptyText(@NotNull JBTextField textEditor,
                                      @NotNull BooleanFunction<JBTextField> function,
-                                     @NotNull String leftText,
-                                     @NotNull String rightText) {
+                                     @NotNull @NlsContexts.StatusText String leftText,
+                                     @NotNull @NlsContexts.StatusText String rightText) {
 
     textEditor.putClientProperty("StatusVisibleFunction", function);
     StatusText statusText = textEditor.getEmptyText();
-    statusText.setIsVerticalFlow(false);
     statusText.setShowAboveCenter(false);
     statusText.setText(leftText, SimpleTextAttributes.GRAY_ATTRIBUTES);
-    statusText.appendSecondaryText(rightText, SimpleTextAttributes.GRAY_ATTRIBUTES, null);
+    statusText.appendText(false, 0, rightText, SimpleTextAttributes.GRAY_ATTRIBUTES, null);
     statusText.setFont(UIUtil.getLabelFont(UIUtil.FontSize.SMALL));
   }
 
@@ -586,8 +587,9 @@ public class RunAnythingPopupUI extends BigPopupUI {
   }
 
 
-  public void setAdText(@NotNull final String s) {
-    myHintLabel.setText(s);
+  public void setAdText(@NlsContexts.PopupAdvertisement @NotNull final String s) {
+    myHintLabel.clearAdvertisements();
+    myHintLabel.addAdvertisement(s, null);
   }
 
   @NotNull
@@ -680,7 +682,6 @@ public class RunAnythingPopupUI extends BigPopupUI {
     myCurrentWorker = ActionCallback.DONE;
     myVirtualFile = actionEvent.getData(CommonDataKeys.VIRTUAL_FILE);
 
-    myProject = Objects.requireNonNull(actionEvent.getData(CommonDataKeys.PROJECT));
     myModule = actionEvent.getData(LangDataKeys.MODULE);
 
     init();
@@ -798,12 +799,13 @@ public class RunAnythingPopupUI extends BigPopupUI {
     return res;
   }
 
+
   @NotNull
   @Override
-  protected String getInitialHint() {
-    return IdeBundle.message("run.anything.hint.initial.text",
-                             KeymapUtil.getKeystrokeText(UP_KEYSTROKE),
-                             KeymapUtil.getKeystrokeText(DOWN_KEYSTROKE));
+  protected @NlsContexts.PopupAdvertisement String[] getInitialHints() {
+    return new String[]{IdeBundle.message("run.anything.hint.initial.text",
+                                          KeymapUtil.getKeystrokeText(UP_KEYSTROKE),
+                                          KeymapUtil.getKeystrokeText(DOWN_KEYSTROKE))};
   }
 
   @Override
@@ -827,7 +829,7 @@ public class RunAnythingPopupUI extends BigPopupUI {
     resetFields();
   }
 
-  private class RunAnythingShowFilterAction extends ShowFilterAction {
+  private final class RunAnythingShowFilterAction extends ShowFilterAction {
     @NotNull private final Collection<RunAnythingGroup> myTemplateGroups;
 
     private RunAnythingShowFilterAction() {

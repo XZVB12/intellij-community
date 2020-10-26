@@ -1,33 +1,39 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.target
 
+import com.intellij.execution.ExecutionBundle
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.NamedConfigurable
+import com.intellij.openapi.util.NlsActions
 import com.intellij.ui.TitledSeparator
+import com.intellij.ui.components.DropDownLink
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.labels.DropDownLink
 import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.ui.layout.*
 import com.intellij.ui.scale.JBUIScale
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import java.util.function.Consumer
 import javax.swing.Icon
+import javax.swing.JButton
 import javax.swing.JComponent
-import javax.swing.JLabel
 import javax.swing.JPanel
 
-internal class TargetEnvironmentDetailsConfigurable(private val project: Project, private val config: TargetEnvironmentConfiguration)
-  : NamedConfigurable<TargetEnvironmentConfiguration>(true, null) {
+internal class TargetEnvironmentDetailsConfigurable(
+  private val project: Project,
+  private val config: TargetEnvironmentConfiguration,
+  defaultLanguage: LanguageRuntimeType<*>?
+) : NamedConfigurable<TargetEnvironmentConfiguration>(true, null) {
 
-  private val targetConfigurable: Configurable = config.getTargetType().createConfigurable(project, config)
+  private val targetConfigurable: Configurable = config.getTargetType().createConfigurable(project, config, defaultLanguage)
   private val runtimeConfigurables = mutableListOf<Configurable>()
 
   override fun getBannerSlogan(): String = config.displayName
 
-  override fun getIcon(expanded: Boolean): Icon? = config.getTargetType().icon
+  override fun getIcon(expanded: Boolean): Icon = config.getTargetType().icon
 
   override fun isModified(): Boolean = allConfigurables().any { it.isModified }
 
@@ -69,7 +75,7 @@ internal class TargetEnvironmentDetailsConfigurable(private val project: Project
         gearButton(DuplicateRuntimeAction(runtime), RemoveRuntimeAction(runtime))
       }
       row {
-        val languageUI = runtime.getRuntimeType().createConfigurable(project, runtime)
+        val languageUI = runtime.getRuntimeType().createConfigurable(project, runtime, config)
           .also { runtimeConfigurables.add(it) }
           .let {
             it.createComponent() ?: throw IllegalStateException("for runtime: $runtime")
@@ -79,18 +85,18 @@ internal class TargetEnvironmentDetailsConfigurable(private val project: Project
     }
   }
 
-  private fun createAddRuntimeHyperlink(): JLabel {
+  private fun createAddRuntimeHyperlink(): JButton {
     class Item(val type: LanguageRuntimeType<*>?) {
       override fun toString(): String {
         return type?.displayName ?: "Add language runtime"
       }
     }
 
-    return DropDownLink<Item>(Item(null), LanguageRuntimeType.EXTENSION_NAME.extensionList.map { Item(it) }, {
-      val newRuntime = it.type?.createDefaultConfig() ?: return@DropDownLink
+    return DropDownLink(Item(null), LanguageRuntimeType.EXTENSION_NAME.extensionList.map { Item(it) }, Consumer {
+      val newRuntime = it.type?.createDefaultConfig() ?: return@Consumer
       config.runtimes.addConfig(newRuntime)
       forceRefreshUI()
-    }, false)
+    })
   }
 
   private fun allConfigurables() = sequenceOf(targetConfigurable) + runtimeConfigurables.asSequence()
@@ -105,9 +111,11 @@ internal class TargetEnvironmentDetailsConfigurable(private val project: Project
     createComponent()?.revalidate()
   }
 
-  private abstract inner class ChangeRuntimeActionBase(protected val runtime: LanguageRuntimeConfiguration, text: String) : AnAction(text)
+  private abstract inner class ChangeRuntimeActionBase(protected val runtime: LanguageRuntimeConfiguration,
+                                                       @NlsActions.ActionText text: String) : AnAction(text)
 
-  private inner class DuplicateRuntimeAction(runtime: LanguageRuntimeConfiguration) : ChangeRuntimeActionBase(runtime, "Duplicate") {
+  private inner class DuplicateRuntimeAction(runtime: LanguageRuntimeConfiguration)
+    : ChangeRuntimeActionBase(runtime, ExecutionBundle.message("targets.details.action.duplicate.text")) {
     override fun actionPerformed(e: AnActionEvent) {
       val copy = runtime.getRuntimeType().duplicateConfig(runtime)
       config.runtimes.addConfig(copy)
@@ -115,7 +123,8 @@ internal class TargetEnvironmentDetailsConfigurable(private val project: Project
     }
   }
 
-  private inner class RemoveRuntimeAction(runtime: LanguageRuntimeConfiguration) : ChangeRuntimeActionBase(runtime, "Remove") {
+  private inner class RemoveRuntimeAction(runtime: LanguageRuntimeConfiguration)
+    : ChangeRuntimeActionBase(runtime, ExecutionBundle.message("targets.details.action.remove.text")) {
     override fun actionPerformed(e: AnActionEvent) {
       config.runtimes.removeConfig(runtime)
       forceRefreshUI()

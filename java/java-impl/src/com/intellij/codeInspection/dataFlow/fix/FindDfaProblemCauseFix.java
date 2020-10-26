@@ -10,6 +10,7 @@ import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.dataFlow.TrackingRunner;
 import com.intellij.ide.util.PsiNavigationSupport;
 import com.intellij.java.JavaBundle;
+import com.intellij.java.analysis.JavaAnalysisBundle;
 import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
@@ -114,7 +115,7 @@ public final class FindDfaProblemCauseFix implements LocalQuickFix, LowPriorityA
     }
     if (causes.isEmpty()) {
       HintManagerImpl hintManager = (HintManagerImpl)HintManager.getInstance();
-      hintManager.showErrorHint(editor, "Unable to find the cause");
+      hintManager.showErrorHint(editor, JavaAnalysisBundle.message("dfa.find.cause.unable"));
       return;
     }
     if (causes.size() == 1) {

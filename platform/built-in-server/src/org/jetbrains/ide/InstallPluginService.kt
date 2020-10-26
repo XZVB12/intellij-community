@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.ide
 
 import com.intellij.ide.plugins.marketplace.MarketplaceRequests
@@ -6,16 +6,14 @@ import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ApplicationNamesInfo
 import com.intellij.openapi.application.ex.ApplicationInfoEx
-import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.PluginsAdvertiser
-import com.intellij.openapi.util.BuildNumber
 import com.intellij.openapi.util.io.BufferExposingByteArrayOutputStream
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.ui.AppIcon
 import com.intellij.util.PlatformUtils
-import com.intellij.util.io.hostName
+import com.intellij.util.io.getHostName
 import com.intellij.util.io.origin
 import com.intellij.util.net.NetUtils
 import com.intellij.util.text.nullize
@@ -27,14 +25,14 @@ import java.io.OutputStream
 import java.net.URI
 import java.net.URISyntaxException
 
+@Suppress("HardCodedStringLiteral")
 internal class InstallPluginService : RestService() {
-  private val LOG = logger<InstallPluginService>()
-
   override fun getServiceName() = "installPlugin"
 
-  override fun isAccessible(request: HttpRequest) = true
+  override fun isOriginAllowed(request: HttpRequest) = OriginCheckResult.ASK_CONFIRMATION
 
   var isAvailable = true
+  private val trustedHosts = System.getProperty("idea.api.install.hosts.trusted", "").split(",")
 
   override fun execute(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): String? {
     val pluginId = getStringParameter("pluginId", urlDecoder)
@@ -57,7 +55,7 @@ internal class InstallPluginService : RestService() {
     pluginId: String
   ): Nothing? {
     //check if there is an update for this IDE with this ID.
-    val compatibleUpdateExists = MarketplaceRequests.getLastCompatiblePluginUpdate(pluginId) != null
+    val compatibleUpdateExists = MarketplaceRequests.getInstance().getLastCompatiblePluginUpdate(pluginId) != null
     val out = BufferExposingByteArrayOutputStream()
 
     val writer = createJsonWriter(out)
@@ -127,13 +125,14 @@ internal class InstallPluginService : RestService() {
       return false
     }
 
-    val hostName = request.hostName
+    val hostName = getHostName(request)
     if (hostName != null && !NetUtils.isLocalhost(hostName)) {
       LOG.error("Expected 'request.hostName' to be localhost. hostName='$hostName', origin='$origin'")
     }
 
     return (originHost != null && (
       listOf("plugins.jetbrains.com", "package-search.services.jetbrains.com", "package-search.jetbrains.com").contains(originHost) ||
+      trustedHosts.contains(originHost) ||
       originHost.endsWith(".dev.marketplace.intellij.net") ||
       NetUtils.isLocalhost(originHost))) || super.isHostTrusted(request, urlDecoder)
   }

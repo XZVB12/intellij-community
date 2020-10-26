@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.ui;
 
 import com.intellij.openapi.util.Pair;
@@ -31,7 +31,7 @@ import static com.intellij.ui.scale.ScaleType.SYS_SCALE;
 /**
  * @author tav
  */
-public class TestScaleHelper {
+public final class TestScaleHelper {
   private static final String STANDALONE_PROP = "intellij.test.standalone";
 
   private static final Map<String, String> originalSysProps = new HashMap<>();
@@ -97,6 +97,10 @@ public class TestScaleHelper {
     Assume.assumeTrue("not in " + STANDALONE_PROP + " mode", SystemProperties.is(STANDALONE_PROP));
   }
 
+  public static void assumeHeadful() {
+    Assume.assumeFalse("should not be headless", SystemProperties.is("java.awt.headless"));
+  }
+
   public static Graphics2D createGraphics(double scale) {
     //noinspection UndesirableClassUsage
     Graphics2D g = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB).createGraphics();
@@ -137,8 +141,11 @@ public class TestScaleHelper {
 
   public static BufferedImage loadImage(String path, ScaleContext ctx) {
     try {
-      Image img = ImageLoader.loadFromUrl(
-        new File(path).toURI().toURL(), true, false, null, ctx);
+      int flags = ImageLoader.USE_SVG | ImageLoader.ALLOW_FLOAT_SCALING;
+      if (StartupUiUtil.isUnderDarcula()) {
+        flags |= ImageLoader.USE_DARK;
+      }
+      Image img = ImageLoader.loadFromUrl(new File(path).toURI().toURL().toString(), null, flags, ctx);
       return ImageUtil.toBufferedImage(img);
     }
     catch (MalformedURLException e) {

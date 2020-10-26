@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.serialization
 
 import com.amazon.ion.IonException
@@ -113,6 +113,10 @@ internal class IonObjectSerializer {
     }
   }
 
+  fun clearBindingCache() {
+    bindingProducer.clearBindingCache()
+  }
+
   private fun doWrite(obj: Any, writer: IonWriter, configuration: WriteConfiguration, originalType: Type?) {
     val aClass = obj.javaClass
     val writeContext = WriteContext(writer, configuration.filter ?: DEFAULT_FILTER, ObjectIdWriter(), configuration, bindingProducer)
@@ -186,6 +190,7 @@ internal val binaryWriterBuilder by lazy {
   val binaryWriterBuilder = _Private_IonManagedBinaryWriterBuilder
     .create(PooledBlockAllocatorProvider())
     .withPaddedLengthPreallocation(0)
+    .withLocalSymbolTableAppendEnabled()
     .withStreamCopyOptimization(true)
   binaryWriterBuilder
 }

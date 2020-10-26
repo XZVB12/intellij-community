@@ -1,8 +1,8 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.options.newEditor;
 
-import com.intellij.BundleBase;
 import com.intellij.CommonBundle;
+import com.intellij.ide.IdeBundle;
 import com.intellij.internal.statistic.eventLog.FeatureUsageUiEventsKt;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.AnAction;
@@ -14,17 +14,16 @@ import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.options.ex.ConfigurableCardPanel;
-import com.intellij.openapi.options.ex.ConfigurableExtensionPointUtil;
-import com.intellij.openapi.options.ex.ConfigurableVisitor;
+import com.intellij.openapi.options.ex.SortedConfigurableGroup;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.ActionCallback;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.ui.ComponentUtil;
 import com.intellij.ui.LightColors;
 import com.intellij.ui.RelativeFont;
 import com.intellij.ui.UIBundle;
 import com.intellij.ui.components.labels.LinkLabel;
-import com.intellij.util.containers.JBIterable;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.MergingUpdateQueue;
@@ -40,7 +39,6 @@ import java.awt.event.AWTEventListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
-import java.util.ResourceBundle;
 
 import static com.intellij.ui.ScrollPaneFactory.createScrollPane;
 import static java.awt.Toolkit.getDefaultToolkit;
@@ -232,12 +230,10 @@ class ConfigurableEditor extends AbstractEditor implements AnActionListener, AWT
   void postUpdateCurrent(Configurable configurable) {
   }
 
-  final boolean updateIfCurrent(Configurable configurable) {
-    if (myConfigurable != configurable) {
-      return false;
+  final void updateIfCurrent(Configurable configurable) {
+    if (myConfigurable == configurable) {
+      updateCurrent(configurable, false);
     }
-    updateCurrent(configurable, false);
-    return true;
   }
 
   @NotNull
@@ -262,7 +258,12 @@ class ConfigurableEditor extends AbstractEditor implements AnActionListener, AWT
       return true;
     }
     if (myErrorLabel.isEnabled()) {
-      myErrorLabel.setText("<html><body><strong>" + exception.getTitle() + "</strong>:<br>" + exception.getMessage());
+      myErrorLabel.setText(HtmlChunk.body().children(
+        HtmlChunk.text(exception.getTitle()).wrapWith("strong"),
+        HtmlChunk.text(":"),
+        HtmlChunk.br(),
+        HtmlChunk.text(exception.getMessage())
+      ).wrapWith("html").toString());
       myErrorLabel.setVisible(true);
     }
     else {
@@ -282,39 +283,30 @@ class ConfigurableEditor extends AbstractEditor implements AnActionListener, AWT
   private JComponent createDefaultContent(Configurable configurable) {
     JComponent content = new JPanel(new BorderLayout());
     content.setBorder(JBUI.Borders.empty(11, 16, 16, 16));
-    String key = configurable == null ? null : ConfigurableVisitor.getId(configurable) + ".settings.description";
-    String description = key == null ? null : getString(configurable, key);
+    SortedConfigurableGroup group = configurable instanceof SortedConfigurableGroup ? (SortedConfigurableGroup)configurable : null;
+    String description = group == null ? null : group.getDescription();
     if (description == null) {
-      description = "Select configuration element in the tree to edit its settings";
+      description = IdeBundle.message("label.select.configuration.element");
       content.add(BorderLayout.CENTER, new JLabel(description, SwingConstants.CENTER));
       content.setPreferredSize(JBUI.size(800, 600));
     }
     else {
       content.add(BorderLayout.NORTH, new JLabel(description));
-      if (configurable instanceof Configurable.Composite) {
-        Configurable.Composite composite = (Configurable.Composite)configurable;
 
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        content.add(BorderLayout.CENTER, panel);
-        panel.add(Box.createVerticalStrut(10));
-        for (Configurable current : composite.getConfigurables()) {
-          LinkLabel label = LinkLabel.create(current.getDisplayName(), () -> openLink(current));
-          label.setBorder(JBUI.Borders.empty(1, 17, 3, 1));
-          panel.add(label);
-        }
+      JPanel panel = new JPanel();
+      panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+      content.add(BorderLayout.CENTER, panel);
+      panel.add(Box.createVerticalStrut(10));
+      for (Configurable current : group.getConfigurables()) {
+        //noinspection DialogTitleCapitalization (title case is OK here)
+        LinkLabel<?> label = LinkLabel.create(current.getDisplayName(), () -> openLink(current));
+        label.setBorder(JBUI.Borders.empty(1, 17, 3, 1));
+        panel.add(label);
       }
     }
     JScrollPane pane = createScrollPane(content, true);
     pane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_NEVER);
     return pane;
-  }
-
-  private static String getString(Configurable configurable, String key) {
-    JBIterable<Configurable> it = JBIterable.of(configurable).append(
-      JBIterable.of(configurable instanceof Configurable.Composite ? ((Configurable.Composite)configurable).getConfigurables() : null));
-    ResourceBundle bundle = ConfigurableExtensionPointUtil.getBundle(key, it, null);
-    return bundle != null ? BundleBase.message(bundle, key) : null;
   }
 
   static ConfigurationException apply(Configurable configurable) {

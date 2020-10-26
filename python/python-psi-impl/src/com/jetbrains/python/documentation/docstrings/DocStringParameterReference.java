@@ -11,6 +11,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.IncorrectOperationException;
 import com.jetbrains.python.PyNames;
+import com.jetbrains.python.PyPsiBundle;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.ParamHelper;
 import com.jetbrains.python.psi.types.TypeEvalContext;
@@ -33,7 +34,7 @@ public class DocStringParameterReference extends PsiReferenceBase<PyStringLitera
   public enum ReferenceType {PARAMETER, PARAMETER_TYPE, KEYWORD, VARIABLE, CLASS_VARIABLE, INSTANCE_VARIABLE, GLOBAL_VARIABLE}
 
   @Override
-  public PsiElement resolve() {
+  public PyElement resolve() {
     PyDocStringOwner owner = PsiTreeUtil.getParentOfType(getElement(), PyDocStringOwner.class);
     if (owner instanceof PyFunction) {
       return resolveParameter((PyFunction)owner);
@@ -41,7 +42,7 @@ public class DocStringParameterReference extends PsiReferenceBase<PyStringLitera
     if (owner instanceof PyClass) {
       final PyFunction init = ((PyClass)owner).findMethodByName(PyNames.INIT, false, null);
       if (init != null) {
-        PsiElement element = resolveParameter(init);
+        PyElement element = resolveParameter(init);
         if (element == null && (myType.equals(ReferenceType.CLASS_VARIABLE) || myType.equals(ReferenceType.PARAMETER_TYPE))) {
           element = resolveClassVariable((PyClass)owner);
         }
@@ -51,7 +52,7 @@ public class DocStringParameterReference extends PsiReferenceBase<PyStringLitera
         return element;
       }
       else {
-        PsiElement element = null;
+        PyElement element = null;
         if (myType.equals(ReferenceType.CLASS_VARIABLE) || myType.equals(ReferenceType.PARAMETER_TYPE)) {
           element = resolveClassVariable((PyClass)owner);
         }
@@ -68,7 +69,7 @@ public class DocStringParameterReference extends PsiReferenceBase<PyStringLitera
   }
 
   @Nullable
-  private PsiElement resolveGlobalVariable(@NotNull PyFile owner) {
+  private PyTargetExpression resolveGlobalVariable(@NotNull PyFile owner) {
     for (PyTargetExpression assignment : owner.getTopLevelAttributes()) {
       if (getCanonicalText().equals(assignment.getName())) {
         return assignment;
@@ -78,7 +79,7 @@ public class DocStringParameterReference extends PsiReferenceBase<PyStringLitera
   }
 
   @Nullable
-  private PsiElement resolveInstanceVariable(final PyClass owner) {
+  private PyTargetExpression resolveInstanceVariable(final PyClass owner) {
     final List<PyTargetExpression> attributes = owner.getInstanceAttributes();
     for (PyTargetExpression element : attributes) {
       if (getCanonicalText().equals(element.getName())) {
@@ -89,7 +90,7 @@ public class DocStringParameterReference extends PsiReferenceBase<PyStringLitera
   }
 
   @Nullable
-  private PsiElement resolveClassVariable(@NotNull final PyClass owner) {
+  private PyTargetExpression resolveClassVariable(@NotNull final PyClass owner) {
     final List<PyTargetExpression> attributes = owner.getClassAttributes();
     for (PyTargetExpression element : attributes) {
       if (getCanonicalText().equals(element.getName())) {
@@ -100,7 +101,7 @@ public class DocStringParameterReference extends PsiReferenceBase<PyStringLitera
   }
 
   @Nullable
-  private PsiElement resolveParameter(PyFunction owner) {
+  private PyNamedParameter resolveParameter(PyFunction owner) {
     final PyParameterList parameterList = owner.getParameterList();
     final PyNamedParameter resolved = parameterList.findParameterByName(getCanonicalText());
     if (resolved != null) {
@@ -166,7 +167,7 @@ public class DocStringParameterReference extends PsiReferenceBase<PyStringLitera
     PyDocStringOwner owner = PsiTreeUtil.getParentOfType(getElement(), PyDocStringOwner.class);
     if (owner instanceof PyFunction) {
       PyFunction function = (PyFunction)owner;
-      return "Function '" + function.getName() + "' does not have a parameter '" + getCanonicalText() + "'";
+      return PyPsiBundle.message("unresolved.docstring.param.reference", function.getName(), getCanonicalText());
     }
     return null;
   }

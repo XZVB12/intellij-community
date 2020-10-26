@@ -15,7 +15,6 @@ import com.intellij.openapi.diff.DiffBundle;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.ChangesUtil;
@@ -28,9 +27,11 @@ import com.intellij.ui.ClickListener;
 import com.intellij.ui.PopupHandler;
 import com.intellij.ui.SmartExpander;
 import com.intellij.ui.TreeSpeedSearch;
+import com.intellij.ui.tree.TreeVisitor;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.Processor;
+import com.intellij.util.containers.TreeTraversal;
 import com.intellij.util.ui.tree.TreeUtil;
 import com.intellij.vcsUtil.VcsUtil;
 import org.intellij.lang.annotations.JdkConstants;
@@ -111,7 +112,7 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     new TreeSpeedSearch(this, ChangesBrowserNode.TO_TEXT_CONVERTER, expandInSpeedSearch);
 
     final ChangesBrowserNodeRenderer nodeRenderer = new ChangesBrowserNodeRenderer(myProject, this::isShowFlatten, highlightProblems);
-    setCellRenderer(new ChangesTreeCellRenderer(nodeRenderer));
+    setCellRenderer(new CheckboxTreeCellRenderer(nodeRenderer));
 
     new MyToggleSelectionAction().registerCustomShortcutSet(new CustomShortcutSet(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0)), this);
     showCheckboxesChanged();
@@ -161,8 +162,10 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     if (pathBounds == null) return null;
 
     Rectangle checkBoxBounds = pathBounds.getBounds();
-    checkBoxBounds.setSize(myCheckboxWidth, checkBoxBounds.height);
-    return checkBoxBounds.contains(p) && isIncludable(path) ? path : null;
+    checkBoxBounds.setSize(getCheckboxWidth(), checkBoxBounds.height);
+    if (!checkBoxBounds.contains(p) || !isIncludable(path)) return null;
+
+    return path;
   }
 
   protected void installTreeLinkHandler(@NotNull ChangesBrowserNodeRenderer nodeRenderer) {
@@ -171,7 +174,7 @@ public abstract class ChangesTree extends Tree implements DataProvider {
       protected int getRendererRelativeX(@NotNull MouseEvent e, @NotNull JTree tree, @NotNull TreePath path) {
         int x = super.getRendererRelativeX(e, tree, path);
 
-        return !myShowCheckboxes ? x : x - myCheckboxWidth;
+        return x - getCheckboxWidth();
       }
 
       @Override
@@ -183,15 +186,33 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     }.installOn(this);
   }
 
+  private int getCheckboxWidth() {
+    if (!myShowCheckboxes) return 0;
+    return myCheckboxWidth;
+  }
+
   @NotNull
   protected ChangesGroupingSupport installGroupingSupport() {
     ChangesGroupingSupport result = new ChangesGroupingSupport(myProject, this, false);
 
     migrateShowFlattenSetting();
-    result.setGroupingKeysOrSkip(set(notNull(PropertiesComponent.getInstance(myProject).getValues(GROUPING_KEYS), DEFAULT_GROUPING_KEYS)));
-    result.addPropertyChangeListener(e -> changeGrouping());
+    installGroupingSupport(this, result, GROUPING_KEYS, DEFAULT_GROUPING_KEYS);
 
     return result;
+  }
+
+  protected static void installGroupingSupport(@NotNull ChangesTree tree, @NotNull ChangesGroupingSupport groupingSupport,
+                                               @NotNull @NonNls String propertyName, @NonNls String... defaultGroupingKeys) {
+    groupingSupport.setGroupingKeysOrSkip(set(notNull(PropertiesComponent.getInstance(tree.getProject()).getValues(propertyName),
+                                                      defaultGroupingKeys)));
+    groupingSupport.addPropertyChangeListener(e -> {
+      PropertiesComponent.getInstance(tree.getProject()).setValues(propertyName,
+                                                                   ArrayUtilRt.toStringArray(groupingSupport.getGroupingKeys()));
+
+      List<Object> oldSelection = selected(tree).userObjects();
+      tree.rebuildTree();
+      tree.setSelectedChanges(oldSelection);
+    });
   }
 
   private void migrateShowFlattenSetting() {
@@ -244,25 +265,25 @@ public abstract class ChangesTree extends Tree implements DataProvider {
   }
 
   @Nullable
-  public Processor<MouseEvent> getDoubleClickHandler() {
+  public Processor<? super MouseEvent> getDoubleClickHandler() {
     return myHandlers.getDoubleClickHandler();
   }
 
-  public void setDoubleClickHandler(@Nullable Processor<MouseEvent> handler) {
+  public void setDoubleClickHandler(@Nullable Processor<? super MouseEvent> handler) {
     myHandlers.setDoubleClickHandler(handler);
   }
 
   @Nullable
-  public Processor<KeyEvent> getEnterKeyHandler() {
+  public Processor<? super KeyEvent> getEnterKeyHandler() {
     return myHandlers.getEnterKeyHandler();
   }
 
-  public void setEnterKeyHandler(@Nullable Processor<KeyEvent> handler) {
+  public void setEnterKeyHandler(@Nullable Processor<? super KeyEvent> handler) {
     myHandlers.setEnterKeyHandler(handler);
   }
 
   public void installPopupHandler(ActionGroup group) {
-    PopupHandler.installUnknownPopupHandler(this, group, ActionManager.getInstance());
+    PopupHandler.installPopupHandler(this, group, ActionPlaces.UNKNOWN);
   }
 
   public JComponent getPreferredFocusedComponent() {
@@ -320,14 +341,6 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     repaint();
   }
 
-  private void changeGrouping() {
-    PropertiesComponent.getInstance(myProject).setValues(GROUPING_KEYS, ArrayUtilRt.toStringArray(getGroupingSupport().getGroupingKeys()));
-
-    List<Object> oldSelection = selected(this).userObjects();
-    rebuildTree();
-    setSelectedChanges(oldSelection);
-  }
-
   private boolean isCurrentModelFlat() {
     boolean isFlat = true;
     Enumeration enumeration = getRoot().depthFirstEnumeration();
@@ -372,14 +385,14 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     return myModelUpdateInProgress;
   }
 
-  protected void resetTreeState() {
+  public void resetTreeState() {
     // expanding lots of nodes is a slow operation (and result is not very useful)
-    if (hasAtLeastNodes(this, 30000)) {
+    if (TreeUtil.hasManyNodes(this, 30000)) {
       TreeUtil.collapseAll(this, 1);
       return;
     }
 
-    TreeUtil.expandAll(this);
+    expandDefaults();
 
     int selectedTreeRow = -1;
 
@@ -412,10 +425,6 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     TreeUtil.showRowCentered(this, selectedTreeRow, false);
   }
 
-  private static boolean hasAtLeastNodes(@NotNull Tree tree, int nodeNumber) {
-    return TreeUtil.treeTraverser(tree).traverse().take(nodeNumber).size() >= nodeNumber;
-  }
-
   public void selectFile(@Nullable VirtualFile toSelect) {
     if (toSelect == null) return;
     selectFile(VcsUtil.getFilePath(toSelect));
@@ -432,25 +441,26 @@ public abstract class ChangesTree extends Tree implements DataProvider {
   }
 
   private int findRowContainingFile(@NotNull TreeNode root, @NotNull FilePath toSelect) {
-    final Ref<Integer> row = Ref.create(-1);
-    TreeUtil.traverse(root, node -> {
+    TreeNode targetNode = TreeUtil.treeNodeTraverser(root).traverse(TreeTraversal.POST_ORDER_DFS).find(node -> {
       if (node instanceof DefaultMutableTreeNode) {
         Object userObject = ((DefaultMutableTreeNode)node).getUserObject();
         if (userObject instanceof Change) {
-          if (matches((Change)userObject, toSelect)) {
-            TreeNode[] path = ((DefaultMutableTreeNode)node).getPath();
-            row.set(getRowForPath(new TreePath(path)));
-          }
+          return matches((Change)userObject, toSelect);
         }
       }
 
-      return row.get() == -1;
+      return false;
     });
-    return row.get();
+    if (targetNode != null) {
+      return TreeUtil.getRowForNode(this, (DefaultMutableTreeNode)targetNode);
+    }
+    else {
+      return -1;
+    }
   }
 
   private static boolean matches(@NotNull Change change, @NotNull FilePath toSelect) {
-    return toSelect.equals(ChangesUtil.getAfterPath(change));
+    return toSelect.equals(ChangesUtil.getAfterPath(change)) || toSelect.equals(ChangesUtil.getBeforePath(change));
   }
 
   @NotNull
@@ -477,6 +487,10 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     if (myTreeInclusionListener != null) myTreeInclusionListener.run();
   }
 
+  /**
+   * If called during component initialization, should be followed by {@link #resetTreeState()} or {@link #rebuildTree()}
+   * to update initial selection.
+   */
   public void setIncludedChanges(@NotNull Collection<?> changes) {
     getInclusionModel().setInclusion(changes);
   }
@@ -527,6 +541,16 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     TreeUtil.expandAll(this);
   }
 
+  public void expandDefaults() {
+    TreeUtil.promiseExpand(this, path -> {
+      Object node = path.getLastPathComponent();
+      if (node instanceof ChangesBrowserNode && !((ChangesBrowserNode<?>)node).shouldExpandByDefault()) {
+        return TreeVisitor.Action.SKIP_CHILDREN;
+      }
+      return TreeVisitor.Action.CONTINUE;
+    });
+  }
+
   @NotNull
   public TreeExpander getTreeExpander() {
     return myTreeExpander;
@@ -574,8 +598,13 @@ public abstract class ChangesTree extends Tree implements DataProvider {
     }
 
     @Override
-    public boolean isVisible(@NotNull AnActionEvent event) {
+    public boolean isExpandAllVisible() {
       return !myGroupingSupport.isNone() || !myIsModelFlat;
+    }
+
+    @Override
+    public boolean isCollapseAllVisible() {
+      return isExpandAllVisible();
     }
   }
 
@@ -652,15 +681,18 @@ public abstract class ChangesTree extends Tree implements DataProvider {
   public void setSelectedChanges(@NotNull Collection<?> changes) {
     HashSet<Object> changesSet = new HashSet<>(changes);
     final List<TreePath> treeSelection = new ArrayList<>(changes.size());
-    TreeUtil.traverse(getRoot(), node -> {
+    TreeUtil.treeNodeTraverser(getRoot()).forEach(node -> {
       DefaultMutableTreeNode mutableNode = (DefaultMutableTreeNode)node;
       if (changesSet.contains(mutableNode.getUserObject())) {
         treeSelection.add(new TreePath(mutableNode.getPath()));
       }
-      return true;
     });
     setSelectionPaths(toTreePathArray(treeSelection));
     if (treeSelection.size() == 1) scrollPathToVisible(treeSelection.get(0));
+  }
+
+  public boolean isKeepTreeState() {
+    return myKeepTreeState;
   }
 
   public void setKeepTreeState(boolean keepTreeState) {

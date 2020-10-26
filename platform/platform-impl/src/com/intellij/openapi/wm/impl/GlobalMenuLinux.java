@@ -4,6 +4,7 @@ package com.intellij.openapi.wm.impl;
 import com.intellij.diagnostic.LoadingState;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.util.ExecUtil;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.IdeEventQueue;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.ui.UISettings;
@@ -23,7 +24,6 @@ import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.ui.jcef.JBCefApp;
 import com.intellij.util.loader.NativeLibraryLoader;
 import com.intellij.util.ui.ImageUtil;
 import com.sun.jna.Callback;
@@ -116,8 +116,6 @@ interface GlobalMenuLib extends Library {
 }
 
 public final class GlobalMenuLinux implements LinuxGlobalMenuEventHandler, Disposable {
-  private static final String TOGGLE_SWING_MENU_ACTION_NAME = "Toggle Global Menu Integration";
-  private static final String TOGGLE_SWING_MENU_ACTION_DESC = "Enable/disable global menu integration (in all frames)";
   private static final String TOGGLE_SWING_MENU_ACTION_ID = "ToggleGlobalLinuxMenu";
 
   private static final SimpleDateFormat ourDtf = new SimpleDateFormat("hhmmss.SSS"); // for debug only
@@ -217,22 +215,18 @@ public final class GlobalMenuLinux implements LinuxGlobalMenuEventHandler, Dispo
         }
       };
 
-      // JCEF/JBR11 is not compliant with JavaFX
-      //noinspection deprecation
-      if (!JBCefApp.isEnabled()) {
-        // NOTE: Linux implementation of JavaFX starts native main loop with GtkApplication._runLoop()
-        try {
-          Class<?> platformImpl = Class.forName("com.sun.javafx.application.PlatformImpl");
-          Method startup = platformImpl.getMethod("startup", Runnable.class);
-          Runnable r = () -> ourLib.startWatchDbus(ourGLogger, ourOnAppmenuServiceAppeared, ourOnAppmenuServiceVanished);
-          startup.invoke(null, r);
-        }
-        catch (Throwable e) {
-          LOG.info("can't start main loop via JavaFX (will run it manually): " + e.getMessage());
-          final Thread glibMain = new Thread(() -> ourLib.runMainLoop(ourGLogger, ourOnAppmenuServiceAppeared, ourOnAppmenuServiceVanished),
-                                             "GlobalMenuLinux loop");
-          glibMain.start();
-        }
+      // NOTE: Linux implementation of JavaFX starts native main loop with GtkApplication._runLoop()
+      try {
+        Class<?> platformImpl = Class.forName("com.sun.javafx.application.PlatformImpl");
+        Method startup = platformImpl.getMethod("startup", Runnable.class);
+        Runnable r = () -> ourLib.startWatchDbus(ourGLogger, ourOnAppmenuServiceAppeared, ourOnAppmenuServiceVanished);
+        startup.invoke(null, r);
+      }
+      catch (Throwable e) {
+        LOG.info("can't start main loop via JavaFX (will run it manually): " + e.getMessage());
+        final Thread glibMain = new Thread(() -> ourLib.runMainLoop(ourGLogger, ourOnAppmenuServiceAppeared, ourOnAppmenuServiceVanished),
+                                           "GlobalMenuLinux loop");
+        glibMain.start();
       }
     }
   }
@@ -246,7 +240,8 @@ public final class GlobalMenuLinux implements LinuxGlobalMenuEventHandler, Dispo
 
       // register toggle-swing-menu action (to be able to enable swing menu when system applet is died)
       actionManager
-        .registerAction(TOGGLE_SWING_MENU_ACTION_ID, new AnAction(TOGGLE_SWING_MENU_ACTION_NAME, TOGGLE_SWING_MENU_ACTION_DESC, null) {
+        .registerAction(TOGGLE_SWING_MENU_ACTION_ID, new AnAction(IdeBundle.message("action.toggle.global.menu.integration.text"),
+                                                                  IdeBundle.message("action.enable.disable.global.menu.integration.description"), null) {
           boolean enabled = false;
 
           @Override
@@ -1115,7 +1110,7 @@ public final class GlobalMenuLinux implements LinuxGlobalMenuEventHandler, Dispo
     }
   }
 
-  private static class QueuedEvent {
+  private static final class QueuedEvent {
     final int uid;
     final int eventType;
     final int rootId;

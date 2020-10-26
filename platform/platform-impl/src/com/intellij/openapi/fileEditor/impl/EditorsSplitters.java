@@ -32,24 +32,23 @@ import com.intellij.openapi.wm.ex.IdeFrameEx;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
 import com.intellij.openapi.wm.impl.*;
 import com.intellij.testFramework.LightVirtualFileBase;
-import com.intellij.ui.ComponentUtil;
-import com.intellij.ui.DirtyUI;
-import com.intellij.ui.JBColor;
-import com.intellij.ui.OnePixelSplitter;
+import com.intellij.ui.*;
 import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.docking.DockManager;
 import com.intellij.ui.tabs.JBTabs;
 import com.intellij.ui.tabs.impl.JBTabsImpl;
 import com.intellij.ui.tabs.impl.tabsLayout.TabsLayoutInfo;
 import com.intellij.util.Alarm;
+import com.intellij.util.IconUtil;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.PathUtil;
+import com.intellij.util.concurrency.NonUrgentExecutor;
 import com.intellij.util.containers.ArrayListSet;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
-import gnu.trove.THashSet;
 import org.jdom.Element;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -58,6 +57,7 @@ import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
 import java.awt.event.ContainerEvent;
+import java.awt.event.FocusEvent;
 import java.beans.PropertyChangeListener;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -72,13 +72,14 @@ import static com.intellij.openapi.wm.ToolWindowId.PROJECT_VIEW;
 public class EditorsSplitters extends IdePanePanel implements UISettingsListener {
   private static final Key<Activity> OPEN_FILES_ACTIVITY = Key.create("open.files.activity");
   private static final Logger LOG = Logger.getInstance(EditorsSplitters.class);
-  private static final String PINNED = "pinned";
+  @NonNls private static final String PINNED = "pinned";
   private static final String CURRENT_IN_TAB = "current-in-tab";
 
   private static final Key<Object> DUMMY_KEY = Key.create("EditorsSplitters.dummy.key");
   private static final Key<Boolean> OPENED_IN_BULK = Key.create("EditorSplitters.opened.in.bulk");
 
   private EditorWindow myCurrentWindow;
+  private long myLastFocusGainedTime = 0L;
   private final Set<EditorWindow> myWindows = new CopyOnWriteArraySet<>();
 
   private final FileEditorManagerImpl myManager;
@@ -236,8 +237,7 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
     return fileElement;
   }
 
-  @Nullable
-  Ref<JPanel> restoreEditors() {
+  @Nullable Ref<JPanel> restoreEditors() {
     Element element = mySplittersElement;
     if (element == null) {
       return null;
@@ -355,7 +355,7 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
   }
 
   public FileEditor @NotNull [] getSelectedEditors() {
-    Set<EditorWindow> windows = new THashSet<>(myWindows);
+    Set<EditorWindow> windows = new HashSet<>(myWindows);
     EditorWindow currentWindow = getCurrentWindow();
     if (currentWindow != null) {
       windows.add(currentWindow);
@@ -374,25 +374,35 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
     updateFileIconLater(file);
   }
 
-  void updateFileIconImmediately(@NotNull VirtualFile file) {
+  void updateFileIconImmediately(@NotNull VirtualFile file, @NotNull Icon icon) {
     Collection<EditorWindow> windows = findWindows(file);
     for (EditorWindow window : windows) {
-      window.updateFileIcon(file);
+      window.updateFileIcon(file, icon);
     }
   }
 
   private final Set<VirtualFile> myFilesToUpdateIconsFor = new HashSet<>();
 
-  private void updateFileIconLater(@NotNull VirtualFile file) {
+  void updateFileIconLater(@NotNull VirtualFile file) {
     myFilesToUpdateIconsFor.add(file);
     myIconUpdaterAlarm.cancelAllRequests();
     myIconUpdaterAlarm.addRequest(() -> {
       if (myManager.getProject().isDisposed()) return;
       for (VirtualFile file1 : myFilesToUpdateIconsFor) {
-        updateFileIconImmediately(file1);
+        updateFileIconAsynchronously(file1);
       }
       myFilesToUpdateIconsFor.clear();
     }, 200, ModalityState.stateForComponent(this));
+  }
+
+  private void updateFileIconAsynchronously(VirtualFile file) {
+    ReadAction
+      .nonBlocking(() -> IconUtil.computeFileIcon(file, Iconable.ICON_FLAG_READ_STATUS, myManager.getProject()))
+      .coalesceBy(this, "icon", file)
+      .expireWith(parentDisposable)
+      .expireWhen(() -> !file.isValid())
+      .finishOnUiThread(ModalityState.any(), icon -> updateFileIconImmediately(file, icon))
+      .submit(NonUrgentExecutor.getInstance());
   }
 
   void updateFileColor(@NotNull VirtualFile file) {
@@ -402,6 +412,16 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
       LOG.assertTrue(index != -1);
       window.setForegroundAt(index, getManager().getFileColor(file));
       window.setWaveColor(index, getManager().isProblem(file) ? JBColor.red : null);
+    }
+  }
+
+  void updateFileStyle(@NotNull VirtualFile file) {
+    Collection<EditorWindow> windows = findWindows(file);
+    for (EditorWindow window : windows) {
+      EditorWithProviderComposite composite = window.findFileComposite(file);
+      int index = window.findEditorIndex(composite);
+      LOG.assertTrue(index != -1);
+      window.setStyleAt(index, composite != null && composite.isPreview() ? SimpleTextAttributes.STYLE_ITALIC : -1);
     }
   }
 
@@ -443,30 +463,29 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
 
     Project project = myManager.getProject();
     IdeFrameEx frame = getFrame(project);
-    if (frame != null) {
-      String fileTitle = null;
-      Path ioFile = null;
-      VirtualFile file = getCurrentFile();
-      if (file != null) {
-        try {
-          ioFile = file instanceof LightVirtualFileBase ? null : Paths.get(file.getPresentableUrl());
-        }
-        catch (InvalidPathException error) {
-          // Sometimes presentable URLs, designed for showing texts in UI, aren't valid local filesystem paths.
-          // An error may happen not only for LightVirtualFile.
-          LOG.info(
-            String.format("Presentable URL %s of file %s can't be mapped on the local filesystem.", file.getPresentableUrl(), file),
-            error);
-        }
-        fileTitle = FrameTitleBuilder.getInstance().getFileTitle(project, file);
-      }
-      frame.setFileTitle(fileTitle, ioFile);
+    if (frame == null) {
+      return;
     }
+
+    String fileTitle = null;
+    Path ioFile = null;
+    VirtualFile file = getCurrentFile();
+    if (file != null) {
+      try {
+        ioFile = file instanceof LightVirtualFileBase ? null : Paths.get(file.getPresentableUrl());
+      }
+      catch (InvalidPathException ignored) {
+      }
+      fileTitle = FrameTitleBuilder.getInstance().getFileTitle(project, file);
+    }
+    frame.setFileTitle(fileTitle, ioFile);
   }
 
   protected @Nullable IdeFrameEx getFrame(@NotNull Project project) {
     ProjectFrameHelper frame = WindowManagerEx.getInstanceEx().getFrameHelper(project);
-    LOG.assertTrue(ApplicationManager.getApplication().isUnitTestMode() || frame != null);
+    LOG.assertTrue(ApplicationManager.getApplication().isUnitTestMode()
+                   || ApplicationManager.getApplication().isHeadlessEnvironment()
+                   || frame != null);
     return frame;
   }
 
@@ -602,7 +621,7 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
       if (myCurrentWindow != null) {
         EditorWithProviderComposite selectedEditor = myCurrentWindow.getSelectedEditor();
         if (selectedEditor != null) {
-          return IdeFocusTraversalPolicy.getPreferredFocusedComponent(selectedEditor.getComponent(), this);
+          return IdeFocusTraversalPolicy.getPreferredFocusedComponent(selectedEditor.getFocusComponent(), this);
         }
       }
       return IdeFocusTraversalPolicy.getPreferredFocusedComponent(EditorsSplitters.this, this);
@@ -620,6 +639,10 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
 
   public EditorWindow getCurrentWindow() {
     return myCurrentWindow;
+  }
+
+  public long getLastFocusGainedTime() {
+    return myLastFocusGainedTime;
   }
 
   @NotNull
@@ -799,6 +822,20 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
   private final class MyFocusWatcher extends FocusWatcher {
     @Override
     protected void focusedComponentChanged(Component component, AWTEvent cause) {
+      if (cause instanceof FocusEvent && cause.getID() == FocusEvent.FOCUS_GAINED){
+        if (((FocusEvent)cause).getCause() == FocusEvent.Cause.ACTIVATION) {
+          // Window activation mistakenly puts focus to editor as 'last focused component in this window'
+          // even if you activate the window by clicking some other place (e.g. Project View)
+          SwingUtilities.invokeLater(() -> {
+            if (component.isFocusOwner()) {
+              myLastFocusGainedTime = System.currentTimeMillis();
+            }
+          });
+        } else {
+          myLastFocusGainedTime = System.currentTimeMillis();
+        }
+      }
+
       EditorWindow newWindow = null;
 
       if (component != null) {
@@ -911,8 +948,9 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
             .withReopeningEditorsOnStartup();
           try {
             virtualFile.putUserData(OPENED_IN_BULK, Boolean.TRUE);
-            Document document =
-              ReadAction.compute(() -> virtualFile.isValid() ? FileDocumentManager.getInstance().getDocument(virtualFile) : null);
+            Document document = ReadAction.compute(() -> {
+              return virtualFile.isValid() ? FileDocumentManager.getInstance().getDocument(virtualFile) : null;
+            });
 
             boolean isCurrentTab = Boolean.parseBoolean(file.getAttributeValue(CURRENT_IN_TAB));
 
@@ -1057,6 +1095,29 @@ public class EditorsSplitters extends IdePanePanel implements UISettingsListener
       return editor.getPreferredFocusedComponent();
     }
     return null;
+  }
+
+  @Nullable
+  public EditorWindow openInRightSplit(@NotNull VirtualFile file) {
+    EditorWindow window = getCurrentWindow();
+
+    if (window == null) {
+      return null;
+    }
+    Container parent = window.myPanel.getParent();
+    if (parent instanceof Splitter) {
+      JComponent component = ((Splitter)parent).getSecondComponent();
+      if (component != window.myPanel) {
+        //reuse
+        EditorWindow rightSplitWindow = findWindowWith(component);
+        if (rightSplitWindow != null) {
+          myManager.openFileWithProviders(file, true, rightSplitWindow);
+          return rightSplitWindow;
+        }
+      }
+    }
+
+    return window.split(SwingConstants.VERTICAL, true, file, true);
   }
 
   public static boolean focusDefaultComponentInSplittersIfPresent(@NotNull Project project) {

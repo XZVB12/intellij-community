@@ -297,6 +297,12 @@ public class EditorActionTest extends AbstractEditorTest {
     checkResultByText("<selection>bar\nfoo\n<caret></selection>baz");
   }
 
+  public void testReverseLinesNoSelectionSpecialCase() {
+    initText("foo\nbar\n<caret>");
+    executeAction(IdeActions.ACTION_EDITOR_REVERSE_LINES);
+    checkResultByText("bar\nfoo\n<caret>");
+  }
+
   public void testLineStartForASpecificFoldingCase() {
     initText("\nabc<caret>");
     addCollapsedFoldRegion(0, 4, "...");
@@ -321,5 +327,23 @@ public class EditorActionTest extends AbstractEditorTest {
     getEditor().getScrollingModel().scrollVertically(0);
     executeAction(IdeActions.ACTION_EDITOR_MOVE_CARET_PAGE_DOWN);
     checkResultByText("line1\nline2<caret>\nline3\nline4\nline5\n");
+  }
+
+  public void testAddCaretPerSelectedLine() {
+    initText("<selection>line1\nline2\nline3<caret></selection>");
+    executeAction(IdeActions.ACTION_EDITOR_ADD_CARET_PER_SELECTED_LINE);
+    checkResultByText("line1<caret>\nline2<caret>\nline3<caret>");
+  }
+
+  public void testAddCaretPerSelectedLineWholeLinesSelection() {
+    initText("<selection>line1\nline2\n<caret></selection>line3");
+    executeAction(IdeActions.ACTION_EDITOR_ADD_CARET_PER_SELECTED_LINE);
+    checkResultByText("line1<caret>\nline2<caret>\nline3");
+  }
+
+  public void testAddCaretPerSelectedLineIncompleteSelection() {
+    initText("<selection>line1\nline2\nli<caret></selection>ne3");
+    executeAction(IdeActions.ACTION_EDITOR_ADD_CARET_PER_SELECTED_LINE);
+    checkResultByText("line1<caret>\nline2<caret>\nline3<caret>");
   }
 }

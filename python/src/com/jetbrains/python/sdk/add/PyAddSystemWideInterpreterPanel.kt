@@ -22,6 +22,7 @@ import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.jetbrains.python.PyBundle
+import com.jetbrains.python.PySdkBundle
 import com.jetbrains.python.sdk.*
 import java.awt.BorderLayout
 
@@ -36,10 +37,7 @@ class PyAddSystemWideInterpreterPanel(private val module: Module?,
 
   init {
     layout = BorderLayout()
-    val permWarning = JBLabel(
-      """|<html><strong>Note:</strong> You'll need admin permissions to install packages for this interpreter. Consider
-         |creating a per-project virtual environment instead.</html>""".trimMargin()).apply {
-    }
+    val permWarning = JBLabel(PyBundle.message("python.sdk.admin.permissions.needed.consider.creating.venv"))
     Runnable {
       permWarning.isVisible = sdkComboBox.selectedSdk?.adminPermissionsNeeded() ?: false
     }.apply {
@@ -47,7 +45,7 @@ class PyAddSystemWideInterpreterPanel(private val module: Module?,
       addChangeListener(this)
     }
     val formPanel = FormBuilder.createFormBuilder()
-      .addLabeledComponent(PyBundle.message("interpreter"), sdkComboBox)
+      .addLabeledComponent(PySdkBundle.message("python.interpreter.label"), sdkComboBox)
       .addComponentToRightColumn(permWarning)
       .panel
     add(formPanel, BorderLayout.NORTH)
@@ -60,8 +58,7 @@ class PyAddSystemWideInterpreterPanel(private val module: Module?,
   override fun validateAll(): List<ValidationInfo> = listOfNotNull(validateSdkComboBox(sdkComboBox, this))
 
   override fun getOrCreateSdk(): Sdk? {
-    return when (val sdk = sdkComboBox.selectedSdk) {
-      is PySdkToInstall -> sdk.install(module) { detectSystemWideSdks(module, existingSdks, context) }?.setup(existingSdks)
+    return when (val sdk = installSdkIfNeeded(sdkComboBox.selectedSdk, module, existingSdks, context)) {
       is PyDetectedSdk -> sdk.setup(existingSdks)
       else -> sdk
     }

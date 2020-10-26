@@ -1,25 +1,11 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.jps.incremental;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.util.containers.ContainerUtil;
-import gnu.trove.THashSet;
+import com.intellij.util.containers.FileCollectionFactory;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.ModuleChunk;
@@ -44,7 +30,7 @@ import java.util.*;
 /**
  * @author Eugene Zhuravlev
  */
-public class FSOperations {
+public final class FSOperations {
   private static final Logger LOG = Logger.getInstance(FSOperations.class);
   public static final GlobalContextKey<Set<File>> ALL_OUTPUTS_KEY = GlobalContextKey.create("_all_project_output_dirs_");
   private static final GlobalContextKey<Set<BuildTarget<?>>> TARGETS_COMPLETELY_MARKED_DIRTY = GlobalContextKey.create("_targets_completely_marked_dirty_");
@@ -131,7 +117,7 @@ public class FSOperations {
             }
             Set<File> rootFiles = targetFiles.get(rd);
             if (rootFiles == null) {
-              rootFiles = new THashSet<>(FileUtil.FILE_HASHING_STRATEGY);
+              rootFiles = FileCollectionFactory.createCanonicalFileSet();
               targetFiles.put(rd, rootFiles);
             }
             rootFiles.add(file);
@@ -409,7 +395,7 @@ public class FSOperations {
 
     Set<File> doNotDelete = ALL_OUTPUTS_KEY.get(context);
     if (doNotDelete == null) {
-      doNotDelete = new THashSet<>(FileUtil.FILE_HASHING_STRATEGY);
+      doNotDelete = FileCollectionFactory.createCanonicalFileSet();
       for (BuildTarget<?> target : context.getProjectDescriptor().getBuildTargetIndex().getAllTargets()) {
         doNotDelete.addAll(target.getOutputRoots(context));
       }
@@ -426,7 +412,7 @@ public class FSOperations {
           final File parentFile = file.getParentFile();
           if (parentFile != null) {
             if (additionalDirs == null) {
-              additionalDirs = new THashSet<>(FileUtil.FILE_HASHING_STRATEGY);
+              additionalDirs = FileCollectionFactory.createCanonicalFileSet();
             }
             additionalDirs.add(parentFile);
           }

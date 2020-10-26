@@ -1,6 +1,6 @@
 package org.jetbrains.plugins.textmate.bundles;
 
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.util.containers.ContainerUtil;
@@ -33,6 +33,7 @@ public class Bundle {
     myType = type;
   }
 
+  @NlsSafe
   @NotNull
   public String getName() {
     return myName;
@@ -67,7 +68,7 @@ public class Bundle {
     }
     catch (SecurityException ignore) {
     }
-    return files != null && files.length > 0 ? ContainerUtil.newHashSet(files) : Collections.emptySet();
+    return files != null && files.length > 0 ? ContainerUtil.set(files) : Collections.emptySet();
   }
 
   @Override
@@ -99,7 +100,7 @@ public class Bundle {
     return plist.getPlistValue(Constants.FILE_TYPES_KEY, emptyList()).getStringArray();
   }
 
-  public List<Pair<String, Plist>> loadPreferenceFile(@NotNull File file, @NotNull PlistReader plistReader) throws IOException {
+  public List<Map.Entry<String, Plist>> loadPreferenceFile(@NotNull File file, @NotNull PlistReader plistReader) throws IOException {
     return Collections.singletonList(PreferencesReadUtil.retrieveSettingsPlist(plistReader.read(file)));
   }
 
@@ -107,7 +108,7 @@ public class Bundle {
     private final Set<String> myExtensions;
 
     public BundleFilesFilter(String... extensions) {
-      myExtensions = new HashSet<>(Arrays.asList(extensions));
+      myExtensions = ContainerUtil.set(extensions);
     }
 
     @Override

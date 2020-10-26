@@ -11,13 +11,12 @@ import java.util.ResourceBundle;
 
 import static com.intellij.BundleUtil.loadLanguageBundle;
 
-public class UtilUiBundle {
+public final class UtilUiBundle {
   private static final String BUNDLE = "messages.UtilUiBundle";
   private static ResourceBundle ourBundle;
 
-  @Nls
   @NotNull
-  public static String message(@NotNull @PropertyKey(resourceBundle = BUNDLE) String key, Object @NotNull ... params) {
+  public static @Nls String message(@NotNull @PropertyKey(resourceBundle = BUNDLE) String key, Object @NotNull ... params) {
     return AbstractBundle.message(getBundle(), key, params);
   }
 

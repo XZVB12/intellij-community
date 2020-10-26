@@ -5,11 +5,6 @@ import java.io.File
 import java.util.function.Predicate
 
 abstract class SchemeManager<T> {
-  companion object {
-    @JvmStatic
-    fun getBaseName(scheme: Scheme) = scheme.name.removePrefix(Scheme.EDITABLE_COPY_PREFIX)
-  }
-
   abstract val allSchemes: List<T>
 
   open val isEmpty: Boolean

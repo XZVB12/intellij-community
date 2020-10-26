@@ -189,7 +189,8 @@ public final class GridCellImpl implements GridCell {
       setText(content.getDisplayName()).
       setTooltipText(content.getDescription()).
       setActionsContextComponent(content.getActionsContextComponent()).
-      setActions(content.getActions(), content.getPlace());
+      setActions(content.getActions(), content.getPlace()).
+      setTabColor(content.getTabColor());
   }
 
   public ActionCallback select(final Content content, final boolean requestFocus) {
@@ -226,7 +227,7 @@ public final class GridCellImpl implements GridCell {
     return myTabs.getComponent().isAncestorOf(c);
   }
 
-  private static class ProviderWrapper extends NonOpaquePanel implements DataProvider {
+  private static final class ProviderWrapper extends NonOpaquePanel implements DataProvider {
     Content myContent;
     ViewContext myContext;
 
@@ -438,7 +439,7 @@ public final class GridCellImpl implements GridCell {
     myMinimizedContents.remove(content);
   }
 
-  private static class GridCellTabs extends SingleHeightTabs {
+  private static final class GridCellTabs extends SingleHeightTabs {
     private final ViewContextEx myContext;
 
     @Override

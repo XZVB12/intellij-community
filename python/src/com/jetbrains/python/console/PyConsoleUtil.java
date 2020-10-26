@@ -28,7 +28,7 @@ import org.jetbrains.annotations.Nullable;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 
-public class PyConsoleUtil {
+public final class PyConsoleUtil {
   public static final String ORDINARY_PROMPT = ">>>";
   public static final String INPUT_PROMPT = ">?";
   public static final String INDENT_PROMPT = "...";
@@ -67,7 +67,7 @@ public class PyConsoleUtil {
           while (string.startsWith(builder.toString())) {
             builder.append(prompt);
           }
-          final String multiPrompt = builder.toString().substring(prompt.length());
+          final String multiPrompt = builder.substring(prompt.length());
           if (prompt == INDENT_PROMPT) {
             prompt = multiPrompt;
           }

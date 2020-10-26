@@ -5,23 +5,25 @@ import com.intellij.execution.ExecutionBundle;
 import com.intellij.execution.ExecutionException;
 import com.intellij.execution.process.OSProcessHandler;
 import com.intellij.execution.runners.ExecutionEnvironment;
-import com.intellij.execution.target.TargetEnvironmentAwareRunProfileState;
-import com.intellij.execution.target.TargetEnvironmentConfiguration;
-import com.intellij.execution.target.TargetEnvironmentRequest;
-import com.intellij.execution.target.TargetedCommandLineBuilder;
+import com.intellij.execution.target.*;
+import com.intellij.execution.target.local.LocalTargetEnvironment;
 import com.intellij.execution.target.local.LocalTargetEnvironmentFactory;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Experiments;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.progress.EmptyProgressIndicator;
-import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.projectRoots.JdkUtil;
+import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.registry.Registry;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
+
 public abstract class JavaCommandLineState extends CommandLineState implements JavaCommandLine, TargetEnvironmentAwareRunProfileState {
   private static final Logger LOG = Logger.getInstance(JavaCommandLineState.class);
   private JavaParameters myParams;
+  private TargetEnvironmentRequest myTargetEnvironmentRequest;
   private TargetedCommandLineBuilder myCommandLine;
 
   protected JavaCommandLineState(@NotNull ExecutionEnvironment environment) {
@@ -53,16 +55,44 @@ public abstract class JavaCommandLineState extends CommandLineState implements J
   protected abstract JavaParameters createJavaParameters() throws ExecutionException;
 
   @Override
-  public synchronized void prepareTargetEnvironmentRequest(@NotNull TargetEnvironmentRequest request,
-                                                           @Nullable TargetEnvironmentConfiguration configuration,
-                                                           @NotNull ProgressIndicator progressIndicator) throws ExecutionException {
-    progressIndicator.setText(ExecutionBundle.message("progress.text.prepare.target.requirements"));
-    myCommandLine = createTargetedCommandLine(request, configuration);
+  public void prepareTargetEnvironmentRequest(
+    @NotNull TargetEnvironmentRequest request,
+    @Nullable TargetEnvironmentConfiguration configuration,
+    @NotNull TargetProgressIndicator targetProgressIndicator) throws ExecutionException {
+    targetProgressIndicator.addSystemLine(ExecutionBundle.message("progress.text.prepare.target.requirements"));
+    myTargetEnvironmentRequest = request;
+    Ref<TargetedCommandLineBuilder> commandLineRef = new Ref<>();
+    Ref<ExecutionException> exceptionRef = new Ref<>();
+    ApplicationManager.getApplication().invokeAndWait(() -> {
+      try {
+        commandLineRef.set(createTargetedCommandLine(myTargetEnvironmentRequest, configuration));
+      }
+      catch (ExecutionException e) {
+        exceptionRef.set(e);
+      }
+    });
+    if(!exceptionRef.isNull()){
+      throw exceptionRef.get();
+    }
+    myCommandLine = commandLineRef.get();
+  }
+
+  @Override
+  public void handleCreatedTargetEnvironment(@NotNull TargetEnvironment environment,
+                                             @NotNull TargetProgressIndicator targetProgressIndicator) {
+    TargetedCommandLineBuilder targetedCommandLineBuilder = getTargetedCommandLine();
+    Objects.requireNonNull(targetedCommandLineBuilder.getUserData(JdkUtil.COMMAND_LINE_SETUP_KEY))
+      .provideEnvironment(environment, targetProgressIndicator);
+  }
+
+  public synchronized @Nullable TargetEnvironmentRequest getTargetEnvironmentRequest() {
+    return myTargetEnvironmentRequest;
   }
 
   @NotNull
   protected synchronized TargetedCommandLineBuilder getTargetedCommandLine() {
     if (myCommandLine != null) {
+      // In a correct implementation that uses the new API this condition is always true.
       return myCommandLine;
     }
 
@@ -74,7 +104,7 @@ public abstract class JavaCommandLineState extends CommandLineState implements J
     }
     try {
       // force re-prepareTargetEnvironment in order to drop previous environment
-      getEnvironment().prepareTargetEnvironment(this, new EmptyProgressIndicator());
+      getEnvironment().prepareTargetEnvironment(this, TargetProgressIndicator.EMPTY);
       return myCommandLine;
     }
     catch (ExecutionException e) {
@@ -99,7 +129,10 @@ public abstract class JavaCommandLineState extends CommandLineState implements J
     boolean redirectErrorStream = Registry.is("run.processes.with.redirectedErrorStream", false);
     TargetEnvironmentRequest request = factory.createRequest();
     TargetedCommandLineBuilder targetedCommandLineBuilder = createTargetedCommandLine(request, factory.getTargetConfiguration());
-    return factory.prepareRemoteEnvironment(request, new EmptyProgressIndicator())
+    LocalTargetEnvironment environment = factory.prepareRemoteEnvironment(request, TargetProgressIndicator.EMPTY);
+    Objects.requireNonNull(targetedCommandLineBuilder.getUserData(JdkUtil.COMMAND_LINE_SETUP_KEY))
+      .provideEnvironment(environment, TargetProgressIndicator.EMPTY);
+    return environment
       .createGeneralCommandLine(targetedCommandLineBuilder.build())
       .withRedirectErrorStream(redirectErrorStream);
   }

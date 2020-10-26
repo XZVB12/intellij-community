@@ -48,10 +48,7 @@ import java.util.List;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
-@State(name = "BookmarkManager", storages = {
-  @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE),
-  @Storage(value = StoragePathMacros.WORKSPACE_FILE, deprecated = true)
-})
+@State(name = "BookmarkManager", storages = @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE))
 public final class BookmarkManager implements PersistentStateComponent<Element> {
   private static final int MAX_AUTO_DESCRIPTION_SIZE = 50;
   private final MultiMap<VirtualFile, Bookmark> myBookmarks = MultiMap.createConcurrentSet();
@@ -216,6 +213,10 @@ public final class BookmarkManager implements PersistentStateComponent<Element> 
     return answer;
   }
 
+  public Collection<Bookmark> getAllBookmarks() {
+    return myBookmarks.values();
+  }
+
   @Nullable
   public Bookmark findEditorBookmark(@NotNull Document document, int line) {
     VirtualFile file = FileDocumentManager.getInstance().getFile(document);
@@ -261,7 +262,7 @@ public final class BookmarkManager implements PersistentStateComponent<Element> 
   public void loadState(@NotNull Element state) {
     myPendingState.set(readExternal(state));
 
-    StartupManager.getInstance(myProject).runWhenProjectIsInitialized(() -> {
+    StartupManager.getInstance(myProject).runAfterOpened(() -> {
       ApplicationManager.getApplication().invokeLater(() -> {
         List<Bookmark> newList = myPendingState.getAndSet(null);
         if (newList != null) {

@@ -1,6 +1,4 @@
-/*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.roots.ui.configuration.projectRoot;
 
 import com.intellij.CommonBundle;
@@ -11,7 +9,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.impl.libraries.LibraryEx;
-import com.intellij.openapi.roots.impl.libraries.LibraryImpl;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
 import com.intellij.openapi.roots.libraries.LibraryTablePresentation;
@@ -27,6 +24,7 @@ import com.intellij.openapi.ui.NamedConfigurable;
 import com.intellij.openapi.ui.NonEmptyInputValidator;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsActions;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.containers.MultiMap;
@@ -88,7 +86,7 @@ public abstract class BaseLibrariesConfigurable extends BaseStructureConfigurabl
     for (LibraryConfigurable configurable : getLibraryConfigurables()) {
       if (configurable.getDisplayName().isEmpty()) {
         ((LibraryProjectStructureElement)configurable.getProjectStructureElement()).navigate();
-        throw new ConfigurationException("Library name is not specified");
+        throw new ConfigurationException(JavaUiBundle.message("library.name.is.not.specified"));
       }
     }
   }
@@ -203,7 +201,7 @@ public abstract class BaseLibrariesConfigurable extends BaseStructureConfigurabl
     };
   }
 
-  protected abstract String getAddText();
+  protected abstract @NlsActions.ActionText String getAddText();
 
   public abstract StructureLibraryTableModifiableModelProvider getModelProvider();
 
@@ -308,7 +306,8 @@ public abstract class BaseLibrariesConfigurable extends BaseStructureConfigurabl
         if (librariesWithUsages > 0) {
           String message;
           if (librariesWithUsages == 1) {
-            message = firstLibraryUsageDescription + ".\nAre you sure you want to delete this library?";
+            message = firstLibraryUsageDescription + ".\n" +
+                      JavaUiBundle.message("dialog.message.are.you.sure.you.want.to.delete.this.library");
           }
           else {
             message = JavaUiBundle.message("libraries.remove.confirmation.text", firstLibraryWithUsageName, librariesWithUsages-1);
@@ -349,7 +348,7 @@ public abstract class BaseLibrariesConfigurable extends BaseStructureConfigurabl
     return JavaUiBundle.message("configurable.empty.text.select.library");
   }
 
-  private class CopyLibraryAction extends AnAction {
+  private final class CopyLibraryAction extends AnAction {
    private CopyLibraryAction() {
       super(CommonBundle.messagePointer("button.copy"), CommonBundle.messagePointer("button.copy"), COPY_ICON);
     }
@@ -379,7 +378,7 @@ public abstract class BaseLibrariesConfigurable extends BaseStructureConfigurabl
       if (myTree.getSelectionPaths() == null || myTree.getSelectionPaths().length != 1) {
         e.getPresentation().setEnabled(false);
       } else {
-        e.getPresentation().setEnabled(getSelectedObject() instanceof LibraryImpl);
+        e.getPresentation().setEnabled(getSelectedObject() instanceof LibraryEx);
       }
     }
   }

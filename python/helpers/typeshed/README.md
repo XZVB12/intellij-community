@@ -1,6 +1,6 @@
 # typeshed
 
-[![Build Status](https://travis-ci.org/python/typeshed.svg?branch=master)](https://travis-ci.org/python/typeshed)
+[![Build status](https://github.com/python/typeshed/workflows/Check%20stubs/badge.svg)](https://github.com/python/typeshed/actions?query=workflow%3A%22Check+stubs%22)
 [![Chat at https://gitter.im/python/typing](https://badges.gitter.im/python/typing.svg)](https://gitter.im/python/typing?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![Pull Requests Welcome](https://img.shields.io/badge/pull%20requests-welcome-brightgreen.svg)](https://github.com/python/typeshed/blob/master/CONTRIBUTING.md)
 
@@ -78,6 +78,13 @@ For more information on directory structure and stub versioning, see
 [the relevant section of CONTRIBUTING.md](
 https://github.com/python/typeshed/blob/master/CONTRIBUTING.md#stub-versioning).
 
+Third-party packages are generally removed from typeshed when one of the
+following criteria is met:
+
+* The upstream package ships a py.typed file for at least 6-12 months, or
+* the package does not support any of the Python versions supported by
+  typeshed.
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting pull
@@ -107,7 +114,8 @@ Run:
 ```
 $ python3.6 -m venv .venv3
 $ source .venv3/bin/activate
-(.venv3)$ pip3 install -r requirements-tests-py3.txt
+(.venv3)$ pip install -U pip
+(.venv3)$ pip install -r requirements-tests-py3.txt
 ```
 This will install mypy (you need the latest master branch from GitHub),
 typed-ast, flake8 (and plugins), pytype, black and isort.
@@ -119,7 +127,7 @@ Run using:`(.venv3)$ python3 tests/mypy_test.py`
 
 This test is shallow — it verifies that all stubs can be
 imported but doesn't check whether stubs match their implementation
-(in the Python standard library or a third-party package). It has a blacklist of
+(in the Python standard library or a third-party package). It has an exclude list of
 modules that are not tested at all, which also lives in the tests directory.
 
 If you are in the typeshed repo that is submodule of the

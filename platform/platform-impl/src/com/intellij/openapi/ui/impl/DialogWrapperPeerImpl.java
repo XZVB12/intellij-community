@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.ui.impl;
 
 import com.intellij.ide.DataManager;
@@ -41,10 +41,7 @@ import com.intellij.ui.*;
 import com.intellij.ui.components.JBLayeredPane;
 import com.intellij.ui.mac.touchbar.TouchBarsManager;
 import com.intellij.util.IJSwingUtilities;
-import com.intellij.util.ui.GraphicsUtil;
-import com.intellij.util.ui.JBInsets;
-import com.intellij.util.ui.OwnerOptional;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.*;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -96,7 +93,8 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
       }
       if (window == null) {
         for (ProjectFrameHelper frameHelper : windowManager.getProjectFrameHelpers()) {
-          if (frameHelper.getFrame().isActive()) {
+          IdeFrameImpl frame = frameHelper.getFrame();
+          if (frame != null && frame.isActive()) {
             window = frameHelper.getFrame();
             break;
           }
@@ -245,7 +243,7 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
       });
     };
 
-    UIUtil.invokeLaterIfNeeded(disposer);
+    EdtInvocationManager.invokeLaterIfNeeded(disposer);
   }
 
   private boolean isProgressDialog() {
@@ -548,20 +546,6 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
       UIUtil.setAutoRequestFocus(this, (owner!=null && owner.isActive()) || !ComponentUtil.isDisableAutoRequestFocus());
     }
 
-    /**
-     * @deprecated use {@link MyDialog#MyDialog(Window, DialogWrapper, Project, ActionCallback)}
-     */
-    @Deprecated
-    MyDialog(Window owner,
-             DialogWrapper dialogWrapper,
-             Project project,
-             @NotNull ActionCallback focused,
-             @NotNull ActionCallback typeAheadDone,
-             ActionCallback typeAheadCallback) {
-      this(owner, dialogWrapper, project, focused);
-    }
-
-
     @Override
     public JDialog getWindow() {
       return this;
@@ -589,7 +573,7 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
         return ((DataProvider)wrapper).getData(dataId);
       }
       if (wrapper instanceof TypeSafeDataProvider) {
-        TypeSafeDataProviderAdapter adapter = new TypeSafeDataProviderAdapter((TypeSafeDataProvider)wrapper);
+        DataProvider adapter = new TypeSafeDataProviderAdapter((TypeSafeDataProvider)wrapper);
         return adapter.getData(dataId);
       }
       return null;
@@ -650,7 +634,8 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
 
         Dimension packedSize = getSize();
         Dimension minSize = getMinimumSize();
-        setSize(Math.max(packedSize.width, minSize.width), Math.max(packedSize.height, minSize.height));
+        Dimension initial = dialogWrapper.getInitialSize();
+        setSize(max(packedSize, minSize, initial));
 
         setSize((int)(getWidth() * dialogWrapper.getHorizontalStretch()), (int)(getHeight() * dialogWrapper.getVerticalStretch()));
 
@@ -669,7 +654,8 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
         }
 
         if (myInitialSize == null) {
-          myInitialSize = getSize();
+          Dimension initialSize = dialogWrapper.getInitialSize();
+          myInitialSize = initialSize != null ? initialSize : getSize();
         }
       }
 
@@ -706,6 +692,18 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
 
       setBackground(UIUtil.getPanelBackground());
       super.show();
+    }
+
+    private static Dimension max(Dimension size, Dimension... others) {
+      int maxW = size.width;
+      int maxH = size.height;
+      for (Dimension sz : others) {
+        if (sz != null) {
+          maxW = Math.max(maxW, sz.width);
+          maxH = Math.max(maxH, sz.height);
+        }
+      }
+      return new Dimension(maxW, maxH);
     }
 
     @Nullable
@@ -885,7 +883,7 @@ public class DialogWrapperPeerImpl extends DialogWrapperPeer {
       }
     }
 
-    private class DialogRootPane extends JRootPane implements DataProvider {
+    private final class DialogRootPane extends JRootPane implements DataProvider {
 
       private final boolean myGlassPaneIsSet;
 

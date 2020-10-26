@@ -14,7 +14,6 @@ import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.application.ex.ApplicationInfoEx;
-import com.intellij.openapi.application.impl.ApplicationInfoImpl;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.ide.CopyPasteManager;
@@ -25,6 +24,7 @@ import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.IconLoader;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.FileUtilRt;
@@ -38,9 +38,11 @@ import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.Alarm;
+import com.intellij.util.MathUtil;
 import com.intellij.util.text.DateFormatUtil;
 import com.intellij.util.ui.*;
 import com.intellij.util.ui.accessibility.AccessibleContextUtil;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -82,7 +84,7 @@ public final class AboutPopup {
     ApplicationInfoEx appInfo = (ApplicationInfoEx)ApplicationInfo.getInstance();
 
     final PopupPanel panel = new PopupPanel(new BorderLayout());
-    Icon image = IconLoader.getIcon(appInfo.getAboutImageUrl());
+    Icon image = IconLoader.getIcon(appInfo.getAboutImageUrl(), AboutPopup.class);
     if (appInfo.showLicenseeInfo()) {
       final InfoSurface infoSurface = new InfoSurface(image, showDebugInfo);
       infoSurface.setPreferredSize(new Dimension(image.getIconWidth(), image.getIconHeight()));
@@ -117,6 +119,7 @@ public final class AboutPopup {
 
     Disposer.register(ourPopup, new Disposable() {
       @Override
+      @SuppressWarnings("AssignmentToStaticFieldFromInstanceMethod")
       public void dispose() {
         ourPopup = null;
       }
@@ -150,7 +153,7 @@ public final class AboutPopup {
     private final Alarm myAlarm = new Alarm();
 
     InfoSurface(Icon image, final boolean showDebugInfo) {
-      ApplicationInfoImpl appInfo = (ApplicationInfoImpl)ApplicationInfoEx.getInstanceEx();
+      ApplicationInfoEx appInfo = ApplicationInfoEx.getInstanceEx();
 
       myImage = image;
       //noinspection UseJBColor
@@ -171,13 +174,13 @@ public final class AboutPopup {
       appendLast();
 
       String buildInfo = IdeBundle.message("about.box.build.number", appInfo.getBuild().asString());
-      Calendar cal = appInfo.getBuildDate();
-      String buildDate = "";
+      Date timestamp = appInfo.getBuildDate().getTime();
       if (appInfo.getBuild().isSnapshot()) {
-        buildDate = new SimpleDateFormat("HH:mm, ").format(cal.getTime());
+        buildInfo += IdeBundle.message("about.box.build.date.time", DateFormatUtil.formatAboutDialogDate(timestamp), new SimpleDateFormat("HH:mm").format(timestamp));
       }
-      buildDate += DateFormatUtil.formatAboutDialogDate(cal.getTime());
-      buildInfo += IdeBundle.message("about.box.build.date", buildDate);
+      else {
+        buildInfo += IdeBundle.message("about.box.build.date", DateFormatUtil.formatAboutDialogDate(timestamp));
+      }
       myLines.add(new AboutBoxLine(buildInfo));
       appendLast();
 
@@ -337,7 +340,7 @@ public final class AboutPopup {
       return null;
     }
 
-    private Rectangle getCopyIconArea() {
+    private static Rectangle getCopyIconArea() {
       return new Rectangle(getCopyIconCoord(), JBUI.size(16));
     }
 
@@ -376,40 +379,35 @@ public final class AboutPopup {
         catch (TextRenderer.OverflowException ignore) { }
       }
 
-      ApplicationInfo appInfo = ApplicationInfo.getInstance();
+      ApplicationInfoEx appInfo = ApplicationInfoEx.getInstanceEx();
       int[] aboutLogoRect = appInfo.getAboutLogoRect();
       if (aboutLogoRect != null) {
         myLinks.add(new Link(new JBRectangle(aboutLogoRect[0], aboutLogoRect[1], aboutLogoRect[2], aboutLogoRect[3]), appInfo.getCompanyURL()));
       }
 
-      if (appInfo instanceof ApplicationInfoEx) {
-        long copyrightForeground = ((ApplicationInfoEx)appInfo).getCopyrightForeground();
-        Color color;
-        if (copyrightForeground < 0) {
-          color = JBColor.BLACK;
-        }
-        else {
-          //noinspection UseJBColor
-          color = new Color((int)copyrightForeground, copyrightForeground > 0xffffff);
-        }
-        g2.setColor(color);
-        if (SystemInfo.isMac) {
-          g2.setFont(JBUI.Fonts.miniFont());
-        }
-        else {
-          g2.setFont(JBUI.Fonts.create(SystemInfo.isWinVistaOrNewer ? "Segoe UI" : "Tahoma", 12));
-        }
-
-        g2.setColor(createColor(((ApplicationInfoEx)appInfo).getAboutForeground()));
+      long copyrightForeground = appInfo.getCopyrightForeground();
+      Color color;
+      if (copyrightForeground < 0) {
+        color = JBColor.BLACK;
       }
       else {
-        g2.setColor(JBColor.BLACK);
+        //noinspection UseJBColor
+        color = new Color((int)copyrightForeground, copyrightForeground > 0xffffff);
       }
+      g2.setColor(color);
+      if (SystemInfo.isMac) {
+        g2.setFont(JBUI.Fonts.miniFont());
+      }
+      else {
+        g2.setFont(JBUI.Fonts.create(SystemInfo.isWinVistaOrNewer ? "Segoe UI" : "Tahoma", 12));
+      }
+
+      g2.setColor(createColor(appInfo.getAboutForeground()));
 
       JBPoint copyrightCoord = getCopyrightCoord();
       g2.drawString(getCopyrightText(), copyrightCoord.x, copyrightCoord.y);
       if (myShowDebugInfo) {
-        g2.setColor(createColor(((ApplicationInfoEx)appInfo).getAboutForeground()));
+        g2.setColor(createColor(appInfo.getAboutForeground()));
         for (Link link : myLinks) {
           g2.drawRect(link.myRectangle.x, link.myRectangle.y, link.myRectangle.width, link.myRectangle.height);
         }
@@ -419,20 +417,15 @@ public final class AboutPopup {
       if (myShowCopy) {
         JBPoint coord = getCopyIconCoord();
         float alpha = myShowCopyAlpha;
-        config = new GraphicsConfig(g).paintWithAlpha(Math.min(1f, Math.max(0f, alpha)));
+        config = new GraphicsConfig(g).paintWithAlpha(MathUtil.clamp(alpha, 0f, 1f));
         AllIcons.General.CopyHovered.paintIcon(this, g, coord.x, coord.y);
         config.restore();
       }
     }
 
-    protected @NotNull String getCopyrightText() {
-      ApplicationInfo applicationInfo = ApplicationInfo.getInstance();
-      return "Copyright \u00A9 " +
-             ((ApplicationInfoImpl)applicationInfo).getCopyrightStart() +
-             "\u2013" +
-             Calendar.getInstance(Locale.US).get(Calendar.YEAR) +
-             " " +
-             applicationInfo.getCompanyName();
+    private static @NotNull String getCopyrightText() {
+      ApplicationInfoEx appInfo = ApplicationInfoEx.getInstanceEx();
+      return "Copyright © " + appInfo.getCopyrightStart() + '–' + Calendar.getInstance(Locale.US).get(Calendar.YEAR) + ' ' + appInfo.getCompanyName();
     }
 
     private @NotNull TextRenderer createTextRenderer(Graphics2D g) {
@@ -440,20 +433,20 @@ public final class AboutPopup {
       return new TextRenderer(r.x, r.y, r.width, r.height, g);
     }
 
-    protected JBRectangle getTextRendererRect() {
+    private static JBRectangle getTextRendererRect() {
       return new JBRectangle(115, 156, 500, 220);
     }
 
-    protected JBPoint getCopyrightCoord() {
+    private static JBPoint getCopyrightCoord() {
       return new JBPoint(115, 395);
     }
 
-    protected JBPoint getCopyIconCoord() {
+    private static JBPoint getCopyIconCoord() {
       return new JBPoint(66, 156);
     }
 
     public String getText() {
-      return myInfo.toString() + getExtraInfo();
+      return myInfo + getExtraInfo();
     }
 
     private class TextRenderer {
@@ -618,7 +611,7 @@ public final class AboutPopup {
       }
     }
 
-    private static class Link implements ActionListener {
+    private static final class Link implements ActionListener {
       private final Rectangle myRectangle;
       private final ActionListener myAction;
 
@@ -676,7 +669,7 @@ public final class AboutPopup {
       extraInfo += "Registry: " + registryKeys + "\n";
     }
 
-    String nonBundledPlugins = Arrays.stream(PluginManagerCore.getPlugins()).filter(p -> !p.isBundled() && p.isEnabled())
+    String nonBundledPlugins = PluginManagerCore.getLoadedPlugins().stream().filter(p -> !p.isBundled())
       .map(p -> p.getPluginId().getIdString()).collect(StringUtil.joining());
     if (!StringUtil.isEmpty(nonBundledPlugins)) {
       extraInfo += "Non-Bundled Plugins: " + nonBundledPlugins;
@@ -720,10 +713,7 @@ public final class AboutPopup {
 
       @Override
       public String getAccessibleDescription() {
-        if (myInfoSurface != null) {
-          return "Press Copy key to copy system information to clipboard";
-        }
-        return null;
+        return myInfoSurface != null ? "Press Copy key to copy system information to clipboard" : null;
       }
 
       @Override
@@ -733,16 +723,12 @@ public final class AboutPopup {
 
       @Override
       public int getAccessibleActionCount() {
-        if(myInfoSurface != null)
-          return 1;
-        return 0;
+        return myInfoSurface != null ? 1 : 0;
       }
 
       @Override
       public String getAccessibleActionDescription(int i) {
-        if (i == 0 && myInfoSurface != null)
-          return "Copy system information to clipboard";
-        return null;
+        return i == 0 && myInfoSurface != null ? "Copy system information to clipboard" : null;
       }
 
       @Override
@@ -772,7 +758,7 @@ public final class AboutPopup {
         viewer.setFocusable(true);
         viewer.addHyperlinkListener(new BrowserHyperlinkListener());
 
-        String resultHtmlText = getScaledHtmlText();
+        @NonNls String resultHtmlText = getScaledHtmlText();
         if (StartupUiUtil.isUnderDarcula()) {
           resultHtmlText = resultHtmlText.replaceAll("779dbd", "5676a0");
         }
@@ -812,10 +798,16 @@ public final class AboutPopup {
     };
 
     ourPopup.cancel();
-    dialog.setTitle(String.format("Third-Party Software Used by %s %s",
-                                  ApplicationNamesInfo.getInstance().getFullProductName(),
-                                  ApplicationInfo.getInstance().getFullVersion()));
+    dialog.setTitle(IdeBundle.message("dialog.title.third.party.software",
+                                      ApplicationNamesInfo.getInstance().getFullProductName(),
+                                      ApplicationInfo.getInstance().getFullVersion()));
     dialog.setSize(JBUIScale.scale(750), JBUIScale.scale(650));
     dialog.show();
+  }
+
+  public static @NotNull @NlsSafe String getAboutText() {
+    ApplicationInfoEx appInfo = (ApplicationInfoEx)ApplicationInfo.getInstance();
+    InfoSurface infoSurface = new InfoSurface(IconLoader.getIcon(appInfo.getAboutImageUrl(), AboutPopup.class), false);
+    return infoSurface.getText();
   }
 }

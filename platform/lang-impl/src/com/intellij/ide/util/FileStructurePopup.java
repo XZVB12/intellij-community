@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.util;
 
 import com.intellij.CommonBundle;
@@ -20,12 +20,11 @@ import com.intellij.ide.util.treeView.AbstractTreeNode;
 import com.intellij.ide.util.treeView.NodeRenderer;
 import com.intellij.ide.util.treeView.smartTree.*;
 import com.intellij.internal.statistic.collectors.fus.actions.persistence.ActionsEventLogGroup;
-import com.intellij.internal.statistic.eventLog.EventFields;
+import com.intellij.internal.statistic.eventLog.events.EventFields;
 import com.intellij.lang.LangBundle;
 import com.intellij.lang.Language;
 import com.intellij.navigation.LocationPresentation;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.MnemonicHelper;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
@@ -100,7 +99,7 @@ import java.util.function.BiPredicate;
  */
 public class FileStructurePopup implements Disposable, TreeActionsOwner {
   private static final Logger LOG = Logger.getInstance(FileStructurePopup.class);
-  private static final String NARROW_DOWN_PROPERTY_KEY = "FileStructurePopup.narrowDown";
+  private static final @NonNls String NARROW_DOWN_PROPERTY_KEY = "FileStructurePopup.narrowDown";
 
   private final Project myProject;
   private final FileEditor myFileEditor;
@@ -109,7 +108,7 @@ public class FileStructurePopup implements Disposable, TreeActionsOwner {
   private final TreeStructureActionsOwner myTreeActionsOwner;
 
   private JBPopup myPopup;
-  private String myTitle;
+  private @NlsContexts.PopupTitle String myTitle;
 
   private final Tree myTree;
   private final SmartTreeStructure myTreeStructure;
@@ -266,7 +265,6 @@ public class FileStructurePopup implements Disposable, TreeActionsOwner {
 
   public void show() {
     JComponent panel = createCenterPanel();
-    MnemonicHelper.init(panel);
     myTree.addTreeSelectionListener(__ -> {
       if (myPopup.isVisible()) {
         PopupUpdateProcessor updateProcessor = myPopup.getUserData(PopupUpdateProcessor.class);
@@ -879,7 +877,7 @@ public class FileStructurePopup implements Disposable, TreeActionsOwner {
     PropertiesComponent.getInstance().setValue(TreeStructureUtil.getPropertyName(propertyName), state, Sorter.ALPHA_SORTER.equals(action));
   }
 
-  public void setTitle(String title) {
+  public void setTitle(@NlsContexts.PopupTitle String title) {
     myTitle = title;
   }
 
@@ -1064,7 +1062,7 @@ public class FileStructurePopup implements Disposable, TreeActionsOwner {
     return false;
   }
 
-  static class MyTree extends DnDAwareTree implements PlaceProvider<String> {
+  static class MyTree extends DnDAwareTree implements PlaceProvider {
 
     MyTree(TreeModel treeModel) {
       super(treeModel);

@@ -4,6 +4,7 @@ package com.intellij.ui.popup.list;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeEventQueue;
+import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
@@ -434,25 +435,7 @@ public class ListPopupImpl extends WizardPopup implements ListPopup, NextStepHan
 
   public boolean handleNextStep(final PopupStep nextStep, Object parentValue, InputEvent e) {
     if (nextStep != PopupStep.FINAL_CHOICE) {
-      final Point point = myList.indexToLocation(myList.getSelectedIndex());
-      SwingUtilities.convertPointToScreen(point, myList);
-      myChild = createPopup(this, nextStep, parentValue);
-      if (myChild instanceof ListPopupImpl) {
-        for (ListSelectionListener listener : myList.getListSelectionListeners()) {
-          ((ListPopupImpl)myChild).addListSelectionListener(listener);
-        }
-      }
-      final JComponent container = getContent();
-
-      int y = point.y;
-      if (parentValue != null && getListModel().isSeparatorAboveOf(parentValue)) {
-        SeparatorWithText swt = new SeparatorWithText();
-        swt.setCaption(getListModel().getCaptionAboveOf(parentValue));
-        y += swt.getPreferredSize().height - 1;
-      }
-
-      myChild.show(container, container.getLocationOnScreen().x + container.getWidth() - STEP_X_PADDING, y, true);
-      setIndexForShowingChild(myList.getSelectedIndex());
+      showNextStepPopup(nextStep, parentValue);
       return false;
     }
     else {
@@ -464,6 +447,27 @@ public class ListPopupImpl extends WizardPopup implements ListPopup, NextStepHan
     }
   }
 
+  protected void showNextStepPopup(PopupStep nextStep, Object parentValue) {
+    final Point point = myList.indexToLocation(myList.getSelectedIndex());
+    SwingUtilities.convertPointToScreen(point, myList);
+    myChild = createPopup(this, nextStep, parentValue);
+    if (myChild instanceof ListPopupImpl) {
+      for (ListSelectionListener listener : myList.getListSelectionListeners()) {
+        ((ListPopupImpl)myChild).addListSelectionListener(listener);
+      }
+    }
+    final JComponent container = getContent();
+
+    int y = point.y;
+    if (parentValue != null && getListModel().isSeparatorAboveOf(parentValue)) {
+      SeparatorWithText swt = new SeparatorWithText();
+      swt.setCaption(getListModel().getCaptionAboveOf(parentValue));
+      y += swt.getPreferredSize().height - 1;
+    }
+
+    myChild.show(container, container.getLocationOnScreen().x + container.getWidth() - STEP_X_PADDING, y, true);
+    setIndexForShowingChild(myList.getSelectedIndex());
+  }
 
   @Override
   public void addListSelectionListener(ListSelectionListener listSelectionListener) {
@@ -493,6 +497,7 @@ public class ListPopupImpl extends WizardPopup implements ListPopup, NextStepHan
         if (index != myLastSelectedIndex) {
           if (!isMultiSelectionEnabled() || !UIUtil.isSelectionButtonDown(e) && myList.getSelectedIndices().length <= 1) {
             myList.setSelectedIndex(index);
+            showSubMenu(index);
           }
           restartTimer();
           myLastSelectedIndex = index;
@@ -504,6 +509,17 @@ public class ListPopupImpl extends WizardPopup implements ListPopup, NextStepHan
       }
 
       notifyParentOnChildSelection();
+    }
+
+    private void showSubMenu(int forIndex) {
+      disposeChildren();
+
+      ListPopupStep<Object> listStep = getListStep();
+      Object selectedValue = myListModel.getElementAt(forIndex);
+      if (!listStep.hasSubstep(selectedValue)) return;
+
+      PopupStep<?> step = listStep.onChosen(selectedValue, false);
+      showNextStepPopup(step, selectedValue);
     }
   }
 
@@ -601,7 +617,7 @@ public class ListPopupImpl extends WizardPopup implements ListPopup, NextStepHan
     }
   }
 
-  private class MyListSelectionModel extends DefaultListSelectionModel {
+  private final class MyListSelectionModel extends DefaultListSelectionModel {
     private MyListSelectionModel() {
       setSelectionMode(isMultiSelectionEnabled() ? MULTIPLE_INTERVAL_SELECTION : SINGLE_SELECTION);
     }
@@ -609,27 +625,36 @@ public class ListPopupImpl extends WizardPopup implements ListPopup, NextStepHan
     @Override
     public void setSelectionInterval(int index0, int index1) {
       if (getSelectionMode() == SINGLE_SELECTION) {
-        if (index0 > getLeadSelectionIndex()) {
-          for (int i = index0; i < myListModel.getSize(); i++) {
-            if (getListStep().isSelectable(myListModel.getElementAt(i))) {
-              super.setSelectionInterval(i, i);
-              break;
-            }
-          }
-        }
-        else {
-          for (int i = index0; i >= 0; i--) {
-            if (getListStep().isSelectable(myListModel.getElementAt(i))) {
-              super.setSelectionInterval(i, i);
-              break;
-            }
-          }
-        }
+        int index = findSelectableIndex(index0, getLeadSelectionIndex());
+        if (0 <= index) super.setSelectionInterval(index, index);
       }
       else {
         super.setSelectionInterval(index0, index1); // TODO: support when needed
       }
     }
+  }
+
+  private int findSelectableIndex(int index, int lead) {
+    int size = myListModel.getSize();
+    if (index < 0 || size <= index) return -1;
+
+    int found = findSelectableIndexInModel(index, index < lead ? -1 : size);
+    if (found >= 0) return found;
+
+    UISettings settings = UISettings.getInstanceOrNull();
+    if (settings != null && settings.getCycleScrolling() && 1 == Math.abs(index - lead)) {
+      found = findSelectableIndexInModel(index < lead ? size - 1 : 0, index);
+      if (found >= 0) return found;
+    }
+    return findSelectableIndexInModel(index, lead);
+  }
+
+  private int findSelectableIndexInModel(int index, int stop) {
+    while (index != stop) {
+      if (getListStep().isSelectable(myListModel.getElementAt(index))) return index;
+      index += index > stop ? -1 : 1;
+    }
+    return -1;
   }
 
   @Override

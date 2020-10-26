@@ -4,8 +4,10 @@ package com.intellij.openapi.util;
 import com.intellij.ReviseWhenPortedToJDK;
 import com.intellij.openapi.util.io.PathExecLazyValue;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.text.Strings;
 import com.intellij.util.lang.JavaVersion;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -17,6 +19,7 @@ import static com.intellij.util.ObjectUtils.notNull;
  * Provides information about operating system, system-wide settings, and Java Runtime.
  */
 @SuppressWarnings("unused")
+@NonNls
 public final class SystemInfo {
   public static final String OS_NAME = SystemInfoRt.OS_NAME;
   public static final String OS_VERSION = SystemInfoRt.OS_VERSION;
@@ -38,13 +41,13 @@ public final class SystemInfo {
   public static final boolean isUnix = SystemInfoRt.isUnix;
   public static final boolean isChromeOS = isLinux && isCrostini();
 
-  public static final boolean isAppleJvm = StringUtil.containsIgnoreCase(JAVA_VENDOR, "Apple");
-  public static final boolean isOracleJvm = StringUtil.containsIgnoreCase(JAVA_VENDOR, "Oracle");
-  public static final boolean isSunJvm = StringUtil.containsIgnoreCase(JAVA_VENDOR, "Sun") && StringUtil
-    .containsIgnoreCase(JAVA_VENDOR, "Microsystems");
-  public static final boolean isIbmJvm = StringUtil.containsIgnoreCase(JAVA_VENDOR, "IBM");
-  public static final boolean isAzulJvm = StringUtil.containsIgnoreCase(JAVA_VENDOR, "Azul");
-  public static final boolean isJetBrainsJvm = StringUtil.containsIgnoreCase(JAVA_VENDOR, "JetBrains");
+  public static final boolean isAppleJvm = Strings.indexOfIgnoreCase(JAVA_VENDOR, "Apple", 0) >= 0;
+  public static final boolean isOracleJvm = Strings.indexOfIgnoreCase(JAVA_VENDOR, "Oracle", 0) >= 0;
+  public static final boolean isSunJvm =
+    Strings.indexOfIgnoreCase(JAVA_VENDOR, "Sun", 0) >= 0 && Strings.indexOfIgnoreCase(JAVA_VENDOR, "Microsystems", 0) >= 0;
+  public static final boolean isIbmJvm = Strings.indexOfIgnoreCase(JAVA_VENDOR, "IBM", 0) >= 0;
+  public static final boolean isAzulJvm = Strings.indexOfIgnoreCase(JAVA_VENDOR, "Azul", 0) >= 0;
+  public static final boolean isJetBrainsJvm = Strings.indexOfIgnoreCase(JAVA_VENDOR, "JetBrains", 0) >= 0;
 
   @ReviseWhenPortedToJDK("9")
   public static final boolean IS_AT_LEAST_JAVA9 = SystemInfoRt.IS_AT_LEAST_JAVA9;
@@ -66,19 +69,19 @@ public final class SystemInfo {
   public static final boolean isWin8OrNewer = isWindows && isOsVersionAtLeast("6.2");
   public static final boolean isWin10OrNewer = isWindows && isOsVersionAtLeast("10.0");
 
-  public static final boolean isXWindow = isUnix && !isMac;
-  public static final boolean isWayland = isXWindow && !StringUtil.isEmpty(System.getenv("WAYLAND_DISPLAY"));
+  public static final boolean isXWindow = SystemInfoRt.isXWindow;
+  public static final boolean isWayland = isXWindow && !Strings.isEmpty(System.getenv("WAYLAND_DISPLAY"));
   /* http://askubuntu.com/questions/72549/how-to-determine-which-window-manager-is-running/227669#227669 */
   public static final boolean isGNOME = isXWindow &&
                                         (notNull(System.getenv("GDMSESSION"), "").startsWith("gnome") ||
-                                         StringUtil.toLowerCase(notNull(System.getenv("XDG_CURRENT_DESKTOP"), "")).endsWith("gnome"));
+                                         Strings.toLowerCase(notNull(System.getenv("XDG_CURRENT_DESKTOP"), "")).endsWith("gnome"));
   /* https://userbase.kde.org/KDE_System_Administration/Environment_Variables#KDE_FULL_SESSION */
-  public static final boolean isKDE = isXWindow && !StringUtil.isEmpty(System.getenv("KDE_FULL_SESSION"));
+  public static final boolean isKDE = isXWindow && !Strings.isEmpty(System.getenv("KDE_FULL_SESSION"));
 
   public static final boolean isXfce = isXWindow && (notNull(System.getenv("GDMSESSION"), "").startsWith("xfce")) ||
-                                       StringUtil.toLowerCase(notNull(System.getenv("XDG_CURRENT_DESKTOP"), "")).contains("xfce");
+                                       Strings.toLowerCase(notNull(System.getenv("XDG_CURRENT_DESKTOP"), "")).contains("xfce");
   public static final boolean isI3= isXWindow && (notNull(System.getenv("GDMSESSION"), "").startsWith("i3")) ||
-                                    StringUtil.toLowerCase(notNull(System.getenv("XDG_CURRENT_DESKTOP"), "")).contains("i3");
+                                    Strings.toLowerCase(notNull(System.getenv("XDG_CURRENT_DESKTOP"), "")).contains("i3");
 
   public static final boolean isMacSystemMenu = isMac && "true".equals(System.getProperty("apple.laf.useScreenMenuBar"));
 
@@ -87,7 +90,9 @@ public final class SystemInfo {
 
   public static final boolean is32Bit = SystemInfoRt.is32Bit;
   public static final boolean is64Bit = SystemInfoRt.is64Bit;
-  public static final boolean isMacIntel64 = isMac && "x86_64".equals(OS_ARCH);
+  public static final boolean isIntel64 = "x86_64".equals(OS_ARCH) || "amd64".equals(OS_ARCH);
+  public static final boolean isArm64 = "aarch64".equals(OS_ARCH) || "arm64".equals(OS_ARCH);
+  public static final boolean isMacIntel64 = isMac && isIntel64;
 
   private static final NotNullLazyValue<Boolean> ourHasXdgOpen = new PathExecLazyValue("xdg-open");
   public static boolean hasXdgOpen() {
@@ -99,18 +104,59 @@ public final class SystemInfo {
     return isXWindow && ourHasXdgMime.getValue();
   }
 
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSTiger = isMac && isOsVersionAtLeast("10.4");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSLeopard = isMac && isOsVersionAtLeast("10.5");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSSnowLeopard = isMac && isOsVersionAtLeast("10.6");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSLion = isMac && isOsVersionAtLeast("10.7");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSMountainLion = isMac && isOsVersionAtLeast("10.8");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSMavericks = isMac && isOsVersionAtLeast("10.9");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSYosemite = isMac && isOsVersionAtLeast("10.10");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSElCapitan = isMac && isOsVersionAtLeast("10.11");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSSierra = isMac && isOsVersionAtLeast("10.12");
+  /**
+   * @deprecated IJ Platform requires at least macOS 10.13.
+   */
+  @Deprecated
   public static final boolean isMacOSHighSierra = isMac && isOsVersionAtLeast("10.13");
   public static final boolean isMacOSMojave = isMac && isOsVersionAtLeast("10.14");
   public static final boolean isMacOSCatalina = isMac && isOsVersionAtLeast("10.15");
+  public static final boolean isMacOSBigSur = isMac && (isOsVersionAtLeast("11.0") || isOsVersionAtLeast("10.16"));
 
   public static @NotNull String getMacOSMajorVersion() {
     return getMacOSMajorVersion(OS_VERSION);
@@ -157,7 +203,7 @@ public final class SystemInfo {
   }
 
   public static String getOsNameAndVersion() {
-    return (isMacOSSierra ? "macOS" : OS_NAME) + ' ' + OS_VERSION;
+    return (isMac ? "macOS" : OS_NAME) + ' ' + OS_VERSION;
   }
 
   private static int normalize(int number) {

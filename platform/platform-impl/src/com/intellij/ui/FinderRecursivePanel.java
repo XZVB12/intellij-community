@@ -16,10 +16,7 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.UserDataHolder;
-import com.intellij.openapi.util.UserDataHolderBase;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.pom.Navigatable;
@@ -162,6 +159,7 @@ public abstract class FinderRecursivePanel<T> extends OnePixelSplitter implement
   }
 
   @NotNull
+  @Nls
   protected abstract String getItemText(@NotNull T t);
 
   @Nullable
@@ -180,7 +178,7 @@ public abstract class FinderRecursivePanel<T> extends OnePixelSplitter implement
    * @return the text to display in a tooltip for the given list item
    */
   @Nullable
-  protected String getItemTooltipText(@NotNull T t) {
+  protected @NlsContexts.Tooltip String getItemTooltipText(@NotNull T t) {
     return null;
   }
 
@@ -323,7 +321,7 @@ public abstract class FinderRecursivePanel<T> extends OnePixelSplitter implement
     }
 
     ActionGroup contextActionGroup = new DefaultActionGroup(actions);
-    PopupHandler.installUnknownPopupHandler(list, contextActionGroup, ActionManager.getInstance());
+    PopupHandler.installUnknownPopupHandler(list, contextActionGroup);
   }
 
   protected AnAction[] getCustomListActions() {
@@ -663,11 +661,11 @@ public abstract class FinderRecursivePanel<T> extends OnePixelSplitter implement
   }
 
   private class MyListCellRenderer extends ColoredListCellRenderer<T> {
-    private static final String ITEM_PROPERTY = "FINDER_RECURSIVE_PANEL_ITEM_PROPERTY";
+    @NonNls private static final String ITEM_PROPERTY = "FINDER_RECURSIVE_PANEL_ITEM_PROPERTY";
 
     @Override
     public String getToolTipText(MouseEvent event) {
-      String toolTipText = getToolTipText();
+      String toolTipText = super.getToolTipText(event);
       if (toolTipText != null) {
         return toolTipText;
       }
@@ -697,7 +695,7 @@ public abstract class FinderRecursivePanel<T> extends OnePixelSplitter implement
         append(getItemText(t));
       }
       catch (IndexNotReadyException e) {
-        append("loading...");
+        append(IdeBundle.message("progress.text.loading"));
       }
 
       try {

@@ -10,6 +10,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.util.exception.FrequentErrorLogger;
 import gnu.trove.THashSet;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -63,7 +64,7 @@ import java.util.function.Supplier;
  * <p/>
  * Note that tree access won't result in an exception when the tree was already loaded.
  */
-public class AstLoadingFilter {
+public final class AstLoadingFilter {
 
   private static final Logger LOG = Logger.getInstance(AstLoadingFilter.class);
   private static final FrequentErrorLogger ourErrorLogger = FrequentErrorLogger.newInstance(LOG);
@@ -96,7 +97,7 @@ public class AstLoadingFilter {
 
   @NotNull
   private static String buildDebugInfo(@NotNull VirtualFile file, @NotNull Supplier<String> disabledInfo) {
-    StringBuilder debugInfo = new StringBuilder();
+    @NonNls StringBuilder debugInfo = new StringBuilder();
     debugInfo.append("Accessed file path: ").append(file.getPath());
     String additionalInfo = disabledInfo.get();
     if (additionalInfo != null) {

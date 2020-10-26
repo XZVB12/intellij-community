@@ -7,6 +7,7 @@ import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.ui.ComponentContainer;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.NlsContexts.TabTitle;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -22,11 +23,13 @@ import java.beans.PropertyChangeListener;
 public interface Content extends UserDataHolder, ComponentContainer {
   String PROP_DISPLAY_NAME = "displayName";
   String PROP_ICON = "icon";
+  String PROP_PINNED = "pinned";
   String PROP_ACTIONS = "actions";
   String PROP_DESCRIPTION = "description";
   String PROP_COMPONENT = "component";
   String IS_CLOSABLE = "isClosable";
   String PROP_ALERT = "alerting";
+  String PROP_TAB_COLOR = "tabColor";
 
   Key<Boolean> TABBED_CONTENT_KEY = Key.create("tabbedContent");
   @Deprecated Key<String> TAB_GROUP_NAME_KEY = Key.create("tabbedGroupName");
@@ -92,13 +95,13 @@ public interface Content extends UserDataHolder, ComponentContainer {
   boolean isCloseable();
   void setCloseable(boolean closeable);
 
-  void setActions(ActionGroup actions, String place, @Nullable JComponent contextComponent);
+  void setActions(ActionGroup actions, @NonNls String place, @Nullable JComponent contextComponent);
   ActionGroup getActions();
 
   void setSearchComponent(@Nullable JComponent comp);
   @Nullable JComponent getSearchComponent();
 
-  String getPlace();
+  @NonNls String getPlace();
   JComponent getActionsContextComponent();
 
   void setAlertIcon(@Nullable AlertIcon icon);
@@ -123,4 +126,7 @@ public interface Content extends UserDataHolder, ComponentContainer {
 
   default void setHelpId(String helpId) { }
   default @Nullable String getHelpId() { return null; }
+
+  default void setTabColor(@Nullable Color color) {}
+  default @Nullable Color getTabColor() { return null; }
 }

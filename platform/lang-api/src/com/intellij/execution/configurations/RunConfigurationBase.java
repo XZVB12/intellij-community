@@ -13,6 +13,7 @@ import com.intellij.openapi.components.BaseState;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.InvalidDataException;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.openapi.util.text.StringUtilRt;
 import com.intellij.util.ReflectionUtil;
@@ -28,7 +29,6 @@ import javax.swing.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Standard base class for run configuration implementations.
@@ -142,7 +142,7 @@ public abstract class RunConfigurationBase<T> extends UserDataHolderBase impleme
     return result;
   }
 
-  void doCopyOptionsFrom(@NotNull RunConfigurationBase<T> template) {
+  protected void doCopyOptionsFrom(@NotNull RunConfigurationBase<T> template) {
     myOptions.copyFrom(template.myOptions);
     myOptions.resetModificationCount();
     myOptions.setAllowRunningInParallel(template.isAllowRunningInParallel());
@@ -235,13 +235,13 @@ public abstract class RunConfigurationBase<T> extends UserDataHolderBase impleme
   }
 
   @Override
-  public @NotNull Set<String> getVisibleFragments() {
-    return myOptions.getVisibleFragments();
+  public @NotNull List<Option> getSelectedOptions() {
+    return myOptions.getSelectedOptions();
   }
 
   @Override
-  public void setVisibleFragments(@NotNull Set<String> fragmentIds) {
-    myOptions.setVisibleFragments(fragmentIds);
+  public void setSelectedOptions(@NotNull List<Option> fragmentIds) {
+    myOptions.setSelectedOptions(fragmentIds);
   }
 
   @ApiStatus.Experimental
@@ -304,11 +304,11 @@ public abstract class RunConfigurationBase<T> extends UserDataHolderBase impleme
   }
 
   @Transient
-  public String getOutputFilePath() {
+  public @NlsSafe String getOutputFilePath() {
     return myOptions.getFileOutput().getFileOutputPath();
   }
 
-  public void setFileOutputPath(String fileOutputPath) {
+  public void setFileOutputPath(@NlsSafe String fileOutputPath) {
     myOptions.getFileOutput().setFileOutputPath(fileOutputPath);
   }
 

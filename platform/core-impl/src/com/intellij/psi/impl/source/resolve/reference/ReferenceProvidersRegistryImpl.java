@@ -4,10 +4,10 @@ package com.intellij.psi.impl.source.resolve.reference;
 import com.intellij.lang.Language;
 import com.intellij.lang.LanguageExtension;
 import com.intellij.lang.LanguageUtil;
+import com.intellij.lang.MetaLanguage;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.extensions.ExtensionPointListener;
-import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.util.Disposer;
@@ -19,14 +19,16 @@ import com.intellij.util.KeyedLazyInstance;
 import com.intellij.util.ProcessingContext;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
-import gnu.trove.TDoubleObjectHashMap;
+import it.unimi.dsi.fastutil.doubles.Double2ObjectMap;
+import it.unimi.dsi.fastutil.doubles.Double2ObjectMaps;
+import it.unimi.dsi.fastutil.doubles.Double2ObjectOpenHashMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class ReferenceProvidersRegistryImpl extends ReferenceProvidersRegistry {
+public final class ReferenceProvidersRegistryImpl extends ReferenceProvidersRegistry {
   private static final LanguageExtension<PsiReferenceContributor> CONTRIBUTOR_EXTENSION =
     new LanguageExtension<>(PsiReferenceContributor.EP_NAME);
   private static final LanguageExtension<PsiReferenceProviderBean> REFERENCE_PROVIDER_EXTENSION =
@@ -35,24 +37,35 @@ public class ReferenceProvidersRegistryImpl extends ReferenceProvidersRegistry {
   private final Map<Language, PsiReferenceRegistrarImpl> myRegistrars = new ConcurrentHashMap<>();
 
   public ReferenceProvidersRegistryImpl() {
-    if (Extensions.getRootArea().hasExtensionPoint(PsiReferenceContributor.EP_NAME)) {
+    if (ApplicationManager.getApplication().getExtensionArea().hasExtensionPoint(PsiReferenceContributor.EP_NAME)) {
       PsiReferenceContributor.EP_NAME.addExtensionPointListener(new ExtensionPointListener<KeyedLazyInstance<PsiReferenceContributor>>() {
         @Override
         public void extensionAdded(@NotNull KeyedLazyInstance<PsiReferenceContributor> extension,
                                    @NotNull PluginDescriptor pluginDescriptor) {
           Language language = Language.findLanguageByID(extension.getKey());
+          PsiReferenceContributor instance = extension.getInstance();
           if (language == Language.ANY) {
             for (PsiReferenceRegistrarImpl registrar : myRegistrars.values()) {
-              registerContributedReferenceProviders(registrar, extension.getInstance());
+              registerContributedReferenceProviders(registrar, instance);
             }
           }
           else if (language != null) {
-            Set<Language> languageAndDialects = LanguageUtil.getAllDerivedLanguages(language);
-            for (Language languageOrDialect : languageAndDialects) {
-              final PsiReferenceRegistrarImpl registrar = myRegistrars.get(languageOrDialect);
-              if (registrar != null) {
-                registerContributedReferenceProviders(registrar, extension.getInstance());
+            registerContributorForLanguageAndDialects(language, instance);
+            if (language instanceof MetaLanguage) {
+              Collection<Language> matchingLanguages = ((MetaLanguage)language).getMatchingLanguages();
+              for (Language matchingLanguage : matchingLanguages) {
+                registerContributorForLanguageAndDialects(matchingLanguage, instance);
               }
+            }
+          }
+        }
+
+        private void registerContributorForLanguageAndDialects(Language language, PsiReferenceContributor instance) {
+          Set<Language> languageAndDialects = LanguageUtil.getAllDerivedLanguages(language);
+          for (Language languageOrDialect : languageAndDialects) {
+            final PsiReferenceRegistrarImpl registrar = myRegistrars.get(languageOrDialect);
+            if (registrar != null) {
+              registerContributedReferenceProviders(registrar, instance);
             }
           }
         }
@@ -62,7 +75,7 @@ public class ReferenceProvidersRegistryImpl extends ReferenceProvidersRegistry {
                                      @NotNull PluginDescriptor pluginDescriptor) {
           Disposer.dispose(extension.getInstance());
         }
-      }, ApplicationManager.getApplication());
+      }, null);
     }
   }
 
@@ -112,7 +125,13 @@ public class ReferenceProvidersRegistryImpl extends ReferenceProvidersRegistry {
 
   @Override
   public void unloadProvidersFor(@NotNull Language language) {
-    myRegistrars.remove(language);
+    PsiReferenceRegistrarImpl psiReferenceRegistrar = myRegistrars.remove(language);
+    if (psiReferenceRegistrar != null) {
+      psiReferenceRegistrar.cleanup();
+    }
+    for (PsiReferenceRegistrarImpl registrar : myRegistrars.values()) {
+      registrar.clearBindingsCache();
+    }
   }
 
   @Override
@@ -124,12 +143,13 @@ public class ReferenceProvidersRegistryImpl extends ReferenceProvidersRegistry {
                                                                   @NotNull PsiReferenceService.Hints hints) {
     List<ProviderBinding.ProviderInfo<ProcessingContext>> providers = getRegistrar(context.getLanguage()).getPairsByElement(context, hints);
 
-    TDoubleObjectHashMap<List<PsiReference[]>> allReferencesMap = mapNotEmptyReferencesFromProviders(context, providers);
-
-    if (allReferencesMap.isEmpty()) return PsiReference.EMPTY_ARRAY;
+    Double2ObjectMap<List<PsiReference[]>> allReferencesMap = mapNotEmptyReferencesFromProviders(context, providers);
+    if (allReferencesMap.isEmpty()) {
+      return PsiReference.EMPTY_ARRAY;
+    }
 
     final List<PsiReference> result = new SmartList<>();
-    double maxPriority = Math.max(PsiReferenceRegistrar.LOWER_PRIORITY, Arrays.stream(allReferencesMap.keys()).max().getAsDouble());
+    double maxPriority = Math.max(PsiReferenceRegistrar.LOWER_PRIORITY, Arrays.stream(allReferencesMap.keySet().toDoubleArray()).max().getAsDouble());
     List<PsiReference> maxPriorityRefs = collectReferences(allReferencesMap.get(maxPriority));
 
     ContainerUtil.addAllNotNull(result, maxPriorityRefs);
@@ -140,9 +160,9 @@ public class ReferenceProvidersRegistryImpl extends ReferenceProvidersRegistry {
 
   //  we create priorities map: "priority" ->  non-empty references from providers
   //  if provider returns EMPTY_ARRAY or array with "null" references then this provider isn't added in priorities map.
-  private static @NotNull TDoubleObjectHashMap<List<PsiReference[]>> mapNotEmptyReferencesFromProviders(@NotNull PsiElement context,
-                                                                                     @NotNull List<? extends ProviderBinding.ProviderInfo<ProcessingContext>> providers) {
-    TDoubleObjectHashMap<List<PsiReference[]>> map = new TDoubleObjectHashMap<>();
+  private static @NotNull Double2ObjectMap<List<PsiReference[]>> mapNotEmptyReferencesFromProviders(@NotNull PsiElement context,
+                                                                                                            @NotNull List<? extends ProviderBinding.ProviderInfo<ProcessingContext>> providers) {
+    Double2ObjectMap<List<PsiReference[]>> map = new Double2ObjectOpenHashMap<>();
     for (ProviderBinding.ProviderInfo<ProcessingContext> trinity : providers) {
       final PsiReference[] refs = getReferences(context, trinity);
       if ((ApplicationManager.getApplication().isUnitTestMode() || ApplicationManager.getApplication().isInternal())
@@ -188,20 +208,19 @@ public class ReferenceProvidersRegistryImpl extends ReferenceProvidersRegistry {
     return PsiReference.EMPTY_ARRAY;
   }
 
-  private static @NotNull List<PsiReference> getLowerPriorityReferences(@NotNull TDoubleObjectHashMap<List<PsiReference[]>> allReferencesMap,
+  private static @NotNull List<PsiReference> getLowerPriorityReferences(@NotNull Double2ObjectMap<List<PsiReference[]>> allReferencesMap,
                                                                         double maxPriority,
                                                                         @NotNull List<? extends PsiReference> maxPriorityRefs) {
     List<PsiReference> result = new SmartList<>();
-    allReferencesMap.forEachEntry((priority, referenceArrays) -> {
-      if (maxPriority != priority) {
-        for (PsiReference[] references : referenceArrays) {
+    for (Double2ObjectMap.Entry<List<PsiReference[]>> entry : Double2ObjectMaps.fastIterable(allReferencesMap)) {
+      if (maxPriority != entry.getDoubleKey()) {
+        for (PsiReference[] references : entry.getValue()) {
           if (haveNotIntersectedTextRanges(maxPriorityRefs, references)) {
             ContainerUtil.addAllNotNull(result, references);
           }
         }
       }
-      return true;
-    });
+    }
     return result;
   }
 

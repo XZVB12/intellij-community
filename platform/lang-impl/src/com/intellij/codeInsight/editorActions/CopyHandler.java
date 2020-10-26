@@ -20,8 +20,10 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -87,7 +89,7 @@ public class CopyHandler extends EditorActionHandler implements CopyAction.Trans
   }
 
   private static @NotNull Transferable getSelection(@NotNull Editor editor, @NotNull Project project, @NotNull PsiFile file) {
-    PsiDocumentManager.getInstance(project).commitAllDocuments();
+    commitDocuments(editor, project);
 
     SelectionModel selectionModel = editor.getSelectionModel();
     final int[] startOffsets = selectionModel.getBlockSelectionStarts();
@@ -128,5 +130,26 @@ public class CopyHandler extends EditorActionHandler implements CopyAction.Trans
     return new TextBlockTransferable(escapedText != null ? escapedText : rawText,
                                      transferableDataList,
                                      escapedText != null ? new RawText(rawText) : null);
+  }
+
+  private static void commitDocuments(@NotNull Editor editor, @NotNull Project project) {
+    final List<CopyPastePostProcessor<? extends TextBlockTransferableData>> postProcessors =
+      ContainerUtil.filter(CopyPastePostProcessor.EP_NAME.getExtensionList(), p -> p.requiresAllDocumentsToBeCommitted(editor, project));
+    final List<CopyPastePreProcessor> preProcessors =
+      ContainerUtil.filter(CopyPastePreProcessor.EP_NAME.getExtensionList(), p -> p.requiresAllDocumentsToBeCommitted(editor, project));
+    final boolean commitAllDocuments = !preProcessors.isEmpty() || !postProcessors.isEmpty();
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("CommitAllDocuments: " + commitAllDocuments);
+      if (commitAllDocuments) {
+        final String processorNames = StringUtil.join(preProcessors, ",") + "," + StringUtil.join(postProcessors, ",");
+        LOG.debug("Processors with commitAllDocuments requirement: [" + processorNames + "]");
+      }
+    }
+    if (commitAllDocuments) {
+      PsiDocumentManager.getInstance(project).commitAllDocuments();
+    }
+    else {
+      PsiDocumentManager.getInstance(project).commitDocument(editor.getDocument());
+    }
   }
 }

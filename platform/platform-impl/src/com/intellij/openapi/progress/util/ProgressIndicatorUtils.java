@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.progress.util;
 
+import com.intellij.codeWithMe.ClientId;
 import com.intellij.concurrency.SensitiveProgressWrapper;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.Application;
@@ -14,16 +15,17 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressIndicatorProvider;
 import com.intellij.openapi.progress.ProgressManager;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.Ref;
+import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.util.ExceptionUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.concurrency.Semaphore;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.ApiStatus;
-import com.intellij.codeWithMe.ClientId;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.ide.PooledThreadExecutor;
 
 import java.util.List;
 import java.util.concurrent.*;
@@ -39,7 +41,7 @@ import java.util.concurrent.locks.Lock;
  *
  * @author gregsh
  */
-public class ProgressIndicatorUtils {
+public final class ProgressIndicatorUtils {
   private static final Logger LOG = Logger.getInstance(ProgressIndicatorUtils.class);
 
   @NotNull
@@ -61,7 +63,7 @@ public class ProgressIndicatorUtils {
 
   @NotNull
   public static CompletableFuture<?> scheduleWithWriteActionPriority(@NotNull ProgressIndicator progressIndicator, @NotNull ReadTask readTask) {
-    return scheduleWithWriteActionPriority(progressIndicator, PooledThreadExecutor.INSTANCE, readTask);
+    return scheduleWithWriteActionPriority(progressIndicator, AppExecutorUtil.getAppExecutorService(), readTask);
   }
 
   /**
@@ -345,6 +347,9 @@ public class ProgressIndicatorUtils {
       }
       catch (TimeoutException | RejectedExecutionException ignore) {
       }
+      catch (InterruptedException e) {
+        throw new ProcessCanceledException(e);
+      }
       catch (Throwable e) {
         Throwable cause = e.getCause();
         if (cause instanceof ProcessCanceledException) {
@@ -371,7 +376,10 @@ public class ProgressIndicatorUtils {
         success = waiter.compute();
       }
       catch (Exception e) {
-        LOG.warn(e);
+        //noinspection InstanceofCatchParameter
+        if (!(e instanceof InterruptedException)) {
+          LOG.warn(e);
+        }
         throw new ProcessCanceledException(e);
       }
     }

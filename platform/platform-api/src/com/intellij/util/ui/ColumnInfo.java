@@ -1,7 +1,8 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.ui;
 
-import org.jetbrains.annotations.Nls;
+import com.intellij.openapi.util.NlsContexts.ColumnName;
+import com.intellij.openapi.util.NlsContexts.Tooltip;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -12,7 +13,7 @@ import java.util.Comparator;
 import java.util.Objects;
 
 public abstract class ColumnInfo<Item, Aspect> {
-  private String myName;
+  private @ColumnName String myName;
   public static final ColumnInfo[] EMPTY_ARRAY = new ColumnInfo[0];
 
   @SuppressWarnings("unchecked")
@@ -20,7 +21,7 @@ public abstract class ColumnInfo<Item, Aspect> {
     return EMPTY_ARRAY;
   }
 
-  public ColumnInfo(@Nls(capitalization = Nls.Capitalization.Title) String name) {
+  public ColumnInfo(@ColumnName String name) {
     myName = name;
   }
 
@@ -45,7 +46,7 @@ public abstract class ColumnInfo<Item, Aspect> {
     return null;
   }
 
-  public String getName() {
+  public @ColumnName String getName() {
     return myName;
   }
 
@@ -100,11 +101,11 @@ public abstract class ColumnInfo<Item, Aspect> {
     return -1;
   }
 
-  public void setName(@Nls(capitalization = Nls.Capitalization.Title) String s) {
+  public void setName(@ColumnName String s) {
     myName = s;
   }
 
-  @Nls(capitalization = Nls.Capitalization.Sentence)
+  @Tooltip
   @Nullable
   public String getTooltipText() {
     return null;

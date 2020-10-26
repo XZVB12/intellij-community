@@ -33,11 +33,13 @@ public class HgQFinishFromLogAction extends HgMqAppliedPatchAction {
   protected void actionPerformed(@NotNull HgRepository repository, @NotNull Hash commit) {
     String revision = commit.asString();
     Project project = repository.getProject();
-    BackgroundTaskUtil.executeOnPooledThread(project, () -> {
+    BackgroundTaskUtil.executeOnPooledThread(repository, () -> {
       HgCommandExecutor executor = new HgCommandExecutor(project);
       HgCommandResult result = executor.executeInCurrentThread(repository.getRoot(), "qfinish", singletonList("qbase:" + revision));
       if (HgErrorUtil.hasErrorsInCommandExecution(result)) {
-        new HgCommandResultNotifier(project).notifyError(result, HgBundle.message("action.hg4idea.QFinish.error"),
+        new HgCommandResultNotifier(project).notifyError("hg.qfinish.error",
+                                                         result,
+                                                         HgBundle.message("action.hg4idea.QFinish.error"),
                                                          HgBundle.message("action.hg4idea.QFinish.error.msg"));
       }
       repository.update();

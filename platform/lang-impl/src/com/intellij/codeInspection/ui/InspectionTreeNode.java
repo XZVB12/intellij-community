@@ -5,12 +5,14 @@ package com.intellij.codeInspection.ui;
 import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInspection.reference.RefEntity;
 import com.intellij.lang.annotation.HighlightSeverity;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.util.containers.BidirectionalMap;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.Interner;
 import com.intellij.util.containers.WeakInterner;
 import gnu.trove.TObjectHashingStrategy;
 import gnu.trove.TObjectIntHashMap;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -98,7 +100,7 @@ public abstract class InspectionTreeNode implements TreeNode {
   }
 
   @Nullable
-  public String getTailText() {
+  public @Nls(capitalization = Nls.Capitalization.Sentence) String getTailText() {
     return null;
   }
 
@@ -133,7 +135,7 @@ public abstract class InspectionTreeNode implements TreeNode {
     return getChildren().isEmpty();
   }
 
-  public abstract String getPresentableText();
+  public abstract @Nls String getPresentableText();
 
   @NotNull
   public List<? extends InspectionTreeNode> getChildren() {

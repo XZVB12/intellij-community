@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.runners;
 
 import com.intellij.execution.*;
@@ -20,6 +20,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsContexts.DialogMessage;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.ColorUtil;
@@ -37,6 +38,8 @@ import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
 import java.awt.*;
 import java.awt.geom.Ellipse2D;
+
+import static com.intellij.openapi.projectRoots.JdkUtil.PROPERTY_DYNAMIC_CLASSPATH;
 
 public final class ExecutionUtil {
   private static final Logger LOG = Logger.getInstance(ExecutionUtil.class);
@@ -70,11 +73,9 @@ public final class ExecutionUtil {
 
     String description = e.getMessage();
     HyperlinkListener listener = null;
-    if (isProcessNotCreated(e) && !PropertiesComponent.getInstance(project).isTrueValue("dynamic.classpath")) {
-      description = "Command line is too long. In order to reduce its length classpath file can be used.<br>" +
-                    "Would you like to enable classpath file mode for all run configurations of your project?<br>" +
-                    "<a href=\"\">Enable</a>";
-      listener = event -> PropertiesComponent.getInstance(project).setValue("dynamic.classpath", "true");
+    if (isProcessNotCreated(e) && !PropertiesComponent.getInstance(project).isTrueValue(PROPERTY_DYNAMIC_CLASSPATH)) {
+      description = ExecutionBundle.message("dialog.message.command.line.too.long.notification");
+      listener = event -> PropertiesComponent.getInstance(project).setValue(PROPERTY_DYNAMIC_CLASSPATH, "true");
     }
 
     handleExecutionError(project, toolWindowId, taskName, e, description, listener);
@@ -93,13 +94,13 @@ public final class ExecutionUtil {
                                           @NotNull String toolWindowId,
                                           @NotNull String taskName,
                                           @NotNull Throwable e,
-                                          @Nullable String description,
+                                          @Nullable @DialogMessage String description,
                                           @Nullable HyperlinkListener listener) {
     String title = ExecutionBundle.message("error.running.configuration.message", taskName);
 
     if (StringUtil.isEmptyOrSpaces(description)) {
       LOG.warn("Execution error without description", e);
-      description = "Unknown error";
+      description = ExecutionBundle.message("dialog.message.unknown.error");
     }
 
     String fullMessage = title + ":<br>" + description;
@@ -127,7 +128,7 @@ public final class ExecutionUtil {
         toolWindowManager.notifyByBalloon(toolWindowId, MessageType.ERROR, fullMessage, null, _listener);
       }
       else {
-        Messages.showErrorDialog(project, UIUtil.toHtml(fullMessage), "");
+        Messages.showErrorDialog(project, UIUtil.toHtml(_description), title);
       }
 
       NotificationListener notificationListener = _listener == null ? null : (notification, event) -> {

@@ -1,14 +1,11 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.java.codeInsight.template
 
 import com.intellij.JavaTestUtil
 import com.intellij.codeInsight.CodeInsightSettings
 import com.intellij.codeInsight.daemon.impl.quickfix.EmptyExpression
 import com.intellij.codeInsight.lookup.Lookup
-import com.intellij.codeInsight.template.JavaCodeContextType
-import com.intellij.codeInsight.template.JavaStringContextType
-import com.intellij.codeInsight.template.Template
-import com.intellij.codeInsight.template.TemplateContextType
+import com.intellij.codeInsight.template.*
 import com.intellij.codeInsight.template.actions.SaveAsTemplateAction
 import com.intellij.codeInsight.template.impl.*
 import com.intellij.codeInsight.template.macro.*
@@ -18,7 +15,7 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.LightProjectDescriptor
 import groovy.transform.CompileStatic
 
-import static com.intellij.codeInsight.template.Template.Property.USE_STATIC_IMPORT_IF_POSSIBLE
+import static com.intellij.codeInsight.template.Template.Property.USE_STATIC_IMPORT_IF_POSSIBLE 
 /**
  * @author peter
  */
@@ -27,7 +24,7 @@ class JavaLiveTemplateTest extends LiveTemplateTestCase {
 
   @Override
   protected LightProjectDescriptor getProjectDescriptor() {
-    return JAVA_13
+    return JAVA_14
   }
 
   final String basePath = JavaTestUtil.getRelativeJavaTestDataPath() + "/codeInsight/template/"
@@ -242,9 +239,9 @@ class Outer {
   }
 
   void 'test generic type argument is declaration context'() {
-    myFixture.configureByText "a.java","class Foo {{ List<Pair<X, <caret>Y>> l; }}"
-    assert TemplateManagerImpl.getApplicableContextTypes(myFixture.file, myFixture.caretOffset).collect { it.class } ==
-           [JavaCodeContextType.Declaration]
+    myFixture.configureByText "a.java", "class Foo {{ List<Pair<X, <caret>Y>> l; }}"
+    assert TemplateManagerImpl.getApplicableContextTypes(TemplateActionContext.expanding(myFixture.file, myFixture.editor)).
+      collect { it.class } == [JavaCodeContextType.Declaration]
   }
 
   void testJavaStatementContext() {
@@ -462,6 +459,27 @@ class Foo {
 '''
   }
 
+  void "test ritar template in expression lambda"() {
+    myFixture.configureByText 'a.java', '''class Foo {
+  void test(int[] arr) {
+    Runnable r = () -> itar<caret>
+  }
+}
+'''
+    myFixture.type('\t')
+    myFixture.checkResult '''class Foo {
+  void test(int[] arr) {
+    Runnable r = () -> {
+        for (int i = 0; i < arr.length; i++) {
+            int i1 = arr[i];
+            
+        }
+    }
+  }
+}
+'''
+  }
+
   void "test iterate over list with wildcard component type"() {
     myFixture.configureByText 'a.java', '''class C {{
 java.util.List<? extends Integer> list;
@@ -547,4 +565,65 @@ class A {
     }
 }'''
   }
+
+  void "test subtypes macro works with text argument"() {
+    myFixture.configureByText "a.java", """
+
+class Foo {
+  {
+    <caret>
+  }
+}
+
+class Bar1 extends Foo {}
+class Bar2 extends Foo {}
+"""
+    Template template = templateManager.createTemplate("xxx", "user", '$T$ var = new $ST$();')
+    template.addVariable('T', new EmptyNode(), true)
+    template.addVariable('ST', 'subtypes(T)', '', true)
+
+    startTemplate(template)
+
+    myFixture.type('Foo')
+    state.nextTab()
+
+    assert myFixture.editor.document.text.contains('Foo var = new Foo();')
+    assertSameElements(myFixture.lookupElementStrings, 'Foo', 'Bar1', 'Bar2')
+  }
+
+  void "test methodParameterTypes"() {
+    myFixture.configureByText "a.java", """
+class X {
+  void test(int a, String b, double[] c) {
+    <caret>
+  }
+}
+"""
+    Template template = templateManager.createTemplate("xxx", "user", 'System.out.println("$TYPES$");')
+    template.addVariable('TYPES', 'methodParameterTypes()', '', true)
+
+    startTemplate(template)
+
+    myFixture.checkResult("""
+class X {
+  void test(int a, String b, double[] c) {
+    System.out.println("[int, java.lang.String, double[]]");
+  }
+}
+""")
+  }
+
+  void "test at equals token"() {
+    myFixture.configureByText "a.java", """
+class X {
+  void test() {
+    int i <selection>=</selection> 5;
+  }
+}
+"""
+    TemplateActionContext templateActionContext = TemplateActionContext.surrounding(file, editor);
+    List<TemplateImpl> templates = TemplateManagerImpl.listApplicableTemplates(templateActionContext);
+    assert templates == []
+  }
+
 }

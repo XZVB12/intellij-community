@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.util;
 
 import com.intellij.openapi.project.Project;
@@ -25,20 +11,17 @@ import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.IncorrectOperationException;
-import gnu.trove.THashMap;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
-public class PsiTypesUtil {
-  @NonNls private static final Map<String, String> ourUnboxedTypes = new THashMap<>();
-  @NonNls private static final Map<String, String> ourBoxedTypes = new THashMap<>();
+public final class PsiTypesUtil {
+  @NonNls private static final Map<String, String> ourUnboxedTypes = new HashMap<>();
+  @NonNls private static final Map<String, String> ourBoxedTypes = new HashMap<>();
 
   static {
     ourUnboxedTypes.put(CommonClassNames.JAVA_LANG_BOOLEAN, "boolean");
@@ -135,8 +118,7 @@ public class PsiTypesUtil {
    * @return unboxed type name if available; same value otherwise
    */
   @Contract("null -> null; !null -> !null")
-  @Nullable
-  public static String unboxIfPossible(@Nullable String type) {
+  public static @Nullable @NonNls String unboxIfPossible(@Nullable @NonNls String type) {
     if (type == null) return null;
     final String s = ourUnboxedTypes.get(type);
     return s == null? type : s;
@@ -192,7 +174,7 @@ public class PsiTypesUtil {
     }
     return null;
   }
-  
+
   public static PsiType patchMethodGetClassReturnType(@NotNull PsiExpression call,
                                                       @NotNull PsiReferenceExpression methodExpression,
                                                       @NotNull PsiMethod method,
@@ -208,7 +190,7 @@ public class PsiTypesUtil {
       }
       else {
         PsiElement parent = call.getContext();
-        while (parent != null && condition.value(parent instanceof StubBasedPsiElement ? ((StubBasedPsiElement)parent).getElementType() 
+        while (parent != null && condition.value(parent instanceof StubBasedPsiElement ? ((StubBasedPsiElement)parent).getElementType()
                                                                                        : parent.getNode().getElementType())) {
           parent = parent.getContext();
         }
@@ -261,7 +243,8 @@ public class PsiTypesUtil {
       }
     }
     else if (parent instanceof PsiAssignmentExpression) {
-      if (PsiUtil.checkSameExpression(element, ((PsiAssignmentExpression)parent).getRExpression())) {
+      if (((PsiAssignmentExpression)parent).getOperationSign().getTokenType() == JavaTokenType.EQ &&
+          PsiUtil.checkSameExpression(element, ((PsiAssignmentExpression)parent).getRExpression())) {
         PsiType type = ((PsiAssignmentExpression)parent).getLExpression().getType();
         return !PsiType.NULL.equals(type) ? type : null;
       }
@@ -277,7 +260,7 @@ public class PsiTypesUtil {
     }
     else if (PsiUtil.isCondition(element, parent)) {
       return PsiType.BOOLEAN;
-    } 
+    }
     else if (parent instanceof PsiArrayInitializerExpression) {
       final PsiElement gParent = parent.getParent();
       if (gParent instanceof PsiNewExpression) {
@@ -348,7 +331,46 @@ public class PsiTypesUtil {
       return false;
     }
   }
-  
+
+  /**
+   * @param type type to check
+   * @return true if given type has a type annotation anywhere inside its declaration
+   */
+  public static boolean hasTypeAnnotation(@NotNull PsiType type) {
+    return type.accept(new PsiTypeVisitor<Boolean>() {
+      @Override
+      public Boolean visitType(@NotNull PsiType type) {
+        return type.getAnnotations().length > 0;
+      }
+
+      @Override
+      public Boolean visitClassType(@NotNull PsiClassType classType) {
+        return super.visitClassType(classType) ||
+               ContainerUtil.exists(classType.getParameters(), t -> t.accept(this));
+      }
+
+      @Override
+      public Boolean visitArrayType(@NotNull PsiArrayType arrayType) {
+        return super.visitArrayType(arrayType) || arrayType.getComponentType().accept(this);
+      }
+
+      @Override
+      public Boolean visitWildcardType(@NotNull PsiWildcardType wildcardType) {
+        return super.visitWildcardType(wildcardType) || wildcardType.getBound() != null && wildcardType.getBound().accept(this);
+      }
+
+      @Override
+      public Boolean visitIntersectionType(@NotNull PsiIntersectionType intersectionType) {
+        return ContainerUtil.exists(intersectionType.getConjuncts(), t -> t.accept(this));
+      }
+
+      @Override
+      public Boolean visitDisjunctionType(@NotNull PsiDisjunctionType disjunctionType) {
+        return ContainerUtil.exists(disjunctionType.getDisjunctions(), t -> t.accept(this));
+      }
+    });
+  }
+
   public static boolean hasUnresolvedComponents(@NotNull PsiType type) {
     return type.accept(new PsiTypeVisitor<Boolean>() {
       @Nullable
@@ -485,7 +507,7 @@ public class PsiTypesUtil {
   }
 
   /**
-   * Checks if {@code type} mentions type parameters from the passed {@code Set} 
+   * Checks if {@code type} mentions type parameters from the passed {@code Set}
    * Implicit type arguments of types based on inner classes of generic outer classes are explicitly checked
    */
   public static boolean mentionsTypeParameters(@Nullable PsiType type, Set<PsiTypeParameter> typeParameters) {
@@ -509,7 +531,7 @@ public class PsiTypesUtil {
     }
     return false;
   }
-  
+
   private static boolean mentionsTypeParametersOrUnboundedWildcard(@Nullable PsiType type,
                                                                    Set<PsiTypeParameter> typeParameters,
                                                                    boolean acceptUnboundedWildcard) {

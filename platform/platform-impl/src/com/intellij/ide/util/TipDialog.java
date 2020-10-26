@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.util;
 
 import com.intellij.CommonBundle;
@@ -10,12 +10,12 @@ import com.intellij.openapi.fileChooser.FileChooserFactory;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
 import com.intellij.util.text.DateFormatUtil;
 import com.intellij.util.ui.JBUI;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,7 +27,7 @@ import java.util.ArrayList;
 public final class TipDialog extends DialogWrapper {
   private static TipDialog ourInstance;
 
-  private static final String LAST_TIME_TIPS_WERE_SHOWN = "lastTimeTipsWereShown";
+  @NonNls private static final String LAST_TIME_TIPS_WERE_SHOWN = "lastTimeTipsWereShown";
   private final TipPanel myTipPanel;
 
   TipDialog(@NotNull final Window parent) {
@@ -115,7 +115,7 @@ public final class TipDialog extends DialogWrapper {
     }
   }
 
-  private class OpenTipsAction extends AbstractAction {
+  private final class OpenTipsAction extends AbstractAction {
     private static final String LAST_OPENED_TIP_PATH = "last.opened.tip.path";
 
     OpenTipsAction() {
@@ -126,7 +126,7 @@ public final class TipDialog extends DialogWrapper {
     public void actionPerformed(ActionEvent e) {
       PropertiesComponent propertiesComponent = PropertiesComponent.getInstance();
       FileChooserDescriptor descriptor = new FileChooserDescriptor(true, false, false, false, false, true)
-        .withFileFilter(file -> Comparing.equal(file.getExtension(), "html", SystemInfo.isFileSystemCaseSensitive));
+        .withFileFilter(file -> Comparing.equal(file.getExtension(), "html", file.isCaseSensitive()));
       String value = propertiesComponent.getValue(LAST_OPENED_TIP_PATH);
       VirtualFile lastOpenedTip = value != null ? LocalFileSystem.getInstance().findFileByPath(value) : null;
       VirtualFile[] pathToSelect = lastOpenedTip != null ? new VirtualFile[]{lastOpenedTip} : VirtualFile.EMPTY_ARRAY;

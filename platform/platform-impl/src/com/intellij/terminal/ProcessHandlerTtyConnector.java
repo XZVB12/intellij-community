@@ -52,6 +52,7 @@ public class ProcessHandlerTtyConnector implements TtyConnector {
         }
       }
       else {
+        assert myPtyProcess instanceof PtyBasedProcess;
         ((PtyBasedProcess)myPtyProcess).resizePtyWindow(termSize.width, termSize.height, pixelSize.width, pixelSize.height);
       }
     }
@@ -89,9 +90,11 @@ public class ProcessHandlerTtyConnector implements TtyConnector {
 
   private void writeBytes(byte[] bytes) throws IOException {
     OutputStream input = myProcessHandler.getProcessInput();
-    if (input != null) {
-      input.write(bytes);
-      input.flush();
-    }
+    input.write(bytes);
+    input.flush();
+  }
+
+  public @NotNull BaseProcessHandler<?> getProcessHandler() {
+    return myProcessHandler;
   }
 }

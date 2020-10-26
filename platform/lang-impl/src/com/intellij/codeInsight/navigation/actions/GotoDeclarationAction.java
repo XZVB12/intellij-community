@@ -13,8 +13,13 @@ import com.intellij.find.actions.ShowUsagesAction;
 import com.intellij.ide.util.DefaultPsiElementCellRenderer;
 import com.intellij.ide.util.EditSourceUtil;
 import com.intellij.injected.editor.EditorWindow;
+import com.intellij.internal.statistic.collectors.fus.actions.persistence.ActionsCollectorImpl;
+import com.intellij.internal.statistic.eventLog.events.EventFields;
+import com.intellij.internal.statistic.eventLog.events.EventPair;
+import com.intellij.lang.Language;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -29,8 +34,11 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsContexts.PopupTitle;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.pom.Navigatable;
 import com.intellij.psi.*;
 import com.intellij.psi.search.PsiElementProcessor;
@@ -38,6 +46,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.ui.awt.RelativePoint;
 import com.intellij.usageView.UsageViewUtil;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -52,11 +61,36 @@ import static com.intellij.codeInsight.navigation.actions.UiKt.notifyNowhereToGo
 public class GotoDeclarationAction extends BaseCodeInsightAction implements CodeInsightActionHandler, DumbAware, CtrlMouseAction {
 
   private static final Logger LOG = Logger.getInstance(GotoDeclarationAction.class);
+  private static List<EventPair<?>> ourCurrentEventData = null; // accessed from EDT only
+
+  @SuppressWarnings("AssignmentToStaticFieldFromInstanceMethod")
+  @Override
+  public void actionPerformed(@NotNull AnActionEvent e) {
+    PsiFile file = e.getData(CommonDataKeys.PSI_FILE);
+    Language language = file != null ? file.getLanguage() : null;
+    List<EventPair<?>> currentEventData = ContainerUtil.append(
+      ActionsCollectorImpl.actionEventData(e),
+      EventFields.CurrentFile.with(language)
+    );
+    List<EventPair<?>> savedEventData = ourCurrentEventData;
+    ourCurrentEventData = currentEventData;
+    try {
+      super.actionPerformed(e);
+    }
+    finally {
+      ourCurrentEventData = savedEventData;
+    }
+  }
+
+  static @NotNull List<@NotNull EventPair<?>> getCurrentEventData() {
+    ApplicationManager.getApplication().assertIsDispatchThread();
+    return Objects.requireNonNull(ourCurrentEventData);
+  }
 
   @NotNull
   @Override
   protected CodeInsightActionHandler getHandler() {
-    return this;
+    return Registry.is("ide.symbol.gtd") ? GotoDeclarationOrUsageHandler2.INSTANCE : this;
   }
 
   @Override
@@ -70,7 +104,8 @@ public class GotoDeclarationAction extends BaseCodeInsightAction implements Code
       try {
         int offset = editor.getCaretModel().getOffset();
         Pair<PsiElement[], PsiElement> pair = ActionUtil
-          .underModalProgress(project, CodeInsightBundle.message("progress.title.resolving.reference"), () -> doSelectCandidate(project, editor, offset));
+          .underModalProgress(project, CodeInsightBundle.message("progress.title.resolving.reference"),
+                              () -> doSelectCandidate(project, editor, offset));
         FeatureUsageTracker.getInstance().triggerFeatureUsed("navigation.goto.declaration");
 
         PsiElement[] elements = pair.first;
@@ -166,7 +201,7 @@ public class GotoDeclarationAction extends BaseCodeInsightAction implements Code
     }
   }
 
-  private static boolean navigateInCurrentEditor(@NotNull PsiElement element, @NotNull PsiFile currentFile, @NotNull Editor currentEditor) {
+  static boolean navigateInCurrentEditor(@NotNull PsiElement element, @NotNull PsiFile currentFile, @NotNull Editor currentEditor) {
     if (element.getContainingFile() == currentFile && !currentEditor.isDisposed()) {
       int offset = element.getTextOffset();
       PsiElement leaf = currentFile.findElementAt(offset);
@@ -201,7 +236,7 @@ public class GotoDeclarationAction extends BaseCodeInsightAction implements Code
   public static boolean chooseAmbiguousTarget(@NotNull Editor editor,
                                               int offset,
                                               @NotNull PsiElementProcessor<? super PsiElement> processor,
-                                              @NotNull String titlePattern,
+                                              @NotNull @PopupTitle String titlePattern,
                                               PsiElement @Nullable [] elements) {
     Project project = editor.getProject();
     if (project == null) {
@@ -215,7 +250,7 @@ public class GotoDeclarationAction extends BaseCodeInsightAction implements Code
                                               @NotNull Editor editor,
                                               int offset,
                                               @NotNull PsiElementProcessor<? super PsiElement> processor,
-                                              @NotNull String titlePattern,
+                                              @NotNull @PopupTitle String titlePattern,
                                               PsiElement @Nullable [] elements) {
     if (TargetElementUtil.inVirtualSpace(editor, offset)) {
       return false;
@@ -223,7 +258,8 @@ public class GotoDeclarationAction extends BaseCodeInsightAction implements Code
 
     final PsiElement[] finalElements = elements;
     Pair<PsiElement[], PsiReference> pair =
-      ActionUtil.underModalProgress(project, CodeInsightBundle.message("progress.title.resolving.reference"), () -> doChooseAmbiguousTarget(editor, offset, finalElements));
+      ActionUtil.underModalProgress(project, CodeInsightBundle.message("progress.title.resolving.reference"),
+                                    () -> doChooseAmbiguousTarget(editor, offset, finalElements));
 
     elements = pair.first;
     PsiReference reference = pair.second;
@@ -306,7 +342,10 @@ public class GotoDeclarationAction extends BaseCodeInsightAction implements Code
     return GotoDeclarationUtil.findTargetElementsFromProviders(editor, offset, file);
   }
 
-  public static @NotNull PsiElement @Nullable [] findTargetElementsNoVS(Project project, Editor editor, int offset, boolean lookupAccepted) {
+  public static @NotNull PsiElement @Nullable [] findTargetElementsNoVS(Project project,
+                                                                        Editor editor,
+                                                                        int offset,
+                                                                        boolean lookupAccepted) {
     PsiElement[] fromProviders = findTargetElementsFromProviders(project, editor, offset);
     if (fromProviders == null || fromProviders.length > 0) {
       return fromProviders;
@@ -361,6 +400,9 @@ public class GotoDeclarationAction extends BaseCodeInsightAction implements Code
 
   @Override
   public @Nullable CtrlMouseInfo getCtrlMouseInfo(@NotNull Editor editor, @NotNull PsiFile file, int offset) {
+    if (Registry.is("ide.symbol.gtd")) {
+      return GotoDeclarationOrUsageHandler2.getCtrlMouseInfo(editor, file, offset);
+    }
     final PsiReference ref = TargetElementUtil.findReference(editor, offset);
     final List<PsiElement> resolvedElements = ref == null ? Collections.emptyList() : resolve(ref);
     final PsiElement resolvedElement = resolvedElements.size() == 1 ? resolvedElements.get(0) : null;
@@ -398,7 +440,7 @@ public class GotoDeclarationAction extends BaseCodeInsightAction implements Code
           @Override
           public @NotNull CtrlMouseDocInfo getDocInfo() {
             String name = UsageViewUtil.getType(element) + " '" + UsageViewUtil.getShortName(element) + "'";
-            return new CtrlMouseDocInfo("Show usages of " + name, null, null);
+            return new CtrlMouseDocInfo(CodeInsightBundle.message("hint.text.show.usages", name), null, null);
           }
 
           @Override

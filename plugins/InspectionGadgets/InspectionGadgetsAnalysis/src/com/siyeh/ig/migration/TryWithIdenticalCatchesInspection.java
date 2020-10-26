@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2018 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.siyeh.ig.migration;
 
 import com.intellij.codeInsight.daemon.impl.analysis.HighlightControlFlowUtil;
@@ -232,7 +218,7 @@ public class TryWithIdenticalCatchesInspection extends BaseInspection {
     }
   }
 
-  private static class CatchSectionWrapper {
+  private static final class CatchSectionWrapper {
     @NotNull final PsiCatchSection myCatchSection;
     @NotNull final PsiCodeBlock myCodeBlock;
     @NotNull final PsiParameter myParameter;
@@ -461,7 +447,9 @@ public class TryWithIdenticalCatchesInspection extends BaseInspection {
       final PsiType disjunction = PsiDisjunctionType.createDisjunction(filteredTypes, tryStatement.getManager());
       final PsiTypeElement newTypeElement = JavaPsiFacade.getElementFactory(project).createTypeElement(disjunction);
 
-      JavaCodeStyleManager.getInstance(project).shortenClassReferences(collapseIntoTypeElement.replace(newTypeElement));
+      final CommentTracker tracker = new CommentTracker();
+
+      JavaCodeStyleManager.getInstance(project).shortenClassReferences(tracker.replace(collapseIntoTypeElement, newTypeElement));
 
       int insertBeforeIndex = duplicatesIndices[sectionIndex].myCanInsertBefore;
       if (collapseIntoIndex < insertBeforeIndex) {
@@ -473,7 +461,6 @@ public class TryWithIdenticalCatchesInspection extends BaseInspection {
         }
       }
 
-      final CommentTracker tracker = new CommentTracker();
       PsiTreeUtil.processElements(duplicateSection.myCatchSection, element -> {
         if (element instanceof PsiComment) {
           final String text = getCommentText((PsiComment)element);

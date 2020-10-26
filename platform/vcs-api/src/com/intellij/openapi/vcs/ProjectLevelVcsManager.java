@@ -11,8 +11,9 @@ import com.intellij.openapi.vcs.impl.VcsDescriptor;
 import com.intellij.openapi.vcs.update.UpdatedFiles;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Processor;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.messages.Topic;
-import org.jetbrains.annotations.CalledInAwt;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -23,9 +24,12 @@ import java.util.List;
  * Manages the version control systems used by a specific project.
  */
 public abstract class ProjectLevelVcsManager {
-
-  public static final Topic<VcsListener> VCS_CONFIGURATION_CHANGED = Topic.create("VCS configuration changed", VcsListener.class);
-  public static final Topic<VcsListener> VCS_CONFIGURATION_CHANGED_IN_PLUGIN = Topic.create("VCS configuration changed in VCS plugin", VcsListener.class);
+  // project level
+  public static final Topic<VcsListener> VCS_CONFIGURATION_CHANGED = new Topic<>(VcsListener.class, Topic.BroadcastDirection.NONE);
+  /**
+   * VCS configuration changed in VCS plugin. Project level.
+   */
+  public static final Topic<VcsListener> VCS_CONFIGURATION_CHANGED_IN_PLUGIN = new Topic<>(VcsListener.class, Topic.BroadcastDirection.NONE);
 
   public abstract void iterateVfUnderVcsRoot(VirtualFile file, Processor<? super VirtualFile> processor);
 
@@ -48,7 +52,7 @@ public abstract class ProjectLevelVcsManager {
    */
   public abstract @Nullable AbstractVcs findVcsByName(@Nullable @NonNls String name);
 
-  public abstract @Nullable VcsDescriptor getDescriptor(final String name);
+  public abstract @Nullable VcsDescriptor getDescriptor(@NonNls String name);
 
   /**
    * Checks if all given files are managed by the specified VCS.
@@ -69,7 +73,7 @@ public abstract class ProjectLevelVcsManager {
    * @return the VCS instance, or {@code null} if the file does not belong to any module or the module
    *         it belongs to is not under version control.
    */
-  public abstract @Nullable AbstractVcs getVcsFor(FilePath file);
+  public abstract @Nullable AbstractVcs getVcsFor(@NotNull FilePath file);
 
   /**
    * Return the parent directory of the specified file which is mapped to a VCS.
@@ -83,9 +87,9 @@ public abstract class ProjectLevelVcsManager {
    *
    * @return the root, or {@code null} if the specified file is not in a VCS-managed directory.
    */
-  public abstract @Nullable VirtualFile getVcsRootFor(FilePath file);
+  public abstract @Nullable VirtualFile getVcsRootFor(@Nullable FilePath file);
 
-  public abstract @Nullable VcsRoot getVcsRootObjectFor(final VirtualFile file);
+  public abstract @Nullable VcsRoot getVcsRootObjectFor(@Nullable VirtualFile file);
 
   public abstract @Nullable VcsRoot getVcsRootObjectFor(FilePath file);
 
@@ -100,9 +104,19 @@ public abstract class ProjectLevelVcsManager {
   public abstract boolean checkVcsIsActive(@NonNls String vcsName);
 
   /**
+   * Returns the list of VCSes supported by plugins.
+   */
+  public abstract AbstractVcs @NotNull [] getAllSupportedVcss();
+
+  /**
    * Returns the list of VCSes used by at least one module in the project.
    */
   public abstract AbstractVcs @NotNull [] getAllActiveVcss();
+
+  /**
+   * @return VCS configured for the project, if there's only a single one. Return 'null' otherwise.
+   */
+  public abstract @Nullable AbstractVcs getSingleVCS();
 
   public abstract boolean hasActiveVcss();
 
@@ -112,9 +126,11 @@ public abstract class ProjectLevelVcsManager {
    * @deprecated use {@link #addMessageToConsoleWindow(String, ConsoleViewContentType)}
    */
   @Deprecated
-  public abstract void addMessageToConsoleWindow(String message, TextAttributes attributes);
+  public abstract void addMessageToConsoleWindow(@Nls String message, TextAttributes attributes);
 
-  public abstract void addMessageToConsoleWindow(@Nullable String message, @NotNull ConsoleViewContentType contentType);
+  public abstract void addMessageToConsoleWindow(@Nls @Nullable String message, @NotNull ConsoleViewContentType contentType);
+
+  public abstract void addMessageToConsoleWindow(@Nullable VcsConsoleLine line);
 
   public abstract @NotNull VcsShowSettingOption getStandardOption(@NotNull VcsConfiguration.StandardOption option,
                                                                   @NotNull AbstractVcs vcs);
@@ -122,11 +138,15 @@ public abstract class ProjectLevelVcsManager {
   public abstract @NotNull VcsShowConfirmationOption getStandardConfirmation(@NotNull VcsConfiguration.StandardConfirmation option,
                                                                              AbstractVcs vcs);
 
-  public abstract @NotNull VcsShowSettingOption getOrCreateCustomOption(@NotNull String vcsActionName,
+  /**
+   * @param vcsActionName is used both in interface and as a key in settings.
+   */
+  @Deprecated
+  public abstract @NotNull VcsShowSettingOption getOrCreateCustomOption(@NotNull @NonNls String vcsActionName,
                                                                         @NotNull AbstractVcs vcs);
 
-  @CalledInAwt
-  public abstract void showProjectOperationInfo(final UpdatedFiles updatedFiles, String displayActionName);
+  @RequiresEdt
+  public abstract void showProjectOperationInfo(final UpdatedFiles updatedFiles, @Nls String displayActionName);
 
   /**
    * Adds a listener for receiving notifications about changes in VCS configuration for the project.
@@ -172,6 +192,9 @@ public abstract class ProjectLevelVcsManager {
 
   public abstract VcsRoot @NotNull [] getAllVcsRoots();
 
+  @Nls
+  public abstract String getConsolidatedVcsName();
+
   /**
    * @deprecated Use just {@link #setDirectoryMappings(List)}.
    */
@@ -187,7 +210,7 @@ public abstract class ProjectLevelVcsManager {
    * This method can be used only when initially loading the project configuration!
    */
   @Deprecated
-  public abstract void setDirectoryMapping(final String path, final String activeVcsName);
+  public abstract void setDirectoryMapping(@NonNls String path, @NonNls String activeVcsName);
 
   public abstract void setDirectoryMappings(final List<VcsDirectoryMapping> items);
 
@@ -215,7 +238,7 @@ public abstract class ProjectLevelVcsManager {
    * <p>
    * Does nothing if {@code vcs.showConsole} turned off.
    */
-  @CalledInAwt
+  @RequiresEdt
   public abstract void showConsole();
 
   /**
@@ -223,17 +246,22 @@ public abstract class ProjectLevelVcsManager {
    * <p>
    * Does nothing if {@code vcs.showConsole} turned off.
    */
-  @CalledInAwt
+  @RequiresEdt
   public abstract void showConsole(@Nullable Runnable then);
 
   /**
    * Navigates to the end in VCS console.
    */
-  @CalledInAwt
+  @RequiresEdt
   public abstract void scrollConsoleToTheEnd();
 
   /**
    * Executes task on pooled thread, delayed until core vcs services are initialized.
    */
   public abstract void runAfterInitialization(@NotNull Runnable runnable);
+
+  /**
+   * Checks whether VCS console is enabled and VCS tool window exists.
+   */
+  public abstract boolean isConsoleVisible();
 }

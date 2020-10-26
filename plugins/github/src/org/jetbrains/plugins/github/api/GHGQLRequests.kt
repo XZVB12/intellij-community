@@ -2,16 +2,15 @@
 package org.jetbrains.plugins.github.api
 
 import org.jetbrains.plugins.github.api.GithubApiRequest.Post.GQLQuery
-import org.jetbrains.plugins.github.api.data.GHConnection
-import org.jetbrains.plugins.github.api.data.GHNodes
-import org.jetbrains.plugins.github.api.data.GHPullRequestReviewEvent
-import org.jetbrains.plugins.github.api.data.GHRepositoryPermission
+import org.jetbrains.plugins.github.api.data.*
 import org.jetbrains.plugins.github.api.data.graphql.GHGQLPageInfo
 import org.jetbrains.plugins.github.api.data.graphql.GHGQLPagedRequestResponse
 import org.jetbrains.plugins.github.api.data.graphql.GHGQLRequestPagination
 import org.jetbrains.plugins.github.api.data.graphql.query.GHGQLSearchQueryResponse
 import org.jetbrains.plugins.github.api.data.pullrequest.*
 import org.jetbrains.plugins.github.api.data.pullrequest.timeline.GHPRTimelineItem
+import org.jetbrains.plugins.github.api.data.request.GHPullRequestDraftReviewComment
+import org.jetbrains.plugins.github.api.util.GHSchemaPreview
 
 object GHGQLRequests {
   object Organization {
@@ -51,6 +50,40 @@ object GHGQLRequests {
                                               GHRepositoryPermission::class.java,
                                               "repository")
     }
+
+    fun getProtectionRules(repository: GHRepositoryCoordinates,
+                           pagination: GHGQLRequestPagination? = null): GQLQuery<GHGQLPagedRequestResponse<GHBranchProtectionRule>> {
+      return GQLQuery.TraversedParsed(repository.serverPath.toGraphQLUrl(), GHGQLQueries.getProtectionRules,
+                                      mapOf("repoOwner" to repository.repositoryPath.owner,
+                                            "repoName" to repository.repositoryPath.repository,
+                                            "pageSize" to pagination?.pageSize,
+                                            "cursor" to pagination?.afterCursor),
+                                      ProtectedRulesConnection::class.java,
+                                      "repository", "branchProtectionRules")
+    }
+
+    private class ProtectedRulesConnection(pageInfo: GHGQLPageInfo, nodes: List<GHBranchProtectionRule>)
+      : GHConnection<GHBranchProtectionRule>(pageInfo, nodes)
+  }
+
+  object Comment {
+    fun getCommentBody(server: GithubServerPath, commentId: String): GQLQuery<String> =
+      GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.commentBody,
+                               mapOf("id" to commentId),
+                               String::class.java,
+                               "node", "body")
+
+    fun updateComment(server: GithubServerPath, commentId: String, newText: String): GQLQuery<GHComment> =
+      GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.updateIssueComment,
+                               mapOf("id" to commentId,
+                                     "body" to newText),
+                               GHComment::class.java,
+                               "updateIssueComment", "issueComment")
+
+    fun deleteComment(server: GithubServerPath, commentId: String): GQLQuery<Any?> =
+      GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.deleteIssueComment,
+                               mapOf("id" to commentId),
+                               Any::class.java)
   }
 
   object PullRequest {
@@ -60,8 +93,29 @@ object GHGQLRequests {
                                                     "repoName" to repository.repositoryPath.repository,
                                                     "number" to number),
                                               GHPullRequest::class.java,
-                                              "repository", "pullRequest")
+                                              "repository", "pullRequest").apply {
+        acceptMimeType = GHSchemaPreview.PR_DRAFT.mimeType
+      }
     }
+
+
+    fun update(repository: GHRepositoryCoordinates, pullRequestId: String, title: String?, description: String?): GQLQuery<GHPullRequest> {
+      val parameters = mutableMapOf<String, Any>("pullRequestId" to pullRequestId)
+      if (title != null) parameters["title"] = title
+      if (description != null) parameters["body"] = description
+      return GQLQuery.TraversedParsed(repository.serverPath.toGraphQLUrl(), GHGQLQueries.updatePullRequest, parameters,
+                                      GHPullRequest::class.java,
+                                      "updatePullRequest", "pullRequest").apply {
+        acceptMimeType = GHSchemaPreview.PR_DRAFT.mimeType
+      }
+    }
+
+    fun markReadyForReview(repository: GHRepositoryCoordinates, pullRequestId: String): GQLQuery<Any?> =
+      GQLQuery.Parsed(repository.serverPath.toGraphQLUrl(), GHGQLQueries.markPullRequestReadyForReview,
+                      mutableMapOf<String, Any>("pullRequestId" to pullRequestId),
+                      Any::class.java).apply {
+        acceptMimeType = GHSchemaPreview.PR_DRAFT.mimeType
+      }
 
     fun mergeabilityData(repository: GHRepositoryCoordinates, number: Long): GQLQuery<GHPullRequestMergeabilityData?> =
       GQLQuery.OptionalTraversedParsed(repository.serverPath.toGraphQLUrl(), GHGQLQueries.pullRequestMergeabilityData,
@@ -70,7 +124,7 @@ object GHGQLRequests {
                                              "number" to number),
                                        GHPullRequestMergeabilityData::class.java,
                                        "repository", "pullRequest").apply {
-        acceptMimeType = "application/vnd.github.antiope-preview+json,application/vnd.github.merge-info-preview+json"
+        acceptMimeType = "${GHSchemaPreview.CHECKS.mimeType},${GHSchemaPreview.PR_MERGE_INFO.mimeType}"
       }
 
     fun search(server: GithubServerPath, query: String, pagination: GHGQLRequestPagination? = null)
@@ -80,7 +134,9 @@ object GHGQLRequests {
                              mapOf("query" to query,
                                    "pageSize" to pagination?.pageSize,
                                    "cursor" to pagination?.afterCursor),
-                             PRSearch::class.java)
+                             PRSearch::class.java).apply {
+        acceptMimeType = GHSchemaPreview.PR_DRAFT.mimeType
+      }
     }
 
     private class PRSearch(search: SearchConnection<GHPullRequestShort>)
@@ -102,7 +158,7 @@ object GHGQLRequests {
       : GHConnection<GHPullRequestReviewThread>(pageInfo, nodes)
 
     fun commits(repository: GHRepositoryCoordinates, number: Long,
-                pagination: GHGQLRequestPagination? = null): GQLQuery<GHGQLPagedRequestResponse<GHPullRequestCommitShort>> {
+                pagination: GHGQLRequestPagination? = null): GQLQuery<GHGQLPagedRequestResponse<GHPullRequestCommit>> {
       return GQLQuery.TraversedParsed(repository.serverPath.toGraphQLUrl(), GHGQLQueries.pullRequestCommits,
                                       mapOf("repoOwner" to repository.repositoryPath.owner,
                                             "repoName" to repository.repositoryPath.repository,
@@ -113,8 +169,8 @@ object GHGQLRequests {
                                       "repository", "pullRequest", "commits")
     }
 
-    private class CommitsConnection(pageInfo: GHGQLPageInfo, nodes: List<GHPullRequestCommitShort>)
-      : GHConnection<GHPullRequestCommitShort>(pageInfo, nodes)
+    private class CommitsConnection(pageInfo: GHGQLPageInfo, nodes: List<GHPullRequestCommit>)
+      : GHConnection<GHPullRequestCommit>(pageInfo, nodes)
 
     object Timeline {
       fun items(server: GithubServerPath, repoOwner: String, repoName: String, number: Long,
@@ -129,7 +185,9 @@ object GHGQLRequests {
                                               "cursor" to pagination?.afterCursor,
                                               "since" to pagination?.since),
                                         TimelineConnection::class.java,
-                                        "repository", "pullRequest", "timelineItems")
+                                        "repository", "pullRequest", "timelineItems").apply {
+          acceptMimeType = GHSchemaPreview.PR_DRAFT.mimeType
+        }
       }
 
       private class TimelineConnection(pageInfo: GHGQLPageInfo, nodes: List<GHPRTimelineItem>)
@@ -138,12 +196,17 @@ object GHGQLRequests {
 
     object Review {
 
-      fun create(server: GithubServerPath, pullRequestId: String, event: GHPullRequestReviewEvent, body: String?): GQLQuery<Any> =
+      fun create(server: GithubServerPath, pullRequestId: String,
+                 event: GHPullRequestReviewEvent?, body: String?, commitSha: String?,
+                 comments: List<GHPullRequestDraftReviewComment>?): GQLQuery<GHPullRequestPendingReview> =
         GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.createReview,
                                  mapOf("pullRequestId" to pullRequestId,
                                        "event" to event,
+                                       "commitOid" to commitSha,
+                                       "comments" to comments,
                                        "body" to body),
-                                 Any::class.java)
+                                 GHPullRequestPendingReview::class.java,
+                                 "addPullRequestReview", "pullRequestReview")
 
       fun submit(server: GithubServerPath, reviewId: String, event: GHPullRequestReviewEvent, body: String?): GQLQuery<Any> =
         GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.submitReview,
@@ -151,6 +214,13 @@ object GHGQLRequests {
                                        "event" to event,
                                        "body" to body),
                                  Any::class.java)
+
+      fun updateBody(server: GithubServerPath, reviewId: String, newText: String): GQLQuery<GHPullRequestReview> =
+        GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.updateReview,
+                                 mapOf("reviewId" to reviewId,
+                                       "body" to newText),
+                                 GHPullRequestReview::class.java,
+                                 "updatePullRequestReview", "pullRequestReview")
 
       fun delete(server: GithubServerPath, reviewId: String): GQLQuery<Any> =
         GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.deleteReview,
@@ -168,12 +238,11 @@ object GHGQLRequests {
         GHNodes<GHPullRequestPendingReview>(nodes)
 
       fun addComment(server: GithubServerPath,
-                     pullRequestId: String?, reviewId: String?,
+                     reviewId: String,
                      body: String, commitSha: String, fileName: String, diffLine: Int)
         : GQLQuery<GHPullRequestReviewCommentWithPendingReview> =
         GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.addReviewComment,
-                                 mapOf("pullRequestId" to pullRequestId,
-                                       "reviewId" to reviewId,
+                                 mapOf("reviewId" to reviewId,
                                        "body" to body,
                                        "commit" to commitSha,
                                        "file" to fileName,
@@ -181,11 +250,17 @@ object GHGQLRequests {
                                  GHPullRequestReviewCommentWithPendingReview::class.java,
                                  "addPullRequestReviewComment", "comment")
 
-      fun getCommentBody(server: GithubServerPath, commentId: String): GQLQuery<String> =
-        GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.getReviewCommentBody,
-                                 mapOf("id" to commentId),
-                                 String::class.java,
-                                 "node", "body")
+      fun addComment(server: GithubServerPath,
+                     reviewId: String,
+                     inReplyTo: String,
+                     body: String)
+        : GQLQuery<GHPullRequestReviewCommentWithPendingReview> =
+        GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.addReviewComment,
+                                 mapOf("reviewId" to reviewId,
+                                       "inReplyTo" to inReplyTo,
+                                       "body" to body),
+                                 GHPullRequestReviewCommentWithPendingReview::class.java,
+                                 "addPullRequestReviewComment", "comment")
 
       fun deleteComment(server: GithubServerPath, commentId: String): GQLQuery<GHPullRequestPendingReview> =
         GQLQuery.TraversedParsed(server.toGraphQLUrl(), GHGQLQueries.deleteReviewComment,

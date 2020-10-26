@@ -4,14 +4,15 @@ package com.intellij.openapi.vfs.impl.jar;
 import com.intellij.concurrency.ConcurrentCollectionFactory;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.util.io.FileAttributes;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.DiskQueryRelay;
+import com.intellij.openapi.vfs.IntegrityCheckCapableFileSystem;
 import com.intellij.openapi.vfs.JarFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.impl.ArchiveHandler;
+import com.intellij.openapi.vfs.impl.ZipHandlerBase;
 import com.intellij.openapi.vfs.newvfs.VfsImplUtil;
 import com.intellij.util.SystemProperties;
 import org.jetbrains.annotations.NotNull;
@@ -19,9 +20,10 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Set;
 
-public class JarFileSystemImpl extends JarFileSystem {
+public class JarFileSystemImpl extends JarFileSystem implements IntegrityCheckCapableFileSystem {
   private final Set<String> myNoCopyJarPaths;
   private final File myNoCopyJarDir;
 
@@ -32,21 +34,6 @@ public class JarFileSystemImpl extends JarFileSystem {
     // to prevent platform .jar files from copying
     boolean runningFromDist = new File(PathManager.getLibPath(), "openapi.jar").exists();
     myNoCopyJarDir = !runningFromDist ? null : new File(PathManager.getHomePath());
-  }
-
-  private final DiskQueryRelay<VirtualFile, FileAttributes> myAttrGetter = new DiskQueryRelay<>(super::getAttributes);
-
-  @Nullable
-  @Override
-  public FileAttributes getAttributes(@NotNull VirtualFile file) {
-    return myAttrGetter.accessDiskWithCheckCanceled(file);
-  }
-
-  private final DiskQueryRelay<VirtualFile, String[]> myChildrenGetter = new DiskQueryRelay<>(super::list);
-
-  @Override
-  public String @NotNull [] list(@NotNull VirtualFile file) {
-    return myChildrenGetter.accessDiskWithCheckCanceled(file);
   }
 
   @Override
@@ -120,6 +107,13 @@ public class JarFileSystemImpl extends JarFileSystem {
     return VfsImplUtil.getHandler(this, entryFile, useNewJarHandler ? BasicJarHandler::new : JarHandler::new);
   }
 
+  @TestOnly
+  public void markDirtyAndRefreshVirtualFileDeepInsideJarForTest(@NotNull VirtualFile file) {
+    // clear caches in ArchiveHandler so that refresh will actually refresh something
+    getHandler(file).dispose();
+    VfsUtil.markDirtyAndRefresh(false, true, true, file);
+  }
+
   @Override
   public VirtualFile findFileByPath(@NotNull String path) {
     return isValid(path) ? VfsImplUtil.findFileByPath(this, path) : null;
@@ -147,5 +141,11 @@ public class JarFileSystemImpl extends JarFileSystem {
   @TestOnly
   public static void cleanupForNextTest() {
     BasicJarHandler.closeOpenedZipReferences();
+  }
+
+  @Override
+  public long getEntryCrc(@NotNull VirtualFile file) throws IOException {
+    ArchiveHandler handler = getHandler(file);
+    return ((ZipHandlerBase)handler).getEntryCrc(getRelativePath(file));
   }
 }

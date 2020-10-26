@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.google.common.collect.ImmutableList
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.impl.ApplicationInfoImpl
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -13,18 +14,20 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.util.BuildNumber
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.util.io.Decompressor
 import com.intellij.util.io.HttpRequests
+import com.intellij.util.io.write
 import com.intellij.util.lang.JavaVersion
 import org.jetbrains.annotations.NonNls
 import org.jetbrains.jps.model.java.JdkVersionDetector
 import org.tukaani.xz.XZInputStream
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.io.IOException
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -62,6 +65,7 @@ data class JdkItem(
   val isVisibleOnUI: Boolean,
 
   val jdkMajorVersion: Int,
+  @NlsSafe
   val jdkVersion: String,
   private val jdkVendorVersion: String?,
   val suggestedSdkName: String,
@@ -84,11 +88,39 @@ data class JdkItem(
 
   val sharedIndexAliases: List<String>,
 
-  private val saveToFile: (File) -> Unit
+  private val saveToFile: (Path) -> Unit
 ) {
 
-  fun writeMarkerFile(file: File) {
+  fun writeMarkerFile(file: Path) {
     saveToFile(file)
+  }
+
+  override fun toString() = "JdkItem($fullPresentationText, $url)"
+
+  override fun hashCode() = sha256.hashCode()
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (javaClass != other?.javaClass) return false
+
+    other as JdkItem
+
+    if (jdkVersion != other.jdkVersion) return false
+    if (url != other.url) return false
+    if (sha256 != other.sha256) return false
+
+    return true
+  }
+
+  /**
+   * the Java Home folder (which contains the `bin` folder and `bin/java` path
+   * may be deep inside a JDK package, e.g. on macOS
+   * This method helps to find a traditional Java Home
+   * from a JDK install directory
+   */
+  fun resolveJavaHome(installDir: Path): Path {
+    val packageToBinJavaPrefix = packageToBinJavaPrefix
+    if (packageToBinJavaPrefix.isBlank()) return installDir
+    return installDir.resolve(packageToBinJavaPrefix)
   }
 
   val vendorPrefix
@@ -122,6 +154,9 @@ data class JdkItem(
   val presentableVersionString
     get() = JavaVersion.tryParse(jdkVersion)?.toFeatureMinorUpdateString() ?: jdkVersion
 
+  val presentableMajorVersionString
+    get() = JavaVersion.tryParse(jdkVersion)?.toFeatureString() ?: jdkMajorVersion.toString()
+
   val versionPresentationText: String
     get() = jdkVersion
 
@@ -135,7 +170,7 @@ data class JdkItem(
 enum class JdkPackageType(@NonNls val type: String) {
   @Suppress("unused")
   ZIP("zip") {
-    override fun openDecompressor(archiveFile: File): Decompressor {
+    override fun openDecompressor(archiveFile: Path): Decompressor {
       val decompressor = Decompressor.Zip(archiveFile)
       return when {
         SystemInfo.isWindows -> decompressor
@@ -146,10 +181,10 @@ enum class JdkPackageType(@NonNls val type: String) {
 
   @Suppress("SpellCheckingInspection", "unused")
   TAR_GZ("targz") {
-    override fun openDecompressor(archiveFile: File) = Decompressor.Tar(archiveFile).withSymlinks()
+    override fun openDecompressor(archiveFile: Path) = Decompressor.Tar(archiveFile)
   };
 
-  abstract fun openDecompressor(archiveFile: File): Decompressor
+  abstract fun openDecompressor(archiveFile: Path): Decompressor
 
   companion object {
     fun findType(jsonText: String): JdkPackageType? = values().firstOrNull { it.type.equals(jsonText, ignoreCase = true) }
@@ -312,23 +347,27 @@ object JdkListParser {
 
                    sharedIndexAliases = (item["shared_index_aliases"] as? ArrayNode)?.mapNotNull { it.asText() } ?: listOf(),
 
-                   saveToFile = { file -> file.writeBytes(contents) }
+                   saveToFile = { file -> file.write(contents) }
     )
   }
 }
 
-class JdkListDownloader {
+class JdkListDownloader : JdkListDownloaderBase() {
   companion object {
     @JvmStatic
     fun getInstance() = service<JdkListDownloader>()
   }
 
-  private val feedUrl: String
+  override val feedUrl: String
     get() {
       val registry = runCatching { Registry.get("jdk.downloader.url").asString() }.getOrNull()
       if (!registry.isNullOrBlank()) return registry
       return "https://download.jetbrains.com/jdk/feed/v1/jdks.json.xz"
     }
+}
+
+abstract class JdkListDownloaderBase {
+  protected abstract val feedUrl: String
 
   private fun downloadJdkList(feedUrl: String, progress: ProgressIndicator?) =
     HttpRequests
@@ -350,7 +389,18 @@ class JdkListDownloader {
    * Lists all entries suitable for UI download, there can be some unlisted entries that are ignored here by intent
    */
   fun downloadForUI(progress: ProgressIndicator?, feedUrl: String? = null) : List<JdkItem> {
-    return downloadJdksListWithCache(feedUrl, progress).filter { it.isVisibleOnUI }
+    //we intentionally disable cache here for all user UI requests, as of IDEA-252237
+    val url = feedUrl ?: this.feedUrl
+    val list = downloadJdksListNoCache(url, progress)
+
+    //setting value to the cache, just in case
+    jdksListCache.setValue(url, list)
+
+    if (ApplicationManager.getApplication().isInternal) {
+      return list
+    }
+
+    return list.filter { it.isVisibleOnUI }
   }
 
   private val jdksListCache = CachedValueWithTTL<List<JdkItem>>(15 to TimeUnit.MINUTES)
@@ -441,10 +491,14 @@ private class CachedValueWithTTL<T : Any>(
       }
 
       ProgressManager.checkCanceled()
-      this.value = value
-      computed = now()
-      cachedUrl = url
-      return value
+      return setValue(url, value)
     }
+  }
+
+  fun setValue(url: String, value: T): T = lock.write {
+    this.value = value
+    computed = now()
+    cachedUrl = url
+    return value
   }
 }

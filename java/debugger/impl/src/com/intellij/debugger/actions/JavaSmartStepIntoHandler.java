@@ -43,6 +43,7 @@ import org.jetbrains.concurrency.Promises;
 import org.jetbrains.org.objectweb.asm.Label;
 import org.jetbrains.org.objectweb.asm.MethodVisitor;
 import org.jetbrains.org.objectweb.asm.Opcodes;
+import org.jetbrains.org.objectweb.asm.Type;
 
 import java.util.*;
 import java.util.stream.IntStream;
@@ -398,7 +399,7 @@ public class JavaSmartStepIntoHandler extends JvmSmartStepIntoHandler {
               visitLinesInstructions(frameProxy.location(), true, lines, visitor);
 
               // check if anything real left, fallback to the previous state
-              if (!targets.isEmpty() && !immediateMethodCalls(targets).findAny().isPresent()) {
+              if (!targets.isEmpty() && immediateMethodCalls(targets).findAny().isEmpty()) {
                 targets.clear();
                 targets.addAll(copy);
               }
@@ -483,7 +484,8 @@ public class JavaSmartStepIntoHandler extends JvmSmartStepIntoHandler {
           int currentCount = myCounter.get(key);
           myCounter.put(key, currentCount + 1);
           if (name.startsWith("access$")) { // bridge method
-            ReferenceType cls = ContainerUtil.getFirstItem(location.virtualMachine().classesByName(owner));
+            ReferenceType cls =
+              ContainerUtil.getFirstItem(location.virtualMachine().classesByName(Type.getObjectType(owner).getClassName()));
             if (cls != null) {
               Method method = DebuggerUtils.findMethod(cls, name, desc);
               if (method != null) {

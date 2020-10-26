@@ -51,7 +51,7 @@ public class GroovyImportOptimizer implements ImportOptimizer {
     return new MyProcessor((GroovyFile)file).compute();
   }
 
-  private static class MyProcessor implements NotNullComputable<Runnable> {
+  private static final class MyProcessor implements NotNullComputable<Runnable> {
     private final GroovyFile myFile;
 
     private MyProcessor(@NotNull GroovyFile file) {
@@ -84,6 +84,7 @@ public class GroovyImportOptimizer implements ImportOptimizer {
       GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(myFile.getProject());
 
       final GroovyFile tempFile = factory.createGroovyFile("", false, null);
+      tempFile.putUserData(PsiFileFactory.ORIGINAL_FILE, myFile);
 
       for (GrImportStatement newImport : newImports) {
         tempFile.addImport(newImport);

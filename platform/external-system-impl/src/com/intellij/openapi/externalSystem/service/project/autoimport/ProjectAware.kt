@@ -1,20 +1,19 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.externalSystem.service.project.autoimport
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.externalSystem.ExternalSystemAutoImportAware
-import com.intellij.openapi.externalSystem.autoimport.ExternalSystemProjectAware
-import com.intellij.openapi.externalSystem.autoimport.ExternalSystemProjectId
-import com.intellij.openapi.externalSystem.autoimport.ExternalSystemProjectRefreshListener
-import com.intellij.openapi.externalSystem.autoimport.ExternalSystemRefreshStatus
+import com.intellij.openapi.externalSystem.autoimport.*
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationListenerAdapter
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskType.RESOLVE_PROJECT
+import com.intellij.openapi.externalSystem.service.internal.ExternalSystemProcessingManager
+import com.intellij.openapi.externalSystem.service.internal.ExternalSystemResolveProjectTask
 import com.intellij.openapi.externalSystem.service.notification.ExternalSystemProgressNotificationManager
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.io.FileUtil
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
@@ -36,15 +35,15 @@ class ProjectAware(
 
   override fun subscribe(listener: ExternalSystemProjectRefreshListener, parentDisposable: Disposable) {
     val progressManager = ExternalSystemProgressNotificationManager.getInstance()
-    val notificationListener = TaskNotificationListener(listener)
-    progressManager.addNotificationListener(notificationListener)
-    Disposer.register(parentDisposable, Disposable {
-      progressManager.removeNotificationListener(notificationListener)
-    })
+    progressManager.addNotificationListener(TaskNotificationListener(listener), parentDisposable)
   }
 
-  override fun refreshProject() {
-    ExternalSystemUtil.refreshProject(projectPath, ImportSpecBuilder(project, systemId).build())
+  override fun reloadProject(context: ExternalSystemProjectReloadContext) {
+    val importSpec = ImportSpecBuilder(project, systemId)
+    if (!context.isExplicitReload) {
+      importSpec.dontReportRefreshErrors()
+    }
+    ExternalSystemUtil.refreshProject(projectPath, importSpec)
   }
 
   private inner class TaskNotificationListener(
@@ -55,6 +54,11 @@ class ProjectAware(
     override fun onStart(id: ExternalSystemTaskId, workingDir: String?) {
       if (id.type != RESOLVE_PROJECT) return
       if (!FileUtil.pathsEqual(workingDir, projectPath)) return
+
+      val task = ApplicationManager.getApplication().getService(ExternalSystemProcessingManager::class.java).findTask(id)
+      if (task is ExternalSystemResolveProjectTask) {
+        if (!autoImportAware.isApplicable(task.resolverPolicy)) return
+      }
       externalSystemTaskId.set(id)
       delegate.beforeProjectRefresh()
     }

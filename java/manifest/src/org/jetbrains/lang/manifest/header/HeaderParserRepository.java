@@ -24,7 +24,7 @@
  */
 package org.jetbrains.lang.manifest.header;
 
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.ClearableLazyValue;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -43,10 +43,10 @@ import java.util.Set;
  */
 public final class HeaderParserRepository {
   public static HeaderParserRepository getInstance() {
-    return ServiceManager.getService(HeaderParserRepository.class);
+    return ApplicationManager.getApplication().getService(HeaderParserRepository.class);
   }
 
-  private final ClearableLazyValue<Map<String, HeaderParser>> myParsers = new ClearableLazyValue<Map<String, HeaderParser>>() {
+  private final ClearableLazyValue<Map<String, HeaderParser>> myParsers = new ClearableLazyValue<>() {
     @NotNull
     @Override
     protected Map<String, HeaderParser> compute() {

@@ -545,7 +545,11 @@ public abstract class Maven3XServerEmbedder extends Maven3ServerEmbedder {
     try {
       customizeComponents(token);
 
-      ((CustomMaven3ArtifactFactory)getComponent(ArtifactFactory.class)).customize();
+      ArtifactFactory artifactFactory = getComponent(ArtifactFactory.class);
+      if(artifactFactory instanceof CustomMaven3ArtifactFactory) {
+        ((CustomMaven3ArtifactFactory)artifactFactory).customize();
+      }
+
       ((CustomMaven3ArtifactResolver)getComponent(ArtifactResolver.class)).customize(workspaceMap, failOnUnresolvedDependency);
       ((CustomMaven3RepositoryMetadataManager)getComponent(RepositoryMetadataManager.class)).customize(workspaceMap);
       //((CustomMaven3WagonManager)getComponent(WagonManager.class)).customize(failOnUnresolvedDependency);
@@ -569,7 +573,9 @@ public abstract class Maven3XServerEmbedder extends Maven3ServerEmbedder {
   public void customizeComponents(MavenToken token) throws RemoteException {
     MavenServerUtil.checkToken(token);
     // replace some plexus components
-    myContainer.addComponent(getComponent(ArtifactFactory.class, "ide"), ArtifactFactory.ROLE);
+    if(VersionComparatorUtil.compare("3.7.0-SNAPSHOT", getMavenVersion()) < 0) {
+      myContainer.addComponent(getComponent(ArtifactFactory.class, "ide"), ArtifactFactory.ROLE);
+    }
     myContainer.addComponent(getComponent(ArtifactResolver.class, "ide"), ArtifactResolver.ROLE);
     myContainer.addComponent(getComponent(RepositoryMetadataManager.class, "ide"), RepositoryMetadataManager.class.getName());
     myContainer.addComponent(getComponent(PluginDescriptorCache.class, "ide"), PluginDescriptorCache.class.getName());
@@ -590,8 +596,8 @@ public abstract class Maven3XServerEmbedder extends Maven3ServerEmbedder {
       container.addComponent(pathTranslator, org.apache.maven.model.path.PathTranslator.class.getName());
       container.addComponent(pathTranslator, org.apache.maven.model.path.PathTranslator.class, "ide");
 
-      container.addComponent(urlNormalizer, org.apache.maven.model.path.UrlNormalizer.class.getName());
-      container.addComponent(urlNormalizer, org.apache.maven.model.path.UrlNormalizer.class, "ide");
+      container.addComponent(urlNormalizer, UrlNormalizer.class.getName());
+      container.addComponent(urlNormalizer, UrlNormalizer.class, "ide");
 
       StringSearchModelInterpolator interpolator = new CustomMaven3ModelInterpolator2();
       interpolator.setPathTranslator(pathTranslator);
@@ -696,6 +702,17 @@ public abstract class Maven3XServerEmbedder extends Maven3ServerEmbedder {
             }
 
             List<Exception> exceptions = new ArrayList<Exception>();
+            if (buildingResult.getProblems() != null) {
+              for (ModelProblem problem : buildingResult.getProblems()) {
+                if (problem.getException() != null) {
+                  exceptions.add(problem.getException());
+                }
+                else {
+                  exceptions.add(new RuntimeException(problem.getMessage()));
+                }
+              }
+            }
+
             loadExtensions(project, exceptions);
 
             //Artifact projectArtifact = project.getArtifact();
@@ -1029,6 +1046,7 @@ public abstract class Maven3XServerEmbedder extends Maven3ServerEmbedder {
       if (each == null) continue;
 
       Maven3ServerGlobals.getLogger().info(each);
+      myConsoleWrapper.info("Validation error:", each);
 
       if (each instanceof IllegalStateException && each.getCause() != null) {
         each = each.getCause();
@@ -1056,11 +1074,13 @@ public abstract class Maven3XServerEmbedder extends Maven3ServerEmbedder {
         problems.add(MavenProjectProblem.createStructureProblem(path, causeMessage));
       }
       else if (each.getStackTrace().length > 0 && each.getClass().getPackage().getName().equals("groovy.lang")) {
+        myConsoleWrapper.error("Maven server structure problem", each);
         StackTraceElement traceElement = each.getStackTrace()[0];
         problems.add(MavenProjectProblem.createStructureProblem(
           traceElement.getFileName() + ":" + traceElement.getLineNumber(), each.getMessage()));
       }
       else {
+        myConsoleWrapper.error("Maven server structure problem", each);
         problems.add(MavenProjectProblem.createStructureProblem(path, each.getMessage()));
       }
     }

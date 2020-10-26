@@ -1,6 +1,7 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.spellchecker.state;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.*;
 import com.intellij.serviceContainer.NonInjectable;
 import com.intellij.spellchecker.dictionary.EditableDictionary;
@@ -9,11 +10,13 @@ import org.jetbrains.annotations.NotNull;
 
 @State(
   name = "CachedDictionaryState",
-  storages = @Storage(value = "cachedDictionary.xml", roamingType = RoamingType.DISABLED)
+  storages = @Storage(value = "cachedDictionary.xml", roamingType = RoamingType.DISABLED),
+  reportStatistic = false
 )
 public class CachedDictionaryState extends DictionaryState implements PersistentStateComponent<DictionaryState> {
   public static final String DEFAULT_NAME = "cached";
-  private final EventDispatcher<DictionaryStateListener> myDictListenerEventDispatcher = EventDispatcher.create(DictionaryStateListener.class);
+  private final EventDispatcher<DictionaryStateListener> myDictListenerEventDispatcher =
+    EventDispatcher.create(DictionaryStateListener.class);
 
   public CachedDictionaryState() {
     name = DEFAULT_NAME;
@@ -21,7 +24,7 @@ public class CachedDictionaryState extends DictionaryState implements Persistent
 
   @NotNull
   public static CachedDictionaryState getInstance() {
-    return ServiceManager.getService(CachedDictionaryState.class);
+    return ApplicationManager.getApplication().getService(CachedDictionaryState.class);
   }
 
   @NonInjectable

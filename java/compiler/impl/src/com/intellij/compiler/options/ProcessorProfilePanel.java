@@ -7,6 +7,7 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -14,6 +15,7 @@ import com.intellij.ui.*;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.EditableModel;
 import com.intellij.util.ui.JBUI;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.jps.model.java.compiler.ProcessorConfigProfile;
 
 import javax.swing.*;
@@ -86,15 +88,20 @@ public class ProcessorProfilePanel extends JPanel {
         final FileChooserDescriptor descriptor = FileChooserDescriptorFactory.createAllButJarContentsDescriptor();
         final VirtualFile[] files = FileChooser.chooseFiles(descriptor, myProcessorPathField, myProject, null);
         if (files.length > 0) {
-          final StringBuilder builder = new StringBuilder();
-          for (VirtualFile file : files) {
-            if (builder.length() > 0) {
-              builder.append(File.pathSeparator);
-            }
-            builder.append(FileUtil.toSystemDependentName(file.getPath()));
-          }
-          myProcessorPathField.setText(builder.toString());
+          myProcessorPathField.setText(getPathString(files));
         }
+      }
+
+      @NotNull
+      private @NlsSafe String getPathString(VirtualFile[] files) {
+        final StringBuilder builder = new StringBuilder();
+        for (VirtualFile file : files) {
+          if (builder.length() > 0) {
+            builder.append(File.pathSeparator);
+          }
+          builder.append(FileUtil.toSystemDependentName(file.getPath()));
+        }
+        return builder.toString();
       }
     });
 
@@ -102,6 +109,7 @@ public class ProcessorProfilePanel extends JPanel {
     myProcessorsModel = new ProcessorTableModel();
     myProcessorTablePanel.setBorder(IdeBorderFactory.createTitledBorder(JavaCompilerBundle.message("settings.annotation.processors"), false, JBUI.insetsTop(8)).setShowLine(false));
     myProcessorTable = new JBTable(myProcessorsModel);
+    myProcessorTable.setShowGrid(false);
     myProcessorTable.getEmptyText().setText(JavaCompilerBundle.message("settings.compiler.will.run.all.automatically.discovered.processors"));
     myProcessorPanel = createTablePanel(myProcessorTable);
     myProcessorTablePanel.add(myProcessorPanel, BorderLayout.CENTER);
@@ -110,6 +118,7 @@ public class ProcessorProfilePanel extends JPanel {
     myOptionsModel = new OptionsTableModel();
     myOptionsTablePanel.setBorder(IdeBorderFactory.createTitledBorder(JavaCompilerBundle.message("settings.annotation.processor.options"), false, JBUI.insetsTop(13)).setShowLine(false));
     myOptionsTable = new JBTable(myOptionsModel);
+    myOptionsTable.setShowGrid(false);
     myOptionsTable.getEmptyText().setText(JavaCompilerBundle.message("settings.no.processor.specific.options.configured"));
     myOptionsPanel = createTablePanel(myOptionsTable);
     myOptionsTablePanel.add(myOptionsPanel, BorderLayout.CENTER);

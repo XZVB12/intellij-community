@@ -54,8 +54,6 @@ public final class PyClassRefactoringUtil {
                                                                             @NotNull final PyStatementList superClassStatement,
                                                                             @Nullable final PyClass dequalifyIfDeclaredInClass) {
     final List<PyAssignmentStatement> declarations = new ArrayList<>(assignmentStatements.size());
-    declarations.sort(PyDependenciesComparator.INSTANCE);
-
 
     for (final PyAssignmentStatement pyAssignmentStatement : assignmentStatements) {
       final PyElement value = pyAssignmentStatement.getAssignedValue();
@@ -201,13 +199,13 @@ public final class PyClassRefactoringUtil {
                                             final PsiElement @NotNull [] otherMovedElements) {
     newElement.acceptChildren(new PyRecursiveElementVisitor() {
       @Override
-      public void visitPyReferenceExpression(PyReferenceExpression node) {
+      public void visitPyReferenceExpression(@NotNull PyReferenceExpression node) {
         super.visitPyReferenceExpression(node);
         restoreReference(node, node, otherMovedElements);
       }
 
       @Override
-      public void visitPyStringLiteralExpression(PyStringLiteralExpression node) {
+      public void visitPyStringLiteralExpression(@NotNull PyStringLiteralExpression node) {
         super.visitPyStringLiteralExpression(node);
         if (oldElement != null) {
           for (PsiReference ref : node.getReferences()) {
@@ -267,7 +265,7 @@ public final class PyClassRefactoringUtil {
   public static void rememberNamedReferences(@NotNull final PsiElement element, final String @NotNull ... namesToSkip) {
     element.accept(new PyRecursiveElementVisitor() {
       @Override
-      public void visitPyReferenceExpression(PyReferenceExpression node) {
+      public void visitPyReferenceExpression(@NotNull PyReferenceExpression node) {
         super.visitPyReferenceExpression(node);
         if (PsiTreeUtil.getParentOfType(node, PyImportStatementBase.class) != null) {
           return;
@@ -427,7 +425,7 @@ public final class PyClassRefactoringUtil {
     PyImportOptimizer.onlyRemoveUnused().processFile(file).run();
   }
 
-  private static class DynamicNamedElement extends LightElement implements PsiNamedElement {
+  private static final class DynamicNamedElement extends LightElement implements PsiNamedElement {
     private final PsiFile myFile;
     private final String myName;
 

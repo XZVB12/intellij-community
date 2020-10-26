@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.java.psi;
 
 import com.intellij.lang.FileASTNode;
@@ -9,6 +9,7 @@ import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.StubBuilder;
 import com.intellij.psi.impl.DebugUtil;
+import com.intellij.psi.impl.java.stubs.PsiClassStub;
 import com.intellij.psi.impl.source.JavaLightStubBuilder;
 import com.intellij.psi.stubs.StubElement;
 import com.intellij.psi.util.PsiUtil;
@@ -21,8 +22,9 @@ import org.jetbrains.annotations.NotNull;
 import java.io.File;
 import java.io.IOException;
 import java.security.SecureRandom;
+import java.util.List;
 
-import static com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase.JAVA_14;
+import static com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase.JAVA_15;
 
 @SuppressWarnings("SpellCheckingInspection")
 public class JavaStubBuilderTest extends LightIdeaTestCase {
@@ -43,7 +45,7 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
 
   @Override
   protected @NotNull LightProjectDescriptor getProjectDescriptor() {
-    return JAVA_14;
+    return JAVA_15;
   }
 
   public void testEmpty() {
@@ -541,6 +543,18 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
            "    IMPLEMENTS_LIST:PsiRefListStub[IMPLEMENTS_LIST:]\n");
   }
 
+  public void testIncompleteRecord() {
+    doTest("record A",
+
+           "PsiJavaFileStub []\n" +
+           "  IMPORT_LIST:PsiImportListStub\n" +
+           "  CLASS:PsiClassStub[record name=A fqn=A]\n" +
+           "    MODIFIER_LIST:PsiModifierListStub[mask=0]\n" +
+           "    TYPE_PARAMETER_LIST:PsiTypeParameterListStub\n" +
+           "    EXTENDS_LIST:PsiRefListStub[EXTENDS_LIST:]\n" +
+           "    IMPLEMENTS_LIST:PsiRefListStub[IMPLEMENTS_LIST:]\n");
+  }
+
   public void testLocalRecord() {
     doTest("class A {\n" +
            "  void test() {\n" +
@@ -559,8 +573,7 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
            "      MODIFIER_LIST:PsiModifierListStub[mask=0]\n" +
            "      TYPE_PARAMETER_LIST:PsiTypeParameterListStub\n" +
            "      PARAMETER_LIST:PsiParameterListStub\n" +
-           "      THROWS_LIST:PsiRefListStub[THROW" +
-           "S_LIST:]\n" +
+           "      THROWS_LIST:PsiRefListStub[THROWS_LIST:]\n" +
            "      CLASS:PsiClassStub[record name=A fqn=null]\n" +
            "        MODIFIER_LIST:PsiModifierListStub[mask=0]\n" +
            "        TYPE_PARAMETER_LIST:PsiTypeParameterListStub\n" +
@@ -570,7 +583,6 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
            "        EXTENDS_LIST:PsiRefListStub[EXTENDS_LIST:]\n" +
            "        IMPLEMENTS_LIST:PsiRefListStub[IMPLEMENTS_LIST:]\n");
   }
-
 
   public void testLocalRecordIncorrect() {
     doTest("class A {\n" +
@@ -614,7 +626,6 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
            "      THROWS_LIST:PsiRefListStub[THROWS_LIST:]\n");
   }
 
-
   public void testLocalRecordLikeIncompleteCodeWithTypeParameters() {
     doTest("class A {\n" +
            "  void foo(){\n" +
@@ -633,8 +644,7 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
            "      MODIFIER_LIST:PsiModifierListStub[mask=0]\n" +
            "      TYPE_PARAMETER_LIST:PsiTypeParameterListStub\n" +
            "      PARAMETER_LIST:PsiParameterListStub\n" +
-           "      THROWS_LIST:PsiRefListStub[THROW" +
-           "S_LIST:]\n" +
+           "      THROWS_LIST:PsiRefListStub[THROWS_LIST:]\n" +
            "      CLASS:PsiClassStub[record name=turn fqn=null]\n" +
            "        MODIFIER_LIST:PsiModifierListStub[mask=0]\n" +
            "        TYPE_PARAMETER_LIST:PsiTypeParameterListStub\n" +
@@ -648,8 +658,7 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
     doTest("class A {\n" +
            "  void foo(){\n" +
            "    record R<String>(){}\n" +
-           "  " +
-           "}\n" +
+           "  }\n" +
            "}",
 
            "PsiJavaFileStub []\n" +
@@ -663,8 +672,7 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
            "      MODIFIER_LIST:PsiModifierListStub[mask=0]\n" +
            "      TYPE_PARAMETER_LIST:PsiTypeParameterListStub\n" +
            "      PARAMETER_LIST:PsiParameterListStub\n" +
-           "      THROWS_LIST:PsiRefListStub[THROW" +
-           "S_LIST:]\n" +
+           "      THROWS_LIST:PsiRefListStub[THROWS_LIST:]\n" +
            "      CLASS:PsiClassStub[record name=R fqn=null]\n" +
            "        MODIFIER_LIST:PsiModifierListStub[mask=0]\n" +
            "        TYPE_PARAMETER_LIST:PsiTypeParameterListStub\n" +
@@ -673,6 +681,21 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
            "        RECORD_HEADER:PsiRecordHeaderStub\n" +
            "        EXTENDS_LIST:PsiRefListStub[EXTENDS_LIST:]\n" +
            "        IMPLEMENTS_LIST:PsiRefListStub[IMPLEMENTS_LIST:]\n");
+  }
+  
+  public void testInterfaceKeywordInBody() {
+    String source = "class X {\n" +
+                    "  void test() {}interface\n" +
+                    "}";
+    PsiJavaFile file = (PsiJavaFile)createLightFile("test.java", source);
+    FileASTNode fileNode = file.getNode();
+    assertNotNull(fileNode);
+    assertFalse(fileNode.isParsed());
+    StubElement<?> element = myBuilder.buildStubTree(file);
+    @SuppressWarnings("rawtypes") List<StubElement> stubs = element.getChildrenStubs();
+    assertSize(2, stubs);
+    PsiClassStub<?> classStub = (PsiClassStub<?>)stubs.get(1);
+    assertFalse(classStub.isInterface());
   }
 
   public void testSOEProof() {
@@ -687,7 +710,7 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
 
     PsiJavaFile file = (PsiJavaFile)createLightFile("SOE_test.java", sb.toString());
     long t = System.currentTimeMillis();
-    StubElement tree = myBuilder.buildStubTree(file);
+    StubElement<?> tree = myBuilder.buildStubTree(file);
     t = System.currentTimeMillis() - t;
     assertEquals("PsiJavaFileStub []\n" +
                  "  IMPORT_LIST:PsiImportListStub\n" +
@@ -710,18 +733,18 @@ public class JavaStubBuilderTest extends LightIdeaTestCase {
     PlatformTestUtil.startPerformanceTest(message, 700, () -> myBuilder.buildStubTree(file)).reattemptUntilJitSettlesDown().assertTiming();
   }
 
-  private void doTest(@Language("JAVA") String source, @Language("TEXT") String expected) {
+  private void doTest(/*@Language("JAVA")*/ String source, @Language("TEXT") String expected) {
     PsiJavaFile file = (PsiJavaFile)createLightFile("test.java", source);
     file.putUserData(PsiUtil.FILE_LANGUAGE_LEVEL_KEY, LanguageLevel.JDK_14_PREVIEW);
     FileASTNode fileNode = file.getNode();
     assertNotNull(fileNode);
     assertFalse(fileNode.isParsed());
 
-    StubElement lightTree = myBuilder.buildStubTree(file);
+    StubElement<?> lightTree = myBuilder.buildStubTree(file);
     assertFalse(fileNode.isParsed());
 
     file.getNode().getChildren(null); // force switch to AST
-    StubElement astBasedTree = myBuilder.buildStubTree(file);
+    StubElement<?> astBasedTree = myBuilder.buildStubTree(file);
     assertTrue(fileNode.isParsed());
 
     assertEquals("light tree differs", expected, DebugUtil.stubTreeToString(lightTree));

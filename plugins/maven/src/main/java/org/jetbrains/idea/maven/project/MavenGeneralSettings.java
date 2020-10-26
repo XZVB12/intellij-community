@@ -2,6 +2,7 @@
 package org.jetbrains.idea.maven.project;
 
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -33,7 +34,6 @@ public class MavenGeneralSettings implements Cloneable {
   private boolean nonRecursive = false;
 
   private boolean alwaysUpdateSnapshots = false;
-  private boolean updateIndicesOnProjectOpen = true;
 
   private String threads;
 
@@ -125,7 +125,6 @@ public class MavenGeneralSettings implements Cloneable {
   public void setOutputLevel(MavenExecutionOptions.LoggingLevel value) {
     if (value == null) return; // null may come from deserializator
     if (!Comparing.equal(this.outputLevel, value)) {
-      MavenServerManager.getInstance().setLoggingLevel(value);
       this.outputLevel = value;
       changed();
     }
@@ -146,9 +145,15 @@ public class MavenGeneralSettings implements Cloneable {
   }
 
   public void setMavenHome(@NotNull final String mavenHome) {
-    if (!Objects.equals(this.mavenHome, mavenHome)) {
-      this.mavenHome = mavenHome;
-      MavenServerManager.getInstance().setMavenHome(mavenHome);
+    final File mavenHomeDirectory = MavenUtil.resolveMavenHomeDirectory(mavenHome);
+    final File bundledMavenHomeDirectory = MavenUtil.resolveMavenHomeDirectory(MavenServerManager.BUNDLED_MAVEN_3);
+
+    String mavenHomeToSet = mavenHome;
+    if (FileUtil.filesEqual(mavenHomeDirectory, bundledMavenHomeDirectory)) {
+      mavenHomeToSet = MavenServerManager.BUNDLED_MAVEN_3;
+    }
+    if (!Objects.equals(this.mavenHome, mavenHomeToSet)) {
+      this.mavenHome = mavenHomeToSet;
       myDefaultPluginsCache = null;
       changed();
     }
@@ -238,6 +243,7 @@ public class MavenGeneralSettings implements Cloneable {
       return result;
     }
     result = MavenUtil.resolveSuperPomFile(getEffectiveMavenHome());
+    myEffectiveSuperPomCache = result;
     return result;
   }
 
@@ -293,15 +299,6 @@ public class MavenGeneralSettings implements Cloneable {
     changed();
   }
 
-  public boolean isUpdateIndicesOnProjectOpen() {
-    return updateIndicesOnProjectOpen;
-  }
-
-  public void setUpdateIndicesOnProjectOpen(boolean updateIndicesOnProjectOpen) {
-    this.updateIndicesOnProjectOpen = updateIndicesOnProjectOpen;
-    changed();
-  }
-
   public boolean isNonRecursive() {
     return nonRecursive;
   }
@@ -331,7 +328,6 @@ public class MavenGeneralSettings implements Cloneable {
     if (outputLevel != that.outputLevel) return false;
     if (pluginUpdatePolicy != that.pluginUpdatePolicy) return false;
     if (alwaysUpdateSnapshots != that.alwaysUpdateSnapshots) return false;
-    if (updateIndicesOnProjectOpen != that.updateIndicesOnProjectOpen) return false;
     if (printErrorStackTraces != that.printErrorStackTraces) return false;
     if (usePluginRegistry != that.usePluginRegistry) return false;
     if (workOffline != that.workOffline) return false;

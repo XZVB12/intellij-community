@@ -16,9 +16,11 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener;
 import com.intellij.ui.border.CustomLineBorder;
@@ -56,7 +58,14 @@ public abstract class SpeedSearchBase<Comp extends JComponent> extends SpeedSear
   private final ToolWindowManagerListener myWindowManagerListener = new ToolWindowManagerListener() {
     @Override
     public void stateChanged(@NotNull ToolWindowManager toolWindowManager) {
-      manageSearchPopup(null);
+        if (!isInsideActiveToolWindow(toolWindowManager)) {
+          manageSearchPopup(null);
+        }
+    }
+
+    private boolean isInsideActiveToolWindow(@NotNull ToolWindowManager toolWindowManager) {
+      ToolWindow toolWindow = toolWindowManager.getToolWindow(toolWindowManager.getActiveToolWindowId());
+      return toolWindow != null && SwingUtilities.isDescendingFrom(myComponent, toolWindow.getComponent());
     }
   };
   private final PropertyChangeSupport myChangeSupport = new PropertyChangeSupport(this);
@@ -366,6 +375,7 @@ public abstract class SpeedSearchBase<Comp extends JComponent> extends SpeedSear
 
   @Override
   @Nullable
+  @NlsSafe
   public String getEnteredPrefix() {
     return mySearchPopup != null ? mySearchPopup.mySearchField.getText() : null;
   }
@@ -604,8 +614,6 @@ public abstract class SpeedSearchBase<Comp extends JComponent> extends SpeedSear
     fireStateChanged();
 
     //select here!
-
-
 
     if (mySearchPopup == null || !myComponent.isDisplayable()) return;
 

@@ -17,6 +17,7 @@ import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.*;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.AbstractVcs;
 import com.intellij.openapi.vcs.FilePath;
@@ -29,7 +30,6 @@ import com.intellij.openapi.vcs.checkin.BeforeCheckinDialogHandler;
 import com.intellij.openapi.vcs.checkin.CheckinHandler;
 import com.intellij.openapi.vcs.ui.CommitMessage;
 import com.intellij.openapi.vcs.ui.RefreshableOnComponent;
-import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.SplitterWithSecondHideable;
 import com.intellij.ui.components.JBLabel;
@@ -60,6 +60,7 @@ import static com.intellij.openapi.util.text.StringUtil.escapeXmlEntities;
 import static com.intellij.openapi.vcs.VcsBundle.message;
 import static com.intellij.ui.components.JBBox.createHorizontalBox;
 import static com.intellij.util.ArrayUtil.isEmpty;
+import static com.intellij.util.MathUtil.clamp;
 import static com.intellij.util.containers.ContainerUtil.filter;
 import static com.intellij.util.containers.ContainerUtil.map;
 import static com.intellij.util.ui.JBUI.Borders.emptyLeft;
@@ -69,7 +70,6 @@ import static com.intellij.vcs.commit.AbstractCommitWorkflow.getCommitExecutors;
 import static com.intellij.vcs.commit.AbstractCommitWorkflow.getCommitHandlerFactories;
 import static com.intellij.vcs.commit.SingleChangeListCommitWorkflowKt.getPresentableText;
 import static java.lang.Math.max;
-import static java.lang.Math.min;
 import static java.util.Arrays.asList;
 import static java.util.Collections.*;
 
@@ -195,8 +195,8 @@ public abstract class CommitChangeListDialog extends DialogWrapper implements Si
       affectedVcses.addAll(ChangesUtil.getAffectedVcses(list.getChanges(), project));
     }
     if (showVcsCommit) {
-      List<VirtualFile> unversionedFiles = ChangeListManagerImpl.getInstanceImpl(project).getUnversionedFiles();
-      affectedVcses.addAll(ChangesUtil.getAffectedVcsesForFiles(unversionedFiles, project));
+      List<FilePath> unversionedFiles = ChangeListManager.getInstance(project).getUnversionedFilesPaths();
+      affectedVcses.addAll(ChangesUtil.getAffectedVcsesForFilePaths(unversionedFiles, project));
     }
 
 
@@ -347,7 +347,7 @@ public abstract class CommitChangeListDialog extends DialogWrapper implements Si
       }
     };
     // TODO: there are no reason to use such heavy interface for a simple task.
-    return new SplitterWithSecondHideable(true, "Diff", rootPane, listener) {
+    return new SplitterWithSecondHideable(true, message("changes.diff.separator"), rootPane, listener) {
       @Override
       protected RefreshablePanel createDetails() {
         JPanel panel = JBUI.Panels.simplePanel(myDiffDetails.getComponent());
@@ -389,9 +389,11 @@ public abstract class CommitChangeListDialog extends DialogWrapper implements Si
     List<CommitExecutorAction> result = new ArrayList<>();
 
     if (isDefaultCommitEnabled() && UISettings.getShadowInstance().getAllowMergeButtons()) {
-      ActionGroup group = (ActionGroup)ActionManager.getInstance().getAction("Vcs.CommitExecutor.Actions");
+      ActionGroup primaryActions = (ActionGroup)ActionManager.getInstance().getAction("Vcs.Commit.PrimaryCommitActions");
+      ActionGroup executorActions = (ActionGroup)ActionManager.getInstance().getAction("Vcs.CommitExecutor.Actions");
 
-      result.addAll(map(group.getChildren(null), CommitExecutorAction::new));
+      result.addAll(map(primaryActions.getChildren(null), CommitExecutorAction::new));
+      result.addAll(map(executorActions.getChildren(null), CommitExecutorAction::new));
       result.addAll(map(filter(executors, CommitExecutor::useDefaultAction), CommitExecutorAction::new));
     }
     else {
@@ -427,7 +429,7 @@ public abstract class CommitChangeListDialog extends DialogWrapper implements Si
       if (updateException != null) {
         String[] messages = updateException.getMessages();
         if (!isEmpty(messages)) {
-          String message = "Warning: not all local changes may be shown due to an error: " + messages[0];
+          String message = message("changes.warning.not.all.local.changes.may.be.shown.due.to.an.error", messages[0]);
           String htmlMessage = buildHtml(getCssFontDeclaration(getLabelFont()), getHtmlBody(escapeXmlEntities(message)));
 
           myWarningLabel.setText(htmlMessage);
@@ -443,10 +445,10 @@ public abstract class CommitChangeListDialog extends DialogWrapper implements Si
     return myHelpId;
   }
 
-  private class CommitAction extends AbstractAction implements OptionAction {
+  private final class CommitAction extends AbstractAction implements OptionAction {
     private Action @NotNull [] myOptions = new Action[0];
 
-    private CommitAction(String okActionText) {
+    private CommitAction(@NlsContexts.Button String okActionText) {
       super(okActionText);
       putValue(DEFAULT_ACTION, Boolean.TRUE);
     }
@@ -689,11 +691,14 @@ public abstract class CommitChangeListDialog extends DialogWrapper implements Si
 
   @Override
   public boolean confirmCommitWithEmptyMessage() {
-    return Messages.YES == Messages.showYesNoDialog(
-      message("confirmation.text.check.in.with.empty.comment"),
-      message("confirmation.title.check.in.with.empty.comment"),
-      Messages.getWarningIcon()
-    );
+    return showEmptyCommitMessageConfirmation(myProject);
+  }
+
+  public static boolean showEmptyCommitMessageConfirmation(@NotNull Project project) {
+    return MessageDialogBuilder
+      .yesNo(message("confirmation.title.check.in.with.empty.comment"), message("confirmation.text.check.in.with.empty.comment"))
+      .icon(Messages.getWarningIcon())
+      .ask(project);
   }
 
   @Override
@@ -752,8 +757,7 @@ public abstract class CommitChangeListDialog extends DialogWrapper implements Si
 
     public void updateEnabled(boolean hasDiffs) {
       if (myCommitExecutor != null) {
-        setEnabled(
-          hasDiffs || myCommitExecutor instanceof CommitExecutorBase && !((CommitExecutorBase)myCommitExecutor).areChangesRequired());
+        setEnabled(hasDiffs || !myCommitExecutor.areChangesRequired());
       }
     }
   }
@@ -836,7 +840,7 @@ public abstract class CommitChangeListDialog extends DialogWrapper implements Si
     public void layoutContainer(@NotNull Container parent) {
       Rectangle bounds = parent.getBounds();
       int preferredWidth = myOptions.getPreferredSize().width;
-      int optionsWidth = myOptions.isEmpty() ? 0 : max(min(myMaxOptionsWidth, preferredWidth), myMinOptionsWidth);
+      int optionsWidth = myOptions.isEmpty() ? 0 : clamp(preferredWidth, myMinOptionsWidth, myMaxOptionsWidth);
       myPanel.setBounds(new Rectangle(0, 0, bounds.width - optionsWidth, bounds.height));
       myOptions.setBounds(new Rectangle(bounds.width - optionsWidth, 0, optionsWidth, bounds.height));
     }

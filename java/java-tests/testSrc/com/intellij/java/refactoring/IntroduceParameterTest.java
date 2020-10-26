@@ -210,6 +210,10 @@ public class IntroduceParameterTest extends LightRefactoringTestCase  {
     doTest(IntroduceParameterRefactoring.REPLACE_FIELDS_WITH_GETTERS_NONE, true, false, false, false);
   }
 
+  public void testRemoveParameterInHierarchy1() {
+    doTest(IntroduceParameterRefactoring.REPLACE_FIELDS_WITH_GETTERS_NONE, true, false, false, false);
+  }
+
   public void testRemoveParameterWithJavadoc() {
     doTest(IntroduceParameterRefactoring.REPLACE_FIELDS_WITH_GETTERS_NONE, true, false, false, false);
   }
@@ -431,7 +435,7 @@ public class IntroduceParameterTest extends LightRefactoringTestCase  {
                           final boolean replaceDuplicates) {
     final ElementToWorkOn[] elementToWorkOn = new ElementToWorkOn[1];
     ElementToWorkOn.processElementToWorkOn(getEditor(), getFile(), "INtr param", HelpID.INTRODUCE_PARAMETER, getProject(),
-                                           new ElementToWorkOn.ElementsProcessor<ElementToWorkOn>() {
+                                           new ElementToWorkOn.ElementsProcessor<>() {
                                              @Override
                                              public boolean accept(ElementToWorkOn el) {
                                                return true;

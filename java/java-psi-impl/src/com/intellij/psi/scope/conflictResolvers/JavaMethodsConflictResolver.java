@@ -38,7 +38,8 @@ public class JavaMethodsConflictResolver implements PsiConflictResolver{
 
   public JavaMethodsConflictResolver(@NotNull PsiElement argumentsList,
                                      PsiType[] actualParameterTypes,
-                                     @NotNull LanguageLevel languageLevel, @NotNull PsiFile containingFile) {
+                                     @NotNull LanguageLevel languageLevel,
+                                     @NotNull PsiFile containingFile) {
     myArgumentsList = argumentsList;
     myActualParameterTypes = actualParameterTypes;
     myLanguageLevel = languageLevel;
@@ -80,7 +81,7 @@ public class JavaMethodsConflictResolver implements PsiConflictResolver{
       if (conflicts.size() == 1) return conflicts.get(0);
     }
 
-    final int applicabilityLevel = checkApplicability(conflicts);
+    final int applicabilityLevel = checkApplicability(conflicts, map);
     if (conflicts.size() == 1) return conflicts.get(0);
 
     // makes no sense to do further checks, because if no one candidate matches by parameters count
@@ -185,7 +186,7 @@ public class JavaMethodsConflictResolver implements PsiConflictResolver{
     checkSameSignatures(conflicts, null);
   }
 
-  private void checkSameSignatures(@NotNull List<? extends CandidateInfo> conflicts, Map<MethodCandidateInfo, PsiSubstitutor> map) {
+  protected void checkSameSignatures(@NotNull List<? extends CandidateInfo> conflicts, Map<MethodCandidateInfo, PsiSubstitutor> map) {
     // candidates should go in order of class hierarchy traversal
     // in order for this to work
     Map<MethodSignature, CandidateInfo> signatures = new THashMap<>(conflicts.size());
@@ -363,11 +364,17 @@ public class JavaMethodsConflictResolver implements PsiConflictResolver{
 
   @MethodCandidateInfo.ApplicabilityLevelConstant
   public int checkApplicability(@NotNull List<CandidateInfo> conflicts) {
+    return checkApplicability(conflicts, null);
+  }
+
+  @MethodCandidateInfo.ApplicabilityLevelConstant
+  public int checkApplicability(@NotNull List<CandidateInfo> conflicts,
+                                Map<MethodCandidateInfo, PsiSubstitutor> map) {
     @MethodCandidateInfo.ApplicabilityLevelConstant int maxApplicabilityLevel = 0;
     boolean toFilter = false;
     for (CandidateInfo conflict : conflicts) {
       ProgressManager.checkCanceled();
-      @MethodCandidateInfo.ApplicabilityLevelConstant final int level = getPertinentApplicabilityLevel((MethodCandidateInfo)conflict);
+      @MethodCandidateInfo.ApplicabilityLevelConstant final int level = getPertinentApplicabilityLevel((MethodCandidateInfo)conflict, map);
       if (maxApplicabilityLevel > 0 && maxApplicabilityLevel != level) {
         toFilter = true;
       }
@@ -380,7 +387,7 @@ public class JavaMethodsConflictResolver implements PsiConflictResolver{
       for (Iterator<CandidateInfo> iterator = conflicts.iterator(); iterator.hasNext();) {
         ProgressManager.checkCanceled();
         CandidateInfo info = iterator.next();
-        final int level = getPertinentApplicabilityLevel((MethodCandidateInfo)info);
+        final int level = getPertinentApplicabilityLevel((MethodCandidateInfo)info, map);
         if (level < maxApplicabilityLevel) {
           iterator.remove();
         }
@@ -390,8 +397,9 @@ public class JavaMethodsConflictResolver implements PsiConflictResolver{
     return maxApplicabilityLevel;
   }
 
-  protected int getPertinentApplicabilityLevel(@NotNull MethodCandidateInfo conflict) {
-    return conflict.getPertinentApplicabilityLevel();
+  protected int getPertinentApplicabilityLevel(@NotNull MethodCandidateInfo conflict,
+                                               Map<MethodCandidateInfo, PsiSubstitutor> map) {
+    return conflict.getPertinentApplicabilityLevel(map);
   }
 
   private static int getCheckAccessLevel(@NotNull MethodCandidateInfo method){
@@ -524,7 +532,7 @@ public class JavaMethodsConflictResolver implements PsiConflictResolver{
 
       if (applicable12 || applicable21) {
         if (applicable12 && !applicable21) return Specifics.SECOND;
-        if (applicable21 && !applicable12) return Specifics.FIRST;
+        if (!applicable12) return Specifics.FIRST;
 
         //from 15.12.2.5 Choosing the Most Specific Method: concrete = nonabstract or default
         final boolean abstract1 = method1.hasModifierProperty(PsiModifier.ABSTRACT) || method1.hasModifierProperty(PsiModifier.DEFAULT);

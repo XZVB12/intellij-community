@@ -1,11 +1,10 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.lightEdit.menuBar;
 
-import com.intellij.ide.lightEdit.actions.LightEditExitAction;
-import com.intellij.ide.lightEdit.actions.LightEditNewFileAction;
-import com.intellij.ide.lightEdit.actions.LightEditOpenFileInProjectAction;
-import com.intellij.ide.lightEdit.actions.LightEditSaveAsAction;
+import com.intellij.ide.lightEdit.actions.*;
+import com.intellij.idea.ActionsBundle;
 import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.util.NlsActions;
 import com.intellij.openapi.wm.impl.IdeMenuBar;
 import org.jetbrains.annotations.NotNull;
 
@@ -14,21 +13,26 @@ import java.util.Arrays;
 public final class LightEditMenuBar extends IdeMenuBar {
   @Override
   public @NotNull ActionGroup getMainMenuActionGroup() {
-    return new DefaultActionGroup(
-      createActionGroup("&File",
+    DefaultActionGroup topGroup = new DefaultActionGroup();
+    topGroup.add(
+      createActionGroup(ActionsBundle.message("group.FileMenu.text"),
                         new LightEditOpenFileInProjectAction(),
                         Separator.create(),
                         new LightEditNewFileAction(),
                         Separator.create(),
                         standardAction("OpenFile"),
-                        new RecentFileActionGroup(),
+                        new LightEditRecentFileActionGroup(),
                         Separator.create(),
                         new LightEditSaveAsAction(),
                         standardAction("SaveAll"),
                         Separator.create(),
+                        new LightEditReloadFileAction(),
+                        Separator.create(),
                         new LightEditExitAction()
-      ),
-      createActionGroup("&Edit",
+      )
+    );
+    topGroup.add(
+      createActionGroup(ActionsBundle.message("group.EditMenu.text"),
                         standardAction(IdeActions.ACTION_UNDO),
                         standardAction(IdeActions.ACTION_REDO),
                         Separator.create(),
@@ -40,19 +44,29 @@ public final class LightEditMenuBar extends IdeMenuBar {
                         standardAction("EditorSelectWord"),
                         standardAction("EditorUnSelectWord"),
                         standardAction(IdeActions.ACTION_SELECT_ALL)
-      ),
-      createActionGroup("&View",
+      )
+    );
+    topGroup.add(
+      createActionGroup(ActionsBundle.message("group.ViewMenu.text"),
                         standardAction("EditorToggleShowWhitespaces"),
                         standardAction("EditorToggleShowLineNumbers")
-      ),
-      createActionGroup("&Help",
+      )
+    );
+    topGroup.add(
+      createActionGroup(ActionsBundle.message("group.WindowMenu.text"),
+                        standardAction("NextProjectWindow"),
+                        standardAction("PreviousProjectWindow"))
+    );
+    topGroup.add(
+      createActionGroup(ActionsBundle.message("group.HelpMenu.text"),
                         standardAction("HelpTopics"),
                         standardAction("About"))
     );
+    return topGroup;
   }
 
   @NotNull
-  private static ActionGroup createActionGroup(@NotNull String title, AnAction... actions) {
+  private static ActionGroup createActionGroup(@NotNull @NlsActions.ActionText String title, AnAction... actions) {
     return new DefaultActionGroup(title, Arrays.asList(actions));
   }
 

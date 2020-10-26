@@ -13,6 +13,7 @@ import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.tabs.JBTabsPosition;
 import com.intellij.ui.tabs.TabInfo;
 import com.intellij.ui.util.Axis;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -61,9 +62,8 @@ final class DragHelper extends MouseDragHelper {
     TabInfo.DragOutDelegate delegate = myDragOutSource.getDragOutDelegate();
     if (justStarted) {
       delegate.dragOutStarted(event, myDragOutSource);
-    } else {
-      delegate.processDragOut(event, myDragOutSource);
     }
+    delegate.processDragOut(event, myDragOutSource);
     event.consume();
   }
 
@@ -227,6 +227,17 @@ final class DragHelper extends MouseDragHelper {
   @Override
   protected boolean canStartDragging(@NotNull JComponent dragComponent, @NotNull Point dragComponentPoint) {
     return findLabel(dragComponentPoint) != null;
+  }
+
+  @Override
+  protected boolean canFinishDragging(@NotNull JComponent component, @NotNull RelativePoint point) {
+    Component realDropTarget = UIUtil.getDeepestComponentAt(point.getOriginalComponent(), point.getOriginalPoint().x, point.getOriginalPoint().y);
+    if (realDropTarget == null) realDropTarget = SwingUtilities.getDeepestComponentAt(point.getOriginalComponent(), point.getOriginalPoint().x, point.getOriginalPoint().y);
+    if (myTabs.getVisibleInfos().isEmpty() && realDropTarget != null ) {
+      JBTabsImpl tabs = UIUtil.getParentOfType(JBTabsImpl.class, realDropTarget);
+      if (tabs == null || !tabs.isEditorTabs()) return false;
+    }
+    return !myTabs.contains(point.getPoint(myTabs)) || !myTabs.getVisibleInfos().isEmpty();
   }
 
   @Override

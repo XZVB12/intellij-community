@@ -86,6 +86,8 @@ public class DataFlowInspectionTest extends DataFlowInspectionTestCase {
   public void testNotEqualsDoesntImplyNotNullity() { doTest(); }
   public void testEqualsEnumConstant() { doTest(); }
   public void testSwitchEnumConstant() { doTest(); }
+  public void testEphemeralDefaultCaseVisited() { doTest(); }
+  public void testEphemeralInIfChain() { doTest(); }
   public void testIncompleteSwitchEnum() { doTest(); }
   public void testEnumConstantNotNull() { doTest(); }
   public void testCheckEnumConstantConstructor() { doTest(); }
@@ -354,24 +356,24 @@ public class DataFlowInspectionTest extends DataFlowInspectionTestCase {
   public void testTypeQualifierNickname() {
     myFixture.addClass("package javax.annotation.meta; public @interface TypeQualifierNickname {}");
     addJavaxNullabilityAnnotations(myFixture);
-    addNullableNick();
+    myFixture.addClass(barNullableNick());
 
     doTest();
   }
 
   public void testTypeQualifierNicknameWithoutDeclarations() {
     addJavaxNullabilityAnnotations(myFixture);
-    addNullableNick();
+    myFixture.addClass(barNullableNick());
 
     myFixture.enableInspections(new DataFlowInspection());
     myFixture.testHighlighting(true, false, true, "TypeQualifierNickname.java");
   }
 
-  private void addNullableNick() {
-    myFixture.addClass("package bar;" +
-                       "@javax.annotation.meta.TypeQualifierNickname() " +
-                       "@javax.annotation.Nonnull(when = javax.annotation.meta.When.MAYBE) " +
-                       "public @interface NullableNick {}");
+  static String barNullableNick() {
+    return "package bar;" +
+           "@javax.annotation.meta.TypeQualifierNickname() " +
+           "@javax.annotation.Nonnull(when = javax.annotation.meta.When.MAYBE) " +
+           "public @interface NullableNick {}";
   }
 
   public static void addJavaxDefaultNullabilityAnnotations(final JavaCodeInsightTestFixture fixture) {
@@ -524,7 +526,7 @@ public class DataFlowInspectionTest extends DataFlowInspectionTestCase {
   public void testFieldUsedBeforeInitialization() { doTest(); }
 
   public void testImplicitlyInitializedField() {
-    ImplicitUsageProvider.EP_NAME.getPoint(null).registerExtension(new ImplicitUsageProvider() {
+    ImplicitUsageProvider.EP_NAME.getPoint().registerExtension(new ImplicitUsageProvider() {
       @Override
       public boolean isImplicitUsage(@NotNull PsiElement element) {
         return false;
@@ -624,6 +626,7 @@ public class DataFlowInspectionTest extends DataFlowInspectionTestCase {
   public void testNewBoxedNumberEquality() { doTest(); }
   public void testBoxingIncorrectLiteral() { doTest(); }
   public void testImplicitUnboxingOnCast() { doTest(); }
+  public void testImplicitUnboxingExtendsInteger() { doTest(); }
 
   public void testIncompleteArrayAccessInLoop() { doTest(); }
   public void testSameArguments() { doTest(); }
@@ -670,5 +673,13 @@ public class DataFlowInspectionTest extends DataFlowInspectionTestCase {
   public void testStringContains() { doTest(); }
   public void testSwitchLabelNull() { doTest(); }
   public void testMutationContractInFlush() { doTest(); }
+  public void testMutationContractFromSource() { doTest(); }
   public void testDefaultConstructor() { doTest(); }
+  public void testInstanceOfUnresolved() { doTest(); }
+  public void testProtobufNotNullGetters() { doTest(); }
+  public void testAIOOBETransfer() { doTest(); }
+  public void testBoxingShortByte() { doTest(); }
+  public void testNullableAliasing() { doTest(); }
+  public void testReapplyTypeArguments() { doTest(); }
+  public void testDoubleArrayDiff() { doTest(); }
 }

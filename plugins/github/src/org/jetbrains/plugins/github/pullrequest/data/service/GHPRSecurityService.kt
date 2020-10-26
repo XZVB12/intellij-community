@@ -4,14 +4,15 @@ package org.jetbrains.plugins.github.pullrequest.data.service
 import org.jetbrains.plugins.github.api.data.GHRepositoryPermissionLevel
 import org.jetbrains.plugins.github.api.data.GHUser
 import org.jetbrains.plugins.github.api.data.GithubUser
+import org.jetbrains.plugins.github.authentication.accounts.GithubAccount
 
 interface GHPRSecurityService {
+  val account: GithubAccount
   val currentUser: GHUser
 
   fun isCurrentUser(user: GithubUser): Boolean
 
   fun currentUserHasPermissionLevel(level: GHRepositoryPermissionLevel): Boolean
-  fun currentUserCanEditPullRequestsMetadata(): Boolean
 
   fun isMergeAllowed(): Boolean
   fun isRebaseMergeAllowed(): Boolean

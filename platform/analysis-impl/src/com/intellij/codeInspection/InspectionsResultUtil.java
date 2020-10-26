@@ -9,7 +9,9 @@ import com.intellij.configurationStore.JbXmlOutputter;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.JDOMUtil;
+import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.containers.JBIterable;
 import com.thoughtworks.xstream.io.xml.PrettyPrintWriter;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
@@ -34,10 +36,13 @@ public final class InspectionsResultUtil {
   public static final String AGGREGATE = "_aggregate";
 
   public static void describeInspections(@NonNls Path outputPath, @Nullable String name, @NotNull InspectionProfile profile) throws IOException {
-    Map<String, Set<InspectionToolWrapper<?, ?>>> map = new HashMap<>();
+    Map<Pair<String, String>, Set<InspectionToolWrapper<?, ?>>> map = new HashMap<>();
     for (InspectionToolWrapper<?, ?> toolWrapper : profile.getInspectionTools(null)) {
       String groupName = toolWrapper.getGroupDisplayName();
-      Set<InspectionToolWrapper<?, ?>> groupInspections = map.computeIfAbsent(groupName, __ -> new HashSet<>());
+      String[] path = toolWrapper.getGroupPath();
+      String groupPath = path.length == 0 ? "" : String.join("/", JBIterable.of(path).take(path.length - 1));
+      Set<InspectionToolWrapper<?, ?>> groupInspections = map.computeIfAbsent(
+        Pair.create(groupName, groupPath), __ -> new HashSet<>());
       groupInspections.add(toolWrapper);
     }
 
@@ -48,14 +53,17 @@ public final class InspectionsResultUtil {
         xmlWriter.addAttribute(PROFILE, name);
       }
       List<String> inspectionsWithoutDescriptions = new ArrayList<>(1);
-      for (Map.Entry<String, Set<InspectionToolWrapper<?, ?>>> entry : map.entrySet()) {
+      for (Map.Entry<Pair<String, String>, Set<InspectionToolWrapper<?, ?>>> entry : map.entrySet()) {
         xmlWriter.startNode("group");
-        String groupName = entry.getKey();
+        String groupName = entry.getKey().getFirst();
+        String groupPath = entry.getKey().getSecond();
         xmlWriter.addAttribute("name", groupName);
+        xmlWriter.addAttribute("path", groupPath);
         for (InspectionToolWrapper<?, ?> toolWrapper : entry.getValue()) {
           xmlWriter.startNode("inspection");
           final String shortName = toolWrapper.getShortName();
           xmlWriter.addAttribute("shortName", shortName);
+          xmlWriter.addAttribute("defaultSeverity", toolWrapper.getDefaultLevel().getSeverity().getName());
           xmlWriter.addAttribute("displayName", toolWrapper.getDisplayName());
           final boolean toolEnabled = profile.isToolEnabled(HighlightDisplayKey.find(shortName));
           xmlWriter.addAttribute("enabled", Boolean.toString(toolEnabled));
@@ -95,7 +103,7 @@ public final class InspectionsResultUtil {
   public static void writeInspectionResult(@NotNull Project project, @NotNull String shortName,
                                            @NotNull Collection<? extends InspectionToolWrapper<?, ?>> wrappers,
                                            @NotNull Path outputDirectory,
-                                           @NotNull Function<InspectionToolWrapper, InspectionToolResultExporter> f) throws IOException {
+                                           @NotNull Function<? super InspectionToolWrapper, ? extends InspectionToolResultExporter> f) throws IOException {
     //dummy entry points tool
     if (wrappers.isEmpty()) return;
     try (XmlWriterWrapper reportWriter = new XmlWriterWrapper(project, outputDirectory, shortName,

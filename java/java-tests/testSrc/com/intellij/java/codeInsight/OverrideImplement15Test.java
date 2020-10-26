@@ -57,12 +57,20 @@ public class OverrideImplement15Test extends LightJavaCodeInsightTestCase {
   public void testSimple() { doTest(true); }
   public void testAnnotation() { doTest(true); }
   public void testTransformJBAnnotations() {
+    doCustomNotNullAnnotations();
+  }
+
+  public void testDoNotTransformJBAnnotationsWhenNewNonAvailable() {
+    doCustomNotNullAnnotations();
+  }
+  
+  private void doCustomNotNullAnnotations() {
     NullableNotNullManager nullableNotNullManager = NullableNotNullManager.getInstance(getProject());
     String defaultNotNull = nullableNotNullManager.getDefaultNotNull();
     List<String> notNulls = nullableNotNullManager.getNotNulls();
     String defaultNullable = nullableNotNullManager.getDefaultNullable();
     List<String> nullables = nullableNotNullManager.getNullables();
-    
+
     try {
       nullableNotNullManager.setNotNulls(ArrayUtil.append(ArrayUtil.toStringArray(notNulls),"p.NN"));
       nullableNotNullManager.setDefaultNotNull("p.NN");
@@ -79,6 +87,7 @@ public class OverrideImplement15Test extends LightJavaCodeInsightTestCase {
       nullableNotNullManager.setNullables(ArrayUtil.toStringArray(nullables));
     }
   }
+
   public void testJavadocForChangedParamName() { doTest(true); }
   public void testThrowsListFromMethodHierarchy() { doTest(true); }
   public void testThrowsListUnrelatedMethods() { doTest(true); }
@@ -98,6 +107,7 @@ public class OverrideImplement15Test extends LightJavaCodeInsightTestCase {
   public void testResolveTypeParamConflict() { doTest(false); }
   public void testRawInheritance() { doTest(false); }
   public void testRawInheritanceWithMethodTypeParameters() { doTest(false); }
+  public void testVoidNameSuggestion() { doTest(false); }
 
   public void testLongFinalParameterList() {
     CodeStyleSettings codeStyleSettings = CodeStyleSettingsManager.getSettings(getProject());

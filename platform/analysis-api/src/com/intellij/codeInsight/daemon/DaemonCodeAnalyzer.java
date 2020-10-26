@@ -1,13 +1,15 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.codeInsight.daemon;
 
+import com.intellij.lang.annotation.Annotation;
+import com.intellij.lang.annotation.AnnotationSession;
+import com.intellij.lang.annotation.Annotator;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
-import com.intellij.util.DeprecatedMethodException;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
@@ -24,16 +26,6 @@ public abstract class DaemonCodeAnalyzer {
   }
 
   public abstract void settingsChanged();
-
-  /**
-   * @deprecated Does nothing, unused, keeping alive for outdated plugins sake only. Please use {@code} (nothing) instead.
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion="2020.2")
-  public void updateVisibleHighlighters(@NotNull Editor editor) {
-    DeprecatedMethodException.report("Please remove usages of this method deprecated eons ago");
-    // no need, will not work anyway
-  }
 
   public abstract void setUpdateByTimerEnabled(boolean value);
   public abstract void disableUpdateByTimer(@NotNull Disposable parentDisposable);
@@ -59,7 +51,7 @@ public abstract class DaemonCodeAnalyzer {
 
   public abstract void autoImportReferenceAtCursor(@NotNull Editor editor, @NotNull PsiFile file);
 
-  public static final Topic<DaemonListener> DAEMON_EVENT_TOPIC = Topic.create("DAEMON_EVENT_TOPIC", DaemonListener.class);
+  public static final Topic<DaemonListener> DAEMON_EVENT_TOPIC = new Topic<>("DAEMON_EVENT_TOPIC", DaemonListener.class, Topic.BroadcastDirection.NONE);
 
   public interface DaemonListener {
     /**
@@ -84,6 +76,37 @@ public abstract class DaemonCodeAnalyzer {
     }
 
     default void daemonCancelEventOccurred(@NotNull String reason) {
+    }
+
+    /**
+     * Internal class for reporting annotator-related statistics
+     */
+    @ApiStatus.Internal
+    class AnnotatorStatistics {
+      /** the annotator this statistics is generated for */
+      public final Annotator annotator;
+      /** timestamp (in {@link System#nanoTime} sense) of the {@link #annotator} creation in {@link com.intellij.codeInsight.daemon.impl.DefaultHighlightVisitor} */
+      public long annotatorStartStamp;
+      /** timestamp (in {@link System#nanoTime} sense) of the first call to {@link com.intellij.lang.annotation.AnnotationHolder#newAnnotation} by this annotator in this annotation session (or {@code 0} if there were no annotations produced)*/
+      public long firstAnnotationStamp;
+      /** the annotation passed to the first call to {@link com.intellij.lang.annotation.AnnotationHolder#newAnnotation} by this annotator in this annotation session (or {@code null} if there were no annotations produced)*/
+      public Annotation firstAnnotation;
+      /** timestamp (in {@link System#nanoTime} sense) of the last call to {@link com.intellij.lang.annotation.AnnotationHolder#newAnnotation} by this annotator in this annotation session (or {@code 0} if there were no annotations produced)*/
+      public long lastAnnotationStamp;
+      /** the annotation passed to the last call to {@link com.intellij.lang.annotation.AnnotationHolder#newAnnotation} by this annotator in this annotation session (or {@code null} if there were no annotations produced)*/
+      public Annotation lastAnnotation;
+      /** timestamp (in {@link System#nanoTime} sense) of the finish of the {@link com.intellij.codeInsight.daemon.impl.DefaultHighlightVisitor#analyze} method */
+      public long annotatorFinishStamp;
+
+      AnnotatorStatistics(@NotNull Annotator annotator) {
+        this.annotator = annotator;
+      }
+    }
+
+    @ApiStatus.Internal
+    default void daemonAnnotatorStatisticsGenerated(@NotNull AnnotationSession session,
+                                                    @NotNull Collection<? extends AnnotatorStatistics> statistics,
+                                                    @NotNull PsiFile file) {
     }
   }
 

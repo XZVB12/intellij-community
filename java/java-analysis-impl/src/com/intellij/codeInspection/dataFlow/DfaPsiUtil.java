@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection.dataFlow;
 
 import com.intellij.codeInsight.AnnotationUtil;
@@ -37,7 +37,7 @@ import java.util.*;
 import static com.intellij.psi.CommonClassNames.*;
 import static com.siyeh.ig.callMatcher.CallMatcher.staticCall;
 
-public class DfaPsiUtil {
+public final class DfaPsiUtil {
 
   private static final CallMatcher NON_NULL_VAR_ARG = CallMatcher.anyOf(
     staticCall(JAVA_UTIL_LIST, "of"),
@@ -46,28 +46,6 @@ public class DfaPsiUtil {
 
   public static boolean isFinalField(PsiVariable var) {
     return var.hasModifierProperty(PsiModifier.FINAL) && !var.hasModifierProperty(PsiModifier.TRANSIENT) && var instanceof PsiField;
-  }
-
-  static PsiElement getEnclosingCodeBlock(final PsiVariable variable, final PsiElement context) {
-    PsiElement codeBlock;
-    if (variable instanceof PsiParameter) {
-      codeBlock = ((PsiParameter)variable).getDeclarationScope();
-      if (codeBlock instanceof PsiMethod) {
-        codeBlock = ((PsiMethod)codeBlock).getBody();
-      }
-    }
-    else if (variable instanceof PsiLocalVariable) {
-      codeBlock = PsiTreeUtil.getParentOfType(variable, PsiCodeBlock.class);
-    }
-    else {
-      codeBlock = getTopmostBlockInSameClass(context);
-    }
-    while (codeBlock != null) {
-      PsiAnonymousClass anon = PsiTreeUtil.getParentOfType(codeBlock, PsiAnonymousClass.class);
-      if (anon == null) break;
-      codeBlock = PsiTreeUtil.getParentOfType(anon, PsiCodeBlock.class);
-    }
-    return codeBlock;
   }
 
   @NotNull
@@ -104,7 +82,7 @@ public class DfaPsiUtil {
     }
 
     if (owner instanceof PsiMethod && isMapMethodWithUnknownNullity((PsiMethod)owner)) {
-      return Nullability.UNKNOWN;
+      return getTypeNullability(resultType) == Nullability.NULLABLE ? Nullability.NULLABLE : Nullability.UNKNOWN;
     }
 
     Nullability fromType = getTypeNullability(resultType);
@@ -213,6 +191,12 @@ public class DfaPsiUtil {
         return new NullabilityAnnotationInfo(annotation, Nullability.NOT_NULL, false);
       }
     }
+    if (eachType instanceof PsiClassType) {
+      PsiElement context = ((PsiClassType)eachType).getPsiContext();
+      if (context != null) {
+        return NullableNotNullManager.getInstance(context.getProject()).findDefaultTypeUseNullability(context);
+      }
+    }
     return null;
   }
 
@@ -307,13 +291,14 @@ public class DfaPsiUtil {
     final PsiCodeBlock body = constructor.getBody();
     if (body == null) return Collections.emptySet();
 
-    return CachedValuesManager.getCachedValue(constructor, new CachedValueProvider<Set<PsiField>>() {
+    return CachedValuesManager.getCachedValue(constructor, new CachedValueProvider<>() {
       @NotNull
       @Override
       public Result<Set<PsiField>> compute() {
         final PsiCodeBlock body = constructor.getBody();
         final Map<PsiField, Boolean> map = new HashMap<>();
         final DataFlowRunner dfaRunner = new DataFlowRunner(constructor.getProject()) {
+          PsiElement currentBlock;
 
           private boolean isCallExposingNonInitializedFields(Instruction instruction) {
             if (!(instruction instanceof MethodCallInstruction)) {
@@ -352,14 +337,25 @@ public class DfaPsiUtil {
           }
 
           @Override
-          protected DfaInstructionState @NotNull [] acceptInstruction(@NotNull InstructionVisitor visitor, @NotNull DfaInstructionState instructionState) {
+          protected @NotNull List<DfaInstructionState> createInitialInstructionStates(@NotNull PsiElement psiBlock,
+                                                                                      @NotNull Collection<? extends DfaMemoryState> memStates,
+                                                                                      @NotNull ControlFlow flow) {
+            currentBlock = psiBlock;
+            return super.createInitialInstructionStates(psiBlock, memStates, flow);
+          }
+
+          @Override
+          protected DfaInstructionState @NotNull [] acceptInstruction(@NotNull InstructionVisitor visitor,
+                                                                      @NotNull DfaInstructionState instructionState) {
             Instruction instruction = instructionState.getInstruction();
-            if (isCallExposingNonInitializedFields(instruction) ||
-                instruction instanceof ReturnInstruction && !((ReturnInstruction)instruction).isViaException()) {
+            if (currentBlock == body &&
+                (isCallExposingNonInitializedFields(instruction) ||
+                 instruction instanceof ReturnInstruction && !((ReturnInstruction)instruction).isViaException())) {
               for (PsiField field : containingClass.getFields()) {
                 if (!instructionState.getMemoryState().isNotNull(getFactory().getVarFactory().createVariableValue(field))) {
                   map.put(field, false);
-                } else if (!map.containsKey(field)) {
+                }
+                else if (!map.containsKey(field)) {
                   map.put(field, true);
                 }
               }
@@ -398,7 +394,7 @@ public class DfaPsiUtil {
       return MultiMap.empty();
     }
 
-    return CachedValuesManager.getCachedValue(psiClass, new CachedValueProvider<MultiMap<PsiField, PsiExpression>>() {
+    return CachedValuesManager.getCachedValue(psiClass, new CachedValueProvider<>() {
       @NotNull
       @Override
       public Result<MultiMap<PsiField, PsiExpression>> compute() {
@@ -557,7 +553,18 @@ public class DfaPsiUtil {
     if (psiClass == null) return classType;
     PsiType expressionType = expression.getType();
     if (!(expressionType instanceof PsiClassType)) return classType;
-    return GenericsUtil.getExpectedGenericType(expression, psiClass, (PsiClassType)expressionType);
+    PsiClassType result = GenericsUtil.getExpectedGenericType(expression, psiClass, (PsiClassType)expressionType);
+    if (result.isRaw()) {
+      PsiClass aClass = result.resolve();
+      if (aClass != null) {
+        int length = aClass.getTypeParameters().length;
+        PsiWildcardType wildcard = PsiWildcardType.createUnbounded(aClass.getManager());
+        PsiType[] arguments = new PsiType[length];
+        Arrays.fill(arguments, wildcard);
+        return JavaPsiFacade.getElementFactory(aClass.getProject()).createType(aClass, arguments);
+      }
+    }
+    return result;
   }
 
   /**

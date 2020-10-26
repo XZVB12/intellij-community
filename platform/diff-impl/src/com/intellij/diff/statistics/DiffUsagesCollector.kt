@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.diff.statistics
 
 import com.intellij.diff.impl.DiffSettingsHolder.DiffSettings
@@ -16,7 +16,7 @@ import java.util.*
 
 class DiffUsagesCollector : ApplicationUsagesCollector() {
   override fun getGroupId(): String = "vcs.diff"
-  override fun getVersion(): Int = 3
+  override fun getVersion(): Int = 4
 
   override fun getMetrics(): Set<MetricEvent> {
     val set = HashSet<MetricEvent>()
@@ -24,6 +24,7 @@ class DiffUsagesCollector : ApplicationUsagesCollector() {
     val places = listOf(DiffPlaces.DEFAULT,
                         DiffPlaces.CHANGES_VIEW,
                         DiffPlaces.VCS_LOG_VIEW,
+                        DiffPlaces.VCS_FILE_HISTORY_VIEW,
                         DiffPlaces.COMMIT_DIALOG,
                         DiffPlaces.MERGE,
                         DiffPlaces.TESTS_FAILED_ASSERTIONS)
@@ -45,6 +46,8 @@ class DiffUsagesCollector : ApplicationUsagesCollector() {
         add("context.range") { it.contextRange }
         addBool("collapse.unchanged") { !it.isExpandByDefault }
         addBool("show.line.numbers") { it.isShowLineNumbers }
+        addBool("show.white.spaces") { it.isShowWhitespaces }
+        addBool("show.indent.lines") { it.isShowIndentLines }
         addBool("use.soft.wraps") { it.isUseSoftWraps }
         addBool("enable.read.lock") { it.isReadOnlyLock }
         add("show.breadcrumbs") { it.breadcrumbsPlacement }

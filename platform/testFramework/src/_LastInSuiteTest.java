@@ -15,7 +15,6 @@ import com.intellij.openapi.util.ShutDownTracker;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.rt.execution.junit.MapSerializerUtil;
-import com.intellij.testFramework.HeavyPlatformTestCase;
 import com.intellij.testFramework.LightPlatformTestCase;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.TestApplicationManagerKt;
@@ -62,8 +61,8 @@ public class _LastInSuiteTest extends TestCase {
 
   @SuppressWarnings("CallToSystemGC")
   public void testDynamicExtensions() {
-    Assume.assumeTrue(!EXTENSION_POINTS_WHITE_LIST.isEmpty() ||
-                      SystemProperties.getBooleanProperty("intellij.test.all.dynamic.extension.points", false));
+    boolean testDynamicExtensions = SystemProperties.getBooleanProperty("intellij.test.all.dynamic.extension.points", false);
+    Assume.assumeTrue("intellij.test.all.dynamic.extension.points is off, no dynamic extensions to test", !EXTENSION_POINTS_WHITE_LIST.isEmpty() || testDynamicExtensions);
     Application app = ApplicationManager.getApplication();
     if (app == null) {
       return;
@@ -74,27 +73,30 @@ public class _LastInSuiteTest extends TestCase {
     Map<ExtensionPointImpl<?>, Collection<WeakReference<Object>>> extensionPointToNonPlatformExtensions = collectDynamicNonPlatformExtensions(app);
     IdeaPluginDescriptor corePlugin = PluginManagerCore.getPlugin(PluginManagerCore.CORE_ID);
     assert corePlugin != null;
-    app.invokeAndWait(() -> {
-      // obey contract that used by DynamicPluginManager - reloading of plugin is done in EDT and write action.
-      // one write action for all - as DynamicPluginManager does (plugin unloaded in one write action)
-      app.runWriteAction(() -> {
-        for (ExtensionPointImpl<?> ep : extensionPointToNonPlatformExtensions.keySet()) {
-          ep.reset();
-        }
+    try {
+      // It doesn't matter what plugin to pass here. Main thing here is firing events.
+      fireBeforePluginUnloadEvent(corePlugin);
+      app.invokeAndWait(() -> {
+        // obey contract that used by DynamicPluginManager - reloading of plugin is done in EDT and write action.
+        // one write action for all - as DynamicPluginManager does (plugin unloaded in one write action)
+        app.runWriteAction(() -> {
+          for (ExtensionPointImpl<?> ep : extensionPointToNonPlatformExtensions.keySet()) {
+            ep.reset();
+          }
+        });
       });
-
-      app.getMessageBus().syncPublisher(DynamicPluginListener.TOPIC).beforePluginUnload(corePlugin, false);
-    });
-
-    for (Project project : ProjectUtil.getOpenProjects()) {
-      ((CachedValuesManagerImpl)CachedValuesManager.getManager(project)).clearCachedValues();
+      for (Project project : ProjectUtil.getOpenProjects()) {
+        ((CachedValuesManagerImpl)CachedValuesManager.getManager(project)).clearCachedValues();
+      }
     }
-    finishCorePluginUnload();
+    finally {
+      firePluginUnloadedEvent(corePlugin);
+    }
 
     GCUtil.tryGcSoftlyReachableObjects();
     System.gc();
     System.gc();
-    String heapDump = HeavyPlatformTestCase.publishHeapDump("dynamicExtension");
+    String heapDump = TestApplicationManagerKt.publishHeapDump("dynamicExtension");
 
     AtomicBoolean failed = new AtomicBoolean(false);
     extensionPointToNonPlatformExtensions.forEach((ep, references) -> {
@@ -121,17 +123,20 @@ public class _LastInSuiteTest extends TestCase {
     }
   }
 
-  private static @NotNull String escape(String s) {
-    return MapSerializerUtil.escapeStr(s, MapSerializerUtil.STD_ESCAPER);
+  private static void fireBeforePluginUnloadEvent(@NotNull IdeaPluginDescriptor plugin) {
+    ApplicationManager.getApplication().invokeAndWait(() -> {
+      ApplicationManager.getApplication().getMessageBus().syncPublisher(DynamicPluginListener.TOPIC).beforePluginUnload(plugin, false);
+    });
   }
 
-  private static void finishCorePluginUnload() {
-    IdeaPluginDescriptor corePlugin = PluginManagerCore.getPlugin(PluginManagerCore.CORE_ID);
-    assert corePlugin != null;
+  private static void firePluginUnloadedEvent(@NotNull IdeaPluginDescriptor plugin) {
     ApplicationManager.getApplication().invokeAndWait(() -> {
-      ApplicationManager.getApplication().getMessageBus().syncPublisher(DynamicPluginListener.TOPIC)
-        .pluginUnloaded(corePlugin, false);
+      ApplicationManager.getApplication().getMessageBus().syncPublisher(DynamicPluginListener.TOPIC).pluginUnloaded(plugin, false);
     });
+  }
+
+  private static @NotNull String escape(String s) {
+    return MapSerializerUtil.escapeStr(s, MapSerializerUtil.STD_ESCAPER);
   }
 
   private static @NotNull Map<ExtensionPointImpl<?>, Collection<WeakReference<Object>>> collectDynamicNonPlatformExtensions(@NotNull Application app) {
@@ -180,7 +185,7 @@ public class _LastInSuiteTest extends TestCase {
     long started = _FirstInSuiteTest.getSuiteStartTime();
     if (started != 0) {
       long testSuiteDuration = System.nanoTime() - started;
-      System.out.println(String.format("##teamcity[buildStatisticValue key='ideaTests.totalTimeMs' value='%d']", testSuiteDuration / 1000000));
+      System.out.printf("##teamcity[buildStatisticValue key='ideaTests.totalTimeMs' value='%d']%n", testSuiteDuration / 1000000);
     }
     LightPlatformTestCase.reportTestExecutionStatistics();
   }

@@ -102,14 +102,14 @@ public class UiDropperAction extends ToggleAction implements DumbAware {
     }
   }
 
-  private static class UiInspectorNotification extends Notification {
+  private static final class UiInspectorNotification extends Notification {
     private UiInspectorNotification() {
       super(Notifications.SYSTEM_MESSAGES_GROUP_ID, "UI Dropper", "Hold ctr + alt and navigate cursor to component.\nUse mouse wheel to get info of parent component.",
             NotificationType.INFORMATION);
     }
   }
 
-  private static class InspectorWindow extends JDialog {
+  private static final class InspectorWindow extends JDialog {
     private InspectorTable myInspectorTable;
     private Component myComponent;
     private HighlightComponent myHighlightComponent;
@@ -287,7 +287,7 @@ public class UiDropperAction extends ToggleAction implements DumbAware {
           append(", double-buffered", SimpleTextAttributes.GRAYED_ATTRIBUTES);
         }
         componentNode.setText(toString());
-        setIcon(JBUI.scale(new ColorsIcon(11, component.getBackground(), component.getForeground())));
+        setIcon(JBUIScale.scaleIcon(new ColorsIcon(11, component.getBackground(), component.getForeground())));
       }
 
       setForeground(foreground);
@@ -349,7 +349,7 @@ public class UiDropperAction extends ToggleAction implements DumbAware {
 
     public abstract void onComponentChanged(Component c);
 
-    private static class ComponentNode extends DefaultMutableTreeNode {
+    private static final class ComponentNode extends DefaultMutableTreeNode {
       private final Component myComponent;
       String myText;
 
@@ -435,7 +435,7 @@ public class UiDropperAction extends ToggleAction implements DumbAware {
     }
   }
 
-  private static class HighlightComponent extends JComponent {
+  private static final class HighlightComponent extends JComponent {
     Color myColor;
     JComponent myGlassPane;
     Component myOriginalComponent;
@@ -469,7 +469,7 @@ public class UiDropperAction extends ToggleAction implements DumbAware {
     }
   }
 
-  private static class InspectorTable extends JPanel {
+  private static final class InspectorTable extends JPanel {
     InspectorTableModel myModel;
     DimensionsComponent myDimensionComponent;
 
@@ -517,7 +517,7 @@ public class UiDropperAction extends ToggleAction implements DumbAware {
     }
   }
 
-  private static class DimensionsComponent extends JComponent {
+  private static final class DimensionsComponent extends JComponent {
     Component myComponent;
     int myWidth;
     int myHeight;
@@ -747,7 +747,7 @@ public class UiDropperAction extends ToggleAction implements DumbAware {
 
       if (value instanceof UIResource) sb.append(" UIResource");
       setText(sb.toString());
-      setIcon(JBUI.scale(new ColorIcon(13, 11, value, true)));
+      setIcon(JBUIScale.scaleIcon(new ColorIcon(13, 11, value, true)));
       return this;
     }
   }

@@ -1,21 +1,19 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.updater;
 
 import com.intellij.concurrency.JobScheduler;
 import com.intellij.ide.ApplicationInitializedListener;
 import com.intellij.ide.StatisticsNotificationManager;
-import com.intellij.internal.statistic.connect.StatisticsService;
+import com.intellij.internal.statistic.eventLog.connection.StatisticsService;
+import com.intellij.internal.statistic.eventLog.StatisticsEventLogMigration;
 import com.intellij.internal.statistic.eventLog.StatisticsEventLoggerKt;
 import com.intellij.internal.statistic.eventLog.StatisticsEventLoggerProvider;
 import com.intellij.internal.statistic.eventLog.fus.FeatureUsageLogger;
 import com.intellij.internal.statistic.eventLog.uploader.EventLogExternalUploader;
 import com.intellij.internal.statistic.eventLog.validator.SensitiveDataValidator;
 import com.intellij.internal.statistic.service.fus.collectors.FUStateUsagesLogger;
-import com.intellij.internal.statistic.service.fus.collectors.FUStatisticsPersistence;
-import com.intellij.internal.statistic.service.fus.collectors.LegacyFUSProjectUsageTrigger;
 import com.intellij.internal.statistic.utils.StatisticsUploadAssistant;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.extensions.ExtensionNotApplicableException;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.project.Project;
@@ -52,7 +50,7 @@ final class StatisticsJobsScheduler implements ApplicationInitializedListener {
 
   @Override
   public void componentsInitialized() {
-    final StatisticsNotificationManager notificationManager = ServiceManager.getService(StatisticsNotificationManager.class);
+    StatisticsNotificationManager notificationManager = ApplicationManager.getApplication().getService(StatisticsNotificationManager.class);
     if (notificationManager != null) {
       notificationManager.showNotificationIfNeeded();
     }
@@ -60,11 +58,12 @@ final class StatisticsJobsScheduler implements ApplicationInitializedListener {
     checkPreviousExternalUploadResult();
     runEventLogStatisticsService();
     runStatesLogging();
-    runLegacyDataCleanupService();
-    runWhitelistStorageUpdater();
+    runValidationRulesUpdate();
+
+    StatisticsEventLogMigration.performMigration();
   }
 
-  private static void runWhitelistStorageUpdater() {
+  private static void runValidationRulesUpdate() {
     JobScheduler.getScheduler().scheduleWithFixedDelay(
       () -> {
         final List<StatisticsEventLoggerProvider> providers = StatisticsEventLoggerKt.getEventLogProviders();
@@ -113,7 +112,6 @@ final class StatisticsJobsScheduler implements ApplicationInitializedListener {
           LOG_PROJECTS_STATES_INITIAL_DELAY_IN_MIN,
           LOG_PROJECTS_STATES_DELAY_IN_MIN, TimeUnit.MINUTES);
         myPersistStatisticsSessionsMap.put(project, future);
-        LegacyFUSProjectUsageTrigger.cleanup(project);
       }
 
       @Override
@@ -124,12 +122,6 @@ final class StatisticsJobsScheduler implements ApplicationInitializedListener {
         }
       }
     });
-  }
-
-  private static void runLegacyDataCleanupService() {
-    JobScheduler.getScheduler().schedule(() -> {
-      FUStatisticsPersistence.clearLegacyStates();
-    }, 1, TimeUnit.MINUTES);
   }
 
   private static void runStatisticsServiceWithDelay(@NotNull final StatisticsService statisticsService, long delayInMs) {

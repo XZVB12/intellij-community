@@ -60,8 +60,8 @@ public class FileHistoryPanel extends JPanel implements DataProvider, Disposable
   @NotNull private final VcsLogCommitDetailsListPanel myDetailsPanel;
   @NotNull private final JBSplitter myDetailsSplitter;
 
-  public FileHistoryPanel(@NotNull AbstractVcsLogUi logUi, @NotNull FileHistoryModel fileHistoryModel,
-                          @NotNull VcsLogData logData, @NotNull FilePath filePath, boolean withDiffPreview) {
+  public FileHistoryPanel(@NotNull AbstractVcsLogUi logUi, @NotNull FileHistoryModel fileHistoryModel, @NotNull VcsLogData logData,
+                          @NotNull FilePath filePath, boolean withDiffPreview, @NotNull Disposable disposable) {
     myProject = logData.getProject();
 
     myFilePath = filePath;
@@ -71,7 +71,7 @@ public class FileHistoryPanel extends JPanel implements DataProvider, Disposable
     myProperties = logUi.getProperties();
 
     myGraphTable = new VcsLogGraphTable(logUi.getId(), logData, logUi.getProperties(), logUi.getColorManager(),
-                                        logUi::requestMore, logUi) {
+                                        logUi::requestMore, disposable) {
       @Override
       protected boolean isSpeedSearchEnabled() {
         return true;
@@ -99,7 +99,7 @@ public class FileHistoryPanel extends JPanel implements DataProvider, Disposable
       @Override
       protected void navigate(@NotNull CommitId commit) {
         VcsLogContentUtil.runInMainLog(myProject, ui -> {
-          ui.jumpToCommit(commit.getHash(), commit.getRoot());
+          ui.getVcsLog().jumpToCommit(commit.getHash(), commit.getRoot());
         });
       }
     };
@@ -114,9 +114,15 @@ public class FileHistoryPanel extends JPanel implements DataProvider, Disposable
     myDetailsPanel.installCommitSelectionListener(myGraphTable);
     VcsLogUiUtil.installDetailsListeners(myGraphTable, myDetailsPanel, logData, this);
 
-    JBPanel tablePanel = new JBPanel(new BorderLayout());
+    JComponent actionsToolbar = createActionsToolbar();
+    JBPanel tablePanel = new JBPanel(new BorderLayout()) {
+      @Override
+      public Dimension getMinimumSize() {
+        return VcsLogUiUtil.expandToFitToolbar(super.getMinimumSize(), actionsToolbar);
+      }
+    };
     tablePanel.add(myDetailsSplitter, BorderLayout.CENTER);
-    tablePanel.add(createActionsToolbar(), BorderLayout.WEST);
+    tablePanel.add(actionsToolbar, BorderLayout.WEST);
 
     setLayout(new BorderLayout());
     if (withDiffPreview) {
@@ -136,7 +142,7 @@ public class FileHistoryPanel extends JPanel implements DataProvider, Disposable
     PopupHandler.installPopupHandler(myGraphTable, VcsLogActionPlaces.HISTORY_POPUP_ACTION_GROUP, VcsLogActionPlaces.VCS_HISTORY_PLACE);
     invokeOnDoubleClick(ActionManager.getInstance().getAction(VcsLogActionPlaces.VCS_LOG_SHOW_DIFF_ACTION), tableWithProgress);
 
-    Disposer.register(logUi, this);
+    Disposer.register(disposable, this);
   }
 
   private void invokeOnDoubleClick(@NotNull AnAction action, @NotNull JComponent component) {
@@ -182,14 +188,16 @@ public class FileHistoryPanel extends JPanel implements DataProvider, Disposable
     ListSelectionListener selectionListener = e -> {
       int[] selection = myGraphTable.getSelectedRows();
       ApplicationManager.getApplication().invokeLater(() -> diffPreview.updatePreview(diffPreview.getComponent().isShowing()),
-                                                      o -> !Arrays.equals(selection, myGraphTable.getSelectedRows()));
+                                                      o -> !Arrays.equals(selection, myGraphTable.getSelectedRows()) ||
+                                                           Disposer.isDisposed(diffPreview));
     };
     myGraphTable.getSelectionModel().addListSelectionListener(selectionListener);
     Disposer.register(diffPreview, () -> myGraphTable.getSelectionModel().removeListSelectionListener(selectionListener));
 
     TableModelListener modelListener = e -> {
       if (e.getColumn() < 0) {
-        diffPreview.updatePreview(diffPreview.getComponent().isShowing());
+        ApplicationManager.getApplication().invokeLater(() -> diffPreview.updatePreview(diffPreview.getComponent().isShowing()),
+                                                        o -> Disposer.isDisposed(diffPreview));
       }
     };
     myGraphTable.getModel().addTableModelListener(modelListener);

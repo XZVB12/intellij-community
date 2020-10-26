@@ -13,11 +13,10 @@ import com.intellij.psi.SmartPointerManager;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.*;
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
-public class ClassInheritorsSearch extends ExtensibleQueryFactory<PsiClass, ClassInheritorsSearch.SearchParameters> {
+public final class ClassInheritorsSearch extends ExtensibleQueryFactory<PsiClass, ClassInheritorsSearch.SearchParameters> {
   public static final ExtensionPointName<QueryExecutor<PsiClass, ClassInheritorsSearch.SearchParameters>> EP_NAME = ExtensionPointName.create("com.intellij.classInheritorsSearch");
   public static final ClassInheritorsSearch INSTANCE = new ClassInheritorsSearch();
 
@@ -144,8 +143,9 @@ public class ClassInheritorsSearch extends ExtensibleQueryFactory<PsiClass, Clas
       }
       return AbstractQuery.wrapInReadAction(directQuery);
     }
-    return INSTANCE.createUniqueResultsQuery(parameters, ContainerUtil.canonicalStrategy(),
-                                             psiClass -> ReadAction.compute(() -> SmartPointerManager.getInstance(psiClass.getProject()).createSmartPsiElementPointer(psiClass)));
+    return INSTANCE.createUniqueResultsQuery(parameters, psiClass -> {
+      return ReadAction.compute(() -> SmartPointerManager.getInstance(psiClass.getProject()).createSmartPsiElementPointer(psiClass));
+    });
   }
 
   /**

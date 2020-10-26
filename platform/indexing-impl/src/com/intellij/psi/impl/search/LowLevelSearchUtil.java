@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.impl.search;
 
 import com.intellij.lang.ASTNode;
@@ -17,6 +17,7 @@ import com.intellij.psi.search.TextOccurenceProcessor;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.ConcurrencyUtil;
+import com.intellij.util.containers.CollectionFactory;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.StringSearcher;
 import gnu.trove.TIntArrayList;
@@ -31,7 +32,7 @@ import java.util.concurrent.ConcurrentMap;
 
 import static com.intellij.openapi.util.text.StringUtil.isEscapedBackslash;
 
-public class LowLevelSearchUtil {
+public final class LowLevelSearchUtil {
   private static final Logger LOG = Logger.getInstance(LowLevelSearchUtil.class);
 
   // TRUE/FALSE -> injected psi has been discovered and processor returned true/false;
@@ -233,8 +234,7 @@ public class LowLevelSearchUtil {
 
   // map (text to be scanned -> list of cached pairs of (searcher used to scan text, occurrences found))
   // occurrences found is an int array of (startOffset used, endOffset used, occurrence 1 offset, occurrence 2 offset,...)
-  private static final ConcurrentMap<CharSequence, Map<StringSearcher, int[]>> cache =
-    ContainerUtil.createConcurrentWeakMap(ContainerUtil.identityStrategy());
+  private static final ConcurrentMap<CharSequence, Map<StringSearcher, int[]>> cache = CollectionFactory.createConcurrentWeakIdentityMap();
 
   /**
    * @deprecated please use {@link #processTextOccurrences(CharSequence, int, int, StringSearcher, TIntProcedure)}

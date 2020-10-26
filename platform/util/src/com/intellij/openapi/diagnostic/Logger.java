@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Constructor;
+import java.util.Collection;
 import java.util.function.Function;
 
 /**
@@ -30,10 +31,9 @@ public abstract class Logger {
     Logger getLoggerInstance(@NotNull String category);
   }
 
-  private static class DefaultFactory implements Factory {
-    @NotNull
+  private static final class DefaultFactory implements Factory {
     @Override
-    public Logger getLoggerInstance(@NotNull String category) {
+    public @NotNull Logger getLoggerInstance(@NotNull String category) {
       return new DefaultLogger(category);
     }
   }
@@ -62,7 +62,7 @@ public abstract class Logger {
     }
   }
 
-  public static void setFactory(Factory factory) {
+  public static void setFactory(@NotNull Factory factory) {
     if (isInitialized()) {
       //noinspection UseOfSystemOutOrSystemErr
       System.out.println("Changing log factory\n" + ExceptionUtil.getThrowableText(new Throwable()));
@@ -79,14 +79,12 @@ public abstract class Logger {
     return !(ourFactory instanceof DefaultFactory);
   }
 
-  @NotNull
-  public static Logger getInstance(@NotNull String category) {
+  public static @NotNull Logger getInstance(@NonNls @NotNull String category) {
     return ourFactory.getLoggerInstance(category);
   }
 
-  @NotNull
-  public static Logger getInstance(@NotNull Class cl) {
-    return getInstance("#" + cl.getName());
+  public static @NotNull Logger getInstance(@NotNull Class<?> cl) {
+    return ourFactory.getLoggerInstance("#" + cl.getName());
   }
 
   public abstract boolean isDebugEnabled();
@@ -97,7 +95,7 @@ public abstract class Logger {
 
   public abstract void debug(@NonNls String message, @Nullable Throwable t);
 
-  public void debug(@NonNls @NotNull String message, Object @NotNull ... details) {
+  public void debug(@NonNls @NotNull String message, @NonNls Object @NotNull ... details) {
     if (isDebugEnabled()) {
       StringBuilder sb = new StringBuilder();
       sb.append(message);
@@ -105,6 +103,21 @@ public abstract class Logger {
         sb.append(detail);
       }
       debug(sb.toString());
+    }
+  }
+
+  public void debugValues(@NonNls @NotNull String header, @NotNull Collection<?> values) {
+    if (isDebugEnabled()) {
+      StringBuilder text = new StringBuilder();
+      text.append(header).append(" (").append(values.size()).append(")");
+      if (!values.isEmpty()) {
+        text.append(":");
+        for (Object value : values) {
+          text.append("\n");
+          text.append(value);
+        }
+      }
+      debug(text.toString());
     }
   }
 
@@ -177,7 +190,7 @@ public abstract class Logger {
   @Contract("false,_->fail") // wrong, but avoid quite a few warnings in the code
   public boolean assertTrue(boolean value, @NonNls @Nullable Object message) {
     if (!value) {
-      String resultMessage = "Assertion failed";
+      @NonNls String resultMessage = "Assertion failed";
       if (message != null) resultMessage += ": " + message;
       error(resultMessage, new Throwable(resultMessage));
     }

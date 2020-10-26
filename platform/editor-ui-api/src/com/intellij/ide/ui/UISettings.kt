@@ -4,12 +4,14 @@ package com.intellij.ide.ui
 import com.intellij.diagnostic.LoadingState
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.PersistentStateComponentWithModificationTracker
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.IconLoader
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.serviceContainer.NonInjectable
 import com.intellij.ui.JreHiDpiUtil
 import com.intellij.ui.scale.JBUIScale
@@ -18,6 +20,8 @@ import com.intellij.util.SystemProperties
 import com.intellij.util.ui.GraphicsUtil
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.xmlb.annotations.Transient
+import org.jetbrains.annotations.ApiStatus.ScheduledForRemoval
+import org.jetbrains.annotations.NonNls
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
@@ -27,8 +31,8 @@ import kotlin.math.roundToInt
 
 private val LOG = logger<UISettings>()
 
-@State(name = "UISettings", storages = [(Storage("ui.lnf.xml"))], reportStatistic = true)
-class UISettings @NonInjectable constructor(private val notRoamableOptions: NotRoamableUiSettings) : PersistentStateComponent<UISettingsState> {
+@State(name = "UISettings", storages = [(Storage("ui.lnf.xml"))], useLoadedStateAsExisting = false)
+class UISettings @NonInjectable constructor(private val notRoamableOptions: NotRoamableUiSettings) : PersistentStateComponentWithModificationTracker<UISettingsState> {
   constructor() : this(ApplicationManager.getApplication().getService(NotRoamableUiSettings::class.java))
 
   private var state = UISettingsState()
@@ -47,17 +51,11 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       notRoamableOptions.state.editorAAType = value
     }
 
-  var allowMergeButtons: Boolean
-    get() = state.allowMergeButtons
-    set(value) {
-      state.allowMergeButtons = value
-    }
+  val allowMergeButtons: Boolean
+    get() = Registry.`is`("ide.allow.merge.buttons", true)
 
-  var animateWindows: Boolean
-    get() = state.animateWindows
-    set(value) {
-      state.animateWindows = value
-    }
+  val animateWindows: Boolean
+    get() = Registry.`is`("ide.animate.toolwindows", false)
 
   @Deprecated("use StatusBarWidgetSettings#isEnabled(MemoryUsagePanel.WIDGET_ID)")
   var showMemoryIndicator: Boolean
@@ -84,16 +82,19 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       state.hideToolStripes = value
     }
 
-  var hideNavigationOnFocusLoss: Boolean
-    get() = state.hideNavigationOnFocusLoss
-    set(value) {
-      state.hideNavigationOnFocusLoss = value
-    }
+  val hideNavigationOnFocusLoss: Boolean
+    get() = Registry.`is`("ide.hide.navigation.on.focus.loss", false)
 
   var reuseNotModifiedTabs: Boolean
     get() = state.reuseNotModifiedTabs
     set(value) {
       state.reuseNotModifiedTabs = value
+    }
+
+  var openInPreviewTabIfPossible: Boolean
+    get() = state.openInPreviewTabIfPossible
+    set(value) {
+      state.openInPreviewTabIfPossible = value
     }
 
   var disableMnemonics: Boolean
@@ -138,11 +139,8 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
   val closeTabButtonOnTheRight: Boolean
     get() = state.closeTabButtonOnTheRight
 
-  var cycleScrolling: Boolean
-    get() = state.cycleScrolling
-    set(value) {
-      state.cycleScrolling = value
-    }
+  val cycleScrolling: Boolean
+    get() = Registry.`is`("ide.cycle.scrolling", false)
 
   var navigateToPreview: Boolean
     get() = state.navigateToPreview
@@ -150,7 +148,7 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       state.navigateToPreview = value
     }
 
-  var selectedTabsLayoutInfoId: String?
+  var selectedTabsLayoutInfoId: @NonNls String?
     get() = state.selectedTabsLayoutInfoId
     set(value) {
       state.selectedTabsLayoutInfoId = value
@@ -173,9 +171,13 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
 
   var showNavigationBar: Boolean
     get() = state.showNavigationBar
-    set(value) {
-      state.showNavigationBar = value
+    set(b) {
+      ToolbarSettings.getInstance().setNavBarVisible(b)
+      fireUISettingsChanged()
     }
+
+  val showToolbarInNavigationBar: Boolean
+    get() =  ToolbarSettings.getInstance().getShowToolbarInNavigationBar()
 
   var showMembersInNavigationBar: Boolean
     get() = state.showMembersInNavigationBar
@@ -195,11 +197,8 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       state.showMainMenu = value
     }
 
-  var showIconInQuickNavigation: Boolean
-    get() = state.showIconInQuickNavigation
-    set(value) {
-      state.showIconInQuickNavigation = value
-    }
+  val showIconInQuickNavigation: Boolean
+    get() = Registry.`is`("ide.show.icons.in.quick.navigation", false)
 
   var showTreeIndentGuides: Boolean
     get() = state.showTreeIndentGuides
@@ -214,15 +213,18 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     }
 
   var moveMouseOnDefaultButton: Boolean
+    @ScheduledForRemoval(inVersion = "2020.3")
+    @Deprecated("Use registry key 'ide.settings.move.mouse.on.default.button'")
     get() = state.moveMouseOnDefaultButton
     set(value) {
       state.moveMouseOnDefaultButton = value
     }
 
   var showMainToolbar: Boolean
-    get() = state.showMainToolbar
+    get() =  state.showMainToolbar
     set(value) {
-      state.showMainToolbar = value
+      ToolbarSettings.getInstance().setToolbarVisible(value)
+      fireUISettingsChanged()
     }
 
   var showIconsInMenus: Boolean
@@ -238,7 +240,7 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     }
 
   val hideTabsIfNeeded: Boolean
-    get() = state.hideTabsIfNeeded
+    get() = state.hideTabsIfNeeded || editorTabPlacement == SwingConstants.LEFT || editorTabPlacement == SwingConstants.RIGHT
   var showFileIconInTabs: Boolean
     get() = state.showFileIconInTabs
     set(value) {
@@ -331,7 +333,7 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       state.overrideLafFonts = value
     }
 
-  var fontFace: String?
+  var fontFace: @NlsSafe String?
     get() = notRoamableOptions.state.fontFace
     set(value) {
       notRoamableOptions.state.fontFace = value
@@ -431,6 +433,13 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       state.fullPathsInWindowHeader = value
     }
 
+  var mergeMainMenuWithWindowTitle: Boolean
+    get() = state.mergeMainMenuWithWindowTitle
+    set(value) {
+      state.mergeMainMenuWithWindowTitle = value
+    }
+
+
   init {
     // TODO Remove the registry keys and migration code in 2019.3
     if (SystemProperties.`is`("tabs.alphabetical")) {
@@ -489,14 +498,19 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     val shadowInstance: UISettings
       get() = instanceOrNull ?: UISettings(NotRoamableUiSettings())
 
-    @JvmField
-    val FORCE_USE_FRACTIONAL_METRICS = SystemProperties.getBooleanProperty("idea.force.use.fractional.metrics", SystemInfo.isMacOSCatalina)
+    @JvmStatic
+    val PREFERRED_FRACTIONAL_METRICS_VALUE: Any
+      get() {
+        return if (!Registry.`is`("ide.disable.fractionalMetrics", false)
+                   && SystemProperties.getBooleanProperty("idea.force.use.fractional.metrics", SystemInfo.isMacOSCatalina))
+          RenderingHints.VALUE_FRACTIONALMETRICS_ON
+        else
+          RenderingHints.VALUE_FRACTIONALMETRICS_OFF
+      }
 
     @JvmStatic
     fun setupFractionalMetrics(g2d: Graphics2D) {
-      if (FORCE_USE_FRACTIONAL_METRICS) {
-        g2d.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON)
-      }
+      g2d.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, PREFERRED_FRACTIONAL_METRICS_VALUE)
     }
 
     /**
@@ -569,6 +583,12 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
       LOG.info("Loaded: fontSize=$readSize, fontScale=$readScale; restored: fontSize=$size, fontScale=$defFontScale")
       return size
     }
+
+    const val MERGE_MAIN_MENU_WITH_WINDOW_TITLE_PROPERTY = "ide.win.frame.decoration"
+
+    @JvmStatic
+    val mergeMainMenuWithWindowTitleOverrideValue = System.getProperty(MERGE_MAIN_MENU_WITH_WINDOW_TITLE_PROPERTY)?.toBoolean()
+    val isMergeMainMenuWithWindowTitleOverridden = mergeMainMenuWithWindowTitleOverrideValue != null
   }
 
   @Suppress("DeprecatedCallableAddReplaceWith")
@@ -599,9 +619,7 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
   private fun updateDeprecatedProperties() {
     HIDE_TOOL_STRIPES = hideToolStripes
     SHOW_MAIN_TOOLBAR = showMainToolbar
-    CYCLE_SCROLLING = cycleScrolling
     SHOW_CLOSE_BUTTON = showCloseButton
-    EDITOR_AA_TYPE = editorAAType
     PRESENTATION_MODE = presentationMode
     OVERRIDE_NONIDEA_LAF_FONTS = overrideLafFonts
     PRESENTATION_MODE_FONT_SIZE = presentationModeFontSize
@@ -609,8 +627,6 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     FONT_SIZE = fontSize
     FONT_FACE = fontFace
     EDITOR_TAB_LIMIT = editorTabLimit
-    OVERRIDE_CONSOLE_CYCLE_BUFFER_SIZE = overrideConsoleCycleBufferSize
-    CONSOLE_CYCLE_BUFFER_SIZE_KB = consoleCycleBufferSizeKb
   }
 
   override fun getState() = state
@@ -645,15 +661,30 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
     fireUISettingsChanged()
   }
 
+  override fun getStateModificationCount(): Long {
+    return state.modificationCount
+  }
+
   @Suppress("DEPRECATION")
   private fun migrateOldSettings() {
     if (state.ideAAType != AntialiasingType.SUBPIXEL) {
-      editorAAType = state.ideAAType
+      ideAAType = state.ideAAType
       state.ideAAType = AntialiasingType.SUBPIXEL
     }
     if (state.editorAAType != AntialiasingType.SUBPIXEL) {
       editorAAType = state.editorAAType
       state.editorAAType = AntialiasingType.SUBPIXEL
+    }
+    if (state.ideAAType == AntialiasingType.SUBPIXEL && !AntialiasingType.canUseSubpixelAAForIDE()) {
+      state.ideAAType = AntialiasingType.GREYSCALE
+    }
+    if (state.moveMouseOnDefaultButton) {
+      Registry.get("ide.settings.move.mouse.on.default.button").setValue(true)
+      state.moveMouseOnDefaultButton = false
+    }
+    if (!state.allowMergeButtons) {
+      Registry.get("ide.allow.merge.buttons").setValue(false)
+      state.allowMergeButtons = true
     }
   }
 
@@ -704,7 +735,7 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
   var CONSOLE_COMMAND_HISTORY_LIMIT = 300
 
   @Suppress("unused", "PropertyName")
-  @Deprecated("Use cycleScrolling", replaceWith = ReplaceWith("cycleScrolling"))
+  @Deprecated("Use cycleScrolling", replaceWith = ReplaceWith("cycleScrolling"), level = DeprecationLevel.ERROR)
   @JvmField
   @Transient
   var CYCLE_SCROLLING = true
@@ -720,12 +751,6 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
   @JvmField
   @Transient
   var SHOW_CLOSE_BUTTON = true
-
-  @Suppress("unused", "PropertyName")
-  @Deprecated("Use editorAAType", replaceWith = ReplaceWith("editorAAType"))
-  @JvmField
-  @Transient
-  var EDITOR_AA_TYPE: AntialiasingType? = AntialiasingType.SUBPIXEL
 
   @Suppress("unused", "PropertyName")
   @Deprecated("Use presentationMode", replaceWith = ReplaceWith("presentationMode"))
@@ -750,17 +775,5 @@ class UISettings @NonInjectable constructor(private val notRoamableOptions: NotR
   @JvmField
   @Transient
   var EDITOR_TAB_LIMIT = editorTabLimit
-
-  @Suppress("unused", "PropertyName")
-  @Deprecated("Use overrideConsoleCycleBufferSize", replaceWith = ReplaceWith("overrideConsoleCycleBufferSize"))
-  @JvmField
-  @Transient
-  var OVERRIDE_CONSOLE_CYCLE_BUFFER_SIZE = false
-
-  @Suppress("unused", "PropertyName")
-  @Deprecated("Use consoleCycleBufferSizeKb", replaceWith = ReplaceWith("consoleCycleBufferSizeKb"))
-  @JvmField
-  @Transient
-  var CONSOLE_CYCLE_BUFFER_SIZE_KB = consoleCycleBufferSizeKb
   //</editor-fold>
 }

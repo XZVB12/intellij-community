@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.ide.projectView.impl;
 
@@ -11,13 +11,13 @@ import com.intellij.ide.projectView.ProjectView;
 import com.intellij.ide.projectView.ProjectViewSettings;
 import com.intellij.ide.projectView.ViewSettings;
 import com.intellij.ide.projectView.impl.nodes.*;
-import com.intellij.ide.scratch.ScratchProjectViewPane;
 import com.intellij.ide.scratch.ScratchUtil;
 import com.intellij.ide.util.treeView.AbstractTreeBuilder;
 import com.intellij.ide.util.treeView.AbstractTreeNode;
 import com.intellij.ide.util.treeView.AbstractTreeUpdater;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.fileEditor.impl.FileEditorManagerImpl;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
@@ -94,6 +94,10 @@ public class ProjectViewPane extends AbstractProjectViewPSIPane {
   @Override
   protected ProjectViewTree createTree(@NotNull DefaultTreeModel treeModel) {
     return new ProjectViewTree(treeModel) {
+      {
+        putClientProperty(FileEditorManagerImpl.OPEN_IN_PREVIEW_TAB, true);
+      }
+
       @Override
       public String toString() {
         return getTitle() + " " + super.toString();
@@ -243,7 +247,7 @@ public class ProjectViewPane extends AbstractProjectViewPSIPane {
     }
   }
 
-  private class ConfigureFilesNestingAction extends DumbAwareAction {
+  private final class ConfigureFilesNestingAction extends DumbAwareAction {
     private ConfigureFilesNestingAction() {
       super(IdeBundle.messagePointer("action.file.nesting.in.project.view"));
     }
@@ -288,7 +292,7 @@ public class ProjectViewPane extends AbstractProjectViewPSIPane {
            index.getContentRootForFile(file, false) != null ||
            index.isInLibrary(file) ||
            Comparing.equal(file.getParent(), project.getBaseDir()) ||
-           ScratchProjectViewPane.isScratchesMergedIntoProjectTab() && ScratchUtil.isScratch(file);
+           ScratchUtil.isScratch(file);
   }
 
   @Override

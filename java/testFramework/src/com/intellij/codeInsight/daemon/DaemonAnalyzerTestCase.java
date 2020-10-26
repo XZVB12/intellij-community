@@ -14,7 +14,6 @@ import com.intellij.codeInspection.InspectionToolProvider;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.ide.highlighter.JavaFileType;
-import com.intellij.ide.startup.StartupManagerEx;
 import com.intellij.ide.startup.impl.StartupManagerImpl;
 import com.intellij.lang.ExternalAnnotatorsFilter;
 import com.intellij.lang.LanguageAnnotators;
@@ -48,7 +47,8 @@ import com.intellij.testFramework.InspectionsKt;
 import com.intellij.testFramework.fixtures.impl.CodeInsightTestFixtureImpl;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xml.XmlSchemaProvider;
-import gnu.trove.TIntArrayList;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -76,9 +76,6 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
 
     DaemonCodeAnalyzerImpl daemonCodeAnalyzer = (DaemonCodeAnalyzerImpl)DaemonCodeAnalyzer.getInstance(getProject());
     daemonCodeAnalyzer.prepareForTest();
-    StartupManagerImpl startupManager = (StartupManagerImpl)StartupManagerEx.getInstanceEx(getProject());
-    startupManager.runStartupActivities();
-    startupManager.runPostStartupActivitiesRegisteredDynamically();
     DaemonCodeAnalyzerSettings.getInstance().setImportHintEnabled(false);
 
     if (isStressTest()) {
@@ -115,7 +112,7 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
     }
   }
 
-  protected void enableInspectionTool(@NotNull InspectionProfileEntry tool) {
+  protected final void enableInspectionTool(@NotNull InspectionProfileEntry tool) {
     InspectionsKt.enableInspectionTool(getProject(), tool, getTestRootDisposable());
   }
 
@@ -146,9 +143,9 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
   }
 
   protected static LocalInspectionTool[] createLocalInspectionTools(final InspectionToolProvider... provider) {
-    final ArrayList<LocalInspectionTool> result = new ArrayList<>();
+    List<LocalInspectionTool> result = new ArrayList<>();
     for (InspectionToolProvider toolProvider : provider) {
-      for (Class aClass : toolProvider.getInspectionClasses()) {
+      for (Class<?> aClass : toolProvider.getInspectionClasses()) {
         try {
           final Object tool = aClass.newInstance();
           assertTrue(tool instanceof LocalInspectionTool);
@@ -183,7 +180,7 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
       public HighlightTestInfo doTest() {
         try { configureByFiles(projectRoot, filePaths); }
         catch (Exception e) { throw new RuntimeException(e); }
-        ExpectedHighlightingData data = new JavaExpectedHighlightingData(myEditor.getDocument(), checkWarnings, checkWeakWarnings, checkInfos, myFile);
+        ExpectedHighlightingData data = new JavaExpectedHighlightingData(myEditor.getDocument(), checkWarnings, checkWeakWarnings, checkInfos);
         if (checkSymbolNames) data.checkSymbolNames();
         checkHighlighting(data);
         return this;
@@ -212,7 +209,7 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
 
   protected Collection<HighlightInfo> doDoTest(final boolean checkWarnings, final boolean checkInfos, final boolean checkWeakWarnings) {
     return ContainerUtil.filter(
-      checkHighlighting(new ExpectedHighlightingData(myEditor.getDocument(), checkWarnings, checkWeakWarnings, checkInfos, myFile)),
+      checkHighlighting(new ExpectedHighlightingData(myEditor.getDocument(), checkWarnings, checkWeakWarnings, checkInfos)),
       info -> info.getSeverity() == HighlightSeverity.INFORMATION && checkInfos ||
               info.getSeverity() == HighlightSeverity.WARNING && checkWarnings ||
               info.getSeverity() == HighlightSeverity.WEAK_WARNING && checkWeakWarnings ||
@@ -241,8 +238,9 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
   protected void doCheckResult(@NotNull ExpectedHighlightingData data,
                              Collection<HighlightInfo> infos,
                              String text) {
-    data.checkLineMarkers(DaemonCodeAnalyzerImpl.getLineMarkers(getDocument(getFile()), getProject()), text);
-    data.checkResult(infos, text);
+    PsiFile file = getFile();
+    data.checkLineMarkers(file, DaemonCodeAnalyzerImpl.getLineMarkers(getDocument(file), getProject()), text);
+    data.checkResult(file, infos, text);
   }
 
   @Override
@@ -281,7 +279,7 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
   protected List<HighlightInfo> doHighlighting() {
     PsiDocumentManager.getInstance(myProject).commitAllDocuments();
 
-    TIntArrayList toIgnore = new TIntArrayList();
+    IntList toIgnore = new IntArrayList();
     if (!doTestLineMarkers()) {
       toIgnore.add(Pass.LINE_MARKERS);
     }
@@ -298,7 +296,7 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
     }
 
     boolean canChange = canChangeDocumentDuringHighlighting();
-    List<HighlightInfo> infos = CodeInsightTestFixtureImpl.instantiateAndRun(getFile(), getEditor(), toIgnore.toNativeArray(), canChange);
+    List<HighlightInfo> infos = CodeInsightTestFixtureImpl.instantiateAndRun(getFile(), getEditor(), toIgnore.toIntArray(), canChange);
 
     if (!canChange) {
       Document document = getDocument(getFile());
@@ -399,8 +397,7 @@ public abstract class DaemonAnalyzerTestCase extends JavaCodeInsightTestCase {
       }
       else {
         dir = createTempDirectory();
-        VirtualFile vDir =
-          LocalFileSystem.getInstance().refreshAndFindFileByPath(dir.getCanonicalPath().replace(File.separatorChar, '/'));
+        VirtualFile vDir = LocalFileSystem.getInstance().refreshAndFindFileByPath(dir.getCanonicalPath().replace(File.separatorChar, '/'));
         addSourceContentToRoots(module, vDir);
       }
 

@@ -17,6 +17,7 @@ package com.intellij.util.ui;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MultiLineLabelUI;
+import com.intellij.openapi.util.NlsActions.ActionText;
 import com.intellij.openapi.util.NlsContexts;
 import org.jetbrains.annotations.NotNull;
 
@@ -24,7 +25,7 @@ import javax.swing.*;
 import java.awt.*;
 
 public abstract class OptionsMessageDialog extends OptionsDialog{
-  private final String myMessage;
+  private final @NlsContexts.Label String myMessage;
   private final Icon myIcon;
 
   protected OptionsMessageDialog(Project project,
@@ -38,7 +39,9 @@ public abstract class OptionsMessageDialog extends OptionsDialog{
     setButtonsAlignment(SwingUtilities.CENTER);
   }
 
+  @ActionText
   protected abstract String getOkActionName();
+  @ActionText
   protected abstract String getCancelActionName();
 
   @Override
@@ -50,7 +53,7 @@ public abstract class OptionsMessageDialog extends OptionsDialog{
     return new Action[]{okAction,cancelAction};
   }
 
-  protected static void assignMnemonic(String option, Action action) {
+  protected static void assignMnemonic(@ActionText String option, Action action) {
     action.putValue(Action.NAME, option);
 
     int mnemoPos = option.indexOf("&");

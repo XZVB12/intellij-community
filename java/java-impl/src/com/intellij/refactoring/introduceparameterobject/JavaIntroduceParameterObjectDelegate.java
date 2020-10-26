@@ -3,6 +3,7 @@ package com.intellij.refactoring.introduceparameterobject;
 
 import com.intellij.codeInsight.highlighting.ReadWriteAccessDetector;
 import com.intellij.codeInspection.RemoveRedundantTypeArgumentsUtil;
+import com.intellij.java.refactoring.JavaRefactoringBundle;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -28,6 +29,8 @@ import com.intellij.usageView.UsageInfo;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.VisibilityUtil;
 import com.intellij.util.containers.MultiMap;
+import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -41,7 +44,7 @@ public class JavaIntroduceParameterObjectDelegate
   extends IntroduceParameterObjectDelegate<PsiMethod, ParameterInfoImpl, JavaIntroduceParameterObjectClassDescriptor> {
 
   @Override
-  public  List<ParameterInfoImpl> getAllMethodParameters(PsiMethod sourceMethod) {
+  public  List<ParameterInfoImpl> getAllMethodParameters(@NotNull PsiMethod sourceMethod) {
     return new JavaMethodDescriptor(sourceMethod).getParameters();
   }
 
@@ -100,7 +103,7 @@ public class JavaIntroduceParameterObjectDelegate
       if (argumentList == null) return null;
 
       final PsiExpression[] args = argumentList.getExpressions();
-      StringBuilder newExpression = new StringBuilder();
+      @NonNls StringBuilder newExpression = new StringBuilder();
       newExpression.append("new ").append(existingClass.getQualifiedName());
       if (descriptor instanceof JavaIntroduceParameterObjectClassDescriptor) {
         List<String> types = new ArrayList<>();
@@ -157,7 +160,7 @@ public class JavaIntroduceParameterObjectDelegate
   }
 
   @Override
-  public ChangeInfo createChangeSignatureInfo(PsiMethod method, List<ParameterInfoImpl> newParameterInfos, boolean delegate) {
+  public ChangeInfo createChangeSignatureInfo(PsiMethod method, List<? extends ParameterInfoImpl> newParameterInfos, boolean delegate) {
     PsiType returnType = method.getReturnType();
     return new JavaChangeInfoImpl(VisibilityUtil.getVisibilityModifier(method.getModifierList()),
                                   method,
@@ -279,7 +282,7 @@ public class JavaIntroduceParameterObjectDelegate
     final MoveDestination moveDestination = classDescriptor.getMoveDestination();
     if (moveDestination != null) {
       if (!moveDestination.isTargetAccessible(method.getProject(), method.getContainingFile().getVirtualFile())) {
-        conflicts.putValue(method, "Created class won't be accessible");
+        conflicts.putValue(method, JavaRefactoringBundle.message("introduce.parameter.object.error.created.class.wont.be.accessible"));
       }
 
       if (!classDescriptor.isCreateInnerClass() && !classDescriptor.isUseExistingClass()) {
@@ -291,7 +294,7 @@ public class JavaIntroduceParameterObjectDelegate
           if (file != null) {
             VirtualFile virtualFile = PsiUtilCore.getVirtualFile(file);
             if (virtualFile != null) {
-              conflicts.putValue(method, "File already exits: " + virtualFile.getPresentableUrl());
+              conflicts.putValue(method, JavaRefactoringBundle.message("introduce.parameter.object.error.file.already.exits", virtualFile.getPresentableUrl()));
             }
           }
         }
@@ -307,11 +310,13 @@ public class JavaIntroduceParameterObjectDelegate
             final PsiElement overridingMethod = ((OverriderMethodUsageInfo)usageInfo).getOverridingMethod();
 
             if (!moveDestination.isTargetAccessible(overridingMethod.getProject(), overridingMethod.getContainingFile().getVirtualFile())) {
-              conflicts.putValue(overridingMethod, "Created class won't be accessible");
+              conflicts.putValue(overridingMethod,
+                                 JavaRefactoringBundle.message("introduce.parameter.object.error.created.class.wont.be.accessible"));
             }
           }
           if (!constructorMiss && classDescriptor.isUseExistingClass() && usageInfo instanceof MethodCallUsageInfo && classDescriptor.getExistingClassCompatibleConstructor() == null) {
-            conflicts.putValue(classDescriptor.getExistingClass(), "Existing class misses compatible constructor");
+            conflicts.putValue(classDescriptor.getExistingClass(), JavaRefactoringBundle
+              .message("introduce.parameter.object.error.existing.class.misses.compatible.constructor"));
             constructorMiss = true;
           }
         }
@@ -322,7 +327,8 @@ public class JavaIntroduceParameterObjectDelegate
       for (ParameterInfoImpl info : classDescriptor.getParamsToMerge()) {
         Object existingClassBean = classDescriptor.getBean(info);
         if (existingClassBean == null) {
-          conflicts.putValue(classDescriptor.getExistingClass(), "No field associated with " + info.getName() + " found");
+          conflicts.putValue(classDescriptor.getExistingClass(),
+                             JavaRefactoringBundle.message("introduce.parameter.object.error.no.field.associated.found", info.getName()));
         }
       }
     }

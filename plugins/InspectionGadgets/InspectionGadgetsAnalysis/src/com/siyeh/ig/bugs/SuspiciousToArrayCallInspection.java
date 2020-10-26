@@ -144,7 +144,9 @@ public class SuspiciousToArrayCallInspection extends BaseInspection {
         final PsiType castType = castTypeElement.getType();
         if (castType.equals(arrayType) || !(castType instanceof PsiArrayType)) return null;
         final PsiArrayType castArrayType = (PsiArrayType)castType;
-        return castArrayType.getComponentType();
+        PsiType type = castArrayType.getComponentType();
+        if (JavaGenericsUtil.isReifiableType(type)) return type;
+        return null;
       }
       if (itemType == null || componentType.isAssignableFrom(itemType)) return null;
       if (itemType instanceof PsiClassType) {
@@ -166,8 +168,8 @@ public class SuspiciousToArrayCallInspection extends BaseInspection {
   }
 
   private static class SuspiciousToArrayCallFix extends InspectionGadgetsFix {
-    private final String myReplacement;
-    private final String myPresented;
+    @NonNls private final String myReplacement;
+    @NonNls private final String myPresented;
     
     SuspiciousToArrayCallFix(PsiType wantedType, boolean isFunction) {
       if (isFunction) {

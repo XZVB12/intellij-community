@@ -86,9 +86,8 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     }
   }
 
-  @NotNull
   @Override
-  protected PsiTestData createData() {
+  protected @NotNull PsiTestData createData() {
     return new CodeInsightTestData();
   }
 
@@ -126,11 +125,11 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     return configureByFile(vFile, projectFile);
   }
 
-  protected PsiFile configureByText(@NotNull FileType fileType, @NotNull final String text) {
+  protected PsiFile configureByText(@NotNull FileType fileType, @NotNull String text) {
     return configureByText(fileType, text, null);
   }
 
-  protected PsiFile configureByText(@NotNull final FileType fileType, @NotNull final String text, @Nullable String _extension) {
+  protected PsiFile configureByText(final @NotNull FileType fileType, @NotNull String text, @Nullable String _extension) {
     try {
       final String extension = _extension == null ? fileType.getDefaultExtension() : _extension;
 
@@ -166,7 +165,7 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     configureByFile(vFile, null);
   }
 
-  protected void configureByExistingFile(@NotNull final VirtualFile virtualFile) {
+  protected void configureByExistingFile(final @NotNull VirtualFile virtualFile) {
     myFile = null;
     myEditor = null;
 
@@ -193,16 +192,15 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
   }
 
-  public VirtualFile doConfigureByFiles(@Nullable final File rawProjectRoot, final VirtualFile @NotNull ... vFiles) throws IOException {
+  public VirtualFile doConfigureByFiles(@Nullable File rawProjectRoot, VirtualFile @NotNull ... vFiles) throws IOException {
     return configureByFiles(rawProjectRoot, vFiles);
   }
 
-  protected VirtualFile configureByFiles(@Nullable final File rawProjectRoot, final VirtualFile @NotNull ... vFiles) throws IOException {
+  protected VirtualFile configureByFiles(@Nullable File rawProjectRoot, VirtualFile @NotNull ... vFiles) throws IOException {
     myFile = null;
     myEditor = null;
 
-    final File toDirIO = createTempDirectory();
-    final VirtualFile toDir = getVirtualFile(toDirIO);
+    VirtualFile toDir = createVirtualDirectoryForContentFile();
 
     ApplicationManager.getApplication().runWriteAction(() -> {
       try {
@@ -216,17 +214,18 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
         VirtualFile[] reversed = ArrayUtil.reverseArray(vFiles);
         Map<VirtualFile, EditorInfo> editorInfos;
         if (rawProjectRoot != null) {
-          final File projectRoot = rawProjectRoot.getCanonicalFile();
-          FileUtil.copyDir(projectRoot, toDirIO);
-          VirtualFile fromDir = getVirtualFile(projectRoot);
-          editorInfos =
-            copyFilesFillingEditorInfos(fromDir, toDir, ContainerUtil.map2Array(reversed, String.class, s -> s.getPath().substring(projectRoot.getPath().length())));
+          FileUtil.copyDir(rawProjectRoot, toDir.toNioPath().toFile());
+          File projectRoot = rawProjectRoot.getCanonicalFile();
+          VirtualFile aNull = Objects.requireNonNull(LocalFileSystem.getInstance().refreshAndFindFileByIoFile(projectRoot));
+          editorInfos = copyFilesFillingEditorInfos(aNull, toDir, ContainerUtil.map2Array(reversed, String.class, s -> {
+            return s.getPath().substring(projectRoot.getPath().length());
+          }));
 
           toDir.refresh(false, true);
         }
         else {
           editorInfos = new LinkedHashMap<>();
-          for (final VirtualFile vFile : reversed) {
+          for (VirtualFile vFile : reversed) {
             VirtualFile parent = vFile.getParent();
             assert parent.isDirectory() : parent;
             editorInfos.putAll(copyFilesFillingEditorInfos(parent, toDir, vFile.getName()));
@@ -257,6 +256,10 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     return toDir;
   }
 
+  protected @NotNull VirtualFile createVirtualDirectoryForContentFile() {
+    return getTempDir().createVirtualDir();
+  }
+
   protected boolean isAddDirToTests() {
     return false;
   }
@@ -268,18 +271,16 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
   protected void sourceRootAdded(final VirtualFile dir) {
   }
 
-  @NotNull
-  protected Map<VirtualFile, EditorInfo> copyFilesFillingEditorInfos(@NotNull String testDataFromDir,
-                                                                     @NotNull VirtualFile toDir,
-                                                                     String @NotNull ... relativePaths) throws IOException {
+  protected @NotNull Map<VirtualFile, EditorInfo> copyFilesFillingEditorInfos(@NotNull String testDataFromDir,
+                                                                              @NotNull VirtualFile toDir,
+                                                                              String @NotNull ... relativePaths) throws IOException {
     if (!testDataFromDir.startsWith("/")) testDataFromDir = "/" + testDataFromDir;
     return copyFilesFillingEditorInfos(LocalFileSystem.getInstance().refreshAndFindFileByPath(getTestDataPath() + testDataFromDir), toDir, relativePaths);
   }
 
-  @NotNull
-  protected Map<VirtualFile, EditorInfo> copyFilesFillingEditorInfos(@NotNull VirtualFile fromDir,
-                                                                     @NotNull VirtualFile toDir,
-                                                                     String @NotNull ... relativePaths) throws IOException {
+  protected @NotNull Map<VirtualFile, EditorInfo> copyFilesFillingEditorInfos(@NotNull VirtualFile fromDir,
+                                                                              @NotNull VirtualFile toDir,
+                                                                              String @NotNull ... relativePaths) throws IOException {
     Map<VirtualFile, EditorInfo> editorInfos = new LinkedHashMap<>();
 
     List<OutputStream> streamsToClose = new ArrayList<>();
@@ -320,15 +321,13 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     myFile = getPsiFile(editor.getDocument());
   }
 
-  @NotNull
-  protected List<Editor> openEditorsAndActivateLast(@NotNull Map<VirtualFile, EditorInfo> editorInfos) {
+  protected @NotNull List<Editor> openEditorsAndActivateLast(@NotNull Map<VirtualFile, EditorInfo> editorInfos) {
     final List<Editor> list = openEditors(editorInfos);
     setActiveEditor(list.get(list.size() - 1));
     return list;
   }
 
-  @NotNull
-  protected final List<Editor> openEditors(@NotNull final Map<VirtualFile, EditorInfo> editorInfos) {
+  protected final @NotNull List<Editor> openEditors(@NotNull Map<VirtualFile, EditorInfo> editorInfos) {
     return ContainerUtil.map(editorInfos.keySet(), newVFile -> {
       PsiFile file = myPsiManager.findFile(newVFile);
       if (myFile == null) myFile = file;
@@ -374,7 +373,7 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     return false;
   }
 
-  protected void setupCursorAndSelection(@NotNull final Editor editor) {
+  protected void setupCursorAndSelection(final @NotNull Editor editor) {
     Document document = editor.getDocument();
     EditorTestUtil.CaretAndSelectionState caretState = EditorTestUtil.extractCaretAndSelectionMarkers(document);
     EditorTestUtil.setCaretsAndSelection(editor, caretState);
@@ -407,7 +406,7 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     checkResultByFile(filePath, false);
   }
 
-  protected void checkResultByFile(@NotNull final String filePath, final boolean stripTrailingSpaces) throws Exception {
+  protected void checkResultByFile(final @NotNull String filePath, final boolean stripTrailingSpaces) throws Exception {
     WriteCommandAction.writeCommandAction(getProject()).run(() -> {
       PostprocessReformattingAspect.getInstance(getProject()).doPostponedFormatting();
       if (stripTrailingSpaces) {
@@ -445,7 +444,6 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
       myFile = PsiDocumentManager.getInstance(getProject()).getPsiFile(myEditor.getDocument());
 
       String actualText = StringUtil.convertLineSeparators(myFile.getText());
-
       if (!Objects.equals(expectedText, actualText)) {
         throw new FileComparisonFailure("Text mismatch in file " + filePath, expectedText, actualText, vFile.getPath());
       }
@@ -487,20 +485,13 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     }
   }
 
-  @NotNull
-  protected VirtualFile getVirtualFile(@NotNull String filePath) {
-    return findVirtualFile(filePath);
-  }
-
-  @NotNull
-  protected VirtualFile findVirtualFile(@NotNull String filePath) {
+  protected @NotNull VirtualFile findVirtualFile(@NotNull String filePath) {
     String absolutePath = getTestDataPath() + filePath;
     VfsRootAccess.allowRootAccess(getTestRootDisposable(), absolutePath);
     return VfsTestUtil.findFileByCaseSensitivePath(absolutePath);
   }
 
-  @NotNull
-  protected String getTestRoot(){
+  protected @NotNull String getTestRoot(){
     return FileUtil.toSystemIndependentName(getTestDataPath());
   }
 
@@ -548,7 +539,7 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     backspace(getEditor());
   }
 
-  protected void backspace(@NotNull final Editor editor) {
+  protected void backspace(final @NotNull Editor editor) {
     LightPlatformCodeInsightTestCase.backspace(editor,getProject());
   }
 
@@ -560,19 +551,17 @@ public abstract class JavaCodeInsightTestCase extends JavaPsiTestCase {
     LightPlatformCodeInsightTestCase.ctrlD(getEditor(),getProject());
   }
 
-  protected void delete(@NotNull final Editor editor) {
+  protected void delete(final @NotNull Editor editor) {
     LightPlatformCodeInsightTestCase.delete(editor, getProject());
   }
 
-  @NotNull
-  protected PsiClass findClass(@NotNull final String name) {
+  protected @NotNull PsiClass findClass(final @NotNull String name) {
     final PsiClass aClass = myJavaFacade.findClass(name, ProjectScope.getProjectScope(getProject()));
     assertNotNull("Class " + name + " not found", aClass);
     return aClass;
   }
 
-  @NotNull
-  protected PsiPackage findPackage(@NotNull final String name) {
+  protected @NotNull PsiPackage findPackage(final @NotNull String name) {
     final PsiPackage aPackage = myJavaFacade.findPackage(name);
     assertNotNull("Package " + name + " not found", aPackage);
     return aPackage;

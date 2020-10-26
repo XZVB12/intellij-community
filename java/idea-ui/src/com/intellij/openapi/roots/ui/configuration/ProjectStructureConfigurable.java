@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.roots.ui.configuration;
 
 import com.intellij.compiler.server.BuildManager;
@@ -31,6 +31,7 @@ import com.intellij.openapi.wm.ex.IdeFocusTraversalPolicy;
 import com.intellij.packaging.artifacts.Artifact;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.OnePixelSplitter;
+import com.intellij.ui.UIBundle;
 import com.intellij.ui.components.panels.Wrapper;
 import com.intellij.ui.navigation.BackAction;
 import com.intellij.ui.navigation.ForwardAction;
@@ -206,25 +207,13 @@ public class ProjectStructureConfigurable implements SearchableConfigurable, Pla
       addArtifactsConfig();
     }
 
-    ProjectStructureConfigurableContributor[] adders = ProjectStructureConfigurableContributor.EP_NAME.getExtensions();
-    for (ProjectStructureConfigurableContributor adder : adders) {
-      for (Configurable configurable : adder.getExtraProjectConfigurables(myProject, myContext)) {
-        addConfigurable(configurable, true);
-      }
-    }
-
     mySidePanel.addSeparator(JavaUiBundle.message("project.structure.platform.title"));
     addJdkListConfig();
     addGlobalLibrariesConfig();
 
-    for (ProjectStructureConfigurableContributor adder : adders) {
-      for (Configurable configurable : adder.getExtraPlatformConfigurables(myProject, myContext)) {
-        addConfigurable(configurable, true);
-      }
-    }
-
     mySidePanel.addSeparator("--");
     addErrorPane();
+    mySidePanel.getList().getAccessibleContext().setAccessibleName(UIBundle.message("project.structure.categories.accessible.name"));
   }
 
   private void addArtifactsConfig() {
@@ -325,7 +314,7 @@ public class ProjectStructureConfigurable implements SearchableConfigurable, Pla
   public void reset() {
     // need this to ensure VFS operations will not block because of storage flushing
     // and other maintenance IO tasks run in background
-    AccessToken token = HeavyProcessLatch.INSTANCE.processStarted("Resetting Project Structure");
+    AccessToken token = HeavyProcessLatch.INSTANCE.processStarted(JavaUiBundle.message("project.structure.configurable.reset.text"));
 
     try {
 
@@ -381,6 +370,7 @@ public class ProjectStructureConfigurable implements SearchableConfigurable, Pla
     myName2Config.clear();
 
     myModuleConfigurator.getFacetsConfigurator().clearMaps();
+    myHistory.clear();
 
     myUiInitialized = false;
   }
@@ -571,7 +561,7 @@ public class ProjectStructureConfigurable implements SearchableConfigurable, Pla
     myDetails.add(myEmptySelection, BorderLayout.CENTER);
   }
 
-  public static ProjectStructureConfigurable getInstance(final Project project) {
+  public static ProjectStructureConfigurable getInstance(@NotNull final Project project) {
     return ServiceManager.getService(project, ProjectStructureConfigurable.class);
   }
 

@@ -16,10 +16,7 @@ import com.intellij.openapi.fileEditor.FileEditorProvider;
 import com.intellij.openapi.fileEditor.impl.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.FrameWrapper;
-import com.intellij.openapi.util.ActionCallback;
-import com.intellij.openapi.util.BusyObject;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.*;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
@@ -49,10 +46,7 @@ import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.util.*;
 
-@State(name = "DockManager", storages = {
-  @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE),
-  @Storage(value = StoragePathMacros.WORKSPACE_FILE, deprecated = true)
-})
+@State(name = "DockManager", storages = @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE))
 public final class DockManagerImpl extends DockManager implements PersistentStateComponent<Element> {
   private final Project myProject;
 
@@ -214,13 +208,15 @@ public final class DockManagerImpl extends DockManager implements PersistentStat
 
     private final @NotNull DockableContent myContent;
 
+    private DockContainer myStartDragContainer;
     private DockContainer myCurrentOverContainer;
     private final JLabel myImageContainer;
 
     private MyDragSession(MouseEvent me, @NotNull DockableContent content) {
-      myWindow = new JDialog(WindowManager.getInstance().getFrame(myProject));
+      myWindow = new JDialog(UIUtil.getWindow(me.getComponent()));
       myWindow.setUndecorated(true);
       myContent = content;
+      myStartDragContainer = getContainerFor(me.getComponent());
 
       Image previewImage = content.getPreviewImage();
 
@@ -343,21 +339,30 @@ public final class DockManagerImpl extends DockManager implements PersistentStat
   }
 
   private @Nullable DockContainer findContainerFor(RelativePoint point, @NotNull DockableContent<?> content) {
-    for (DockContainer each : getAllContainers()) {
+    DockContainer candidate = null;
+    for (DockContainer each : getContainers()) {
       RelativeRectangle rec = each.getAcceptArea();
       if (rec.contains(point) && each.getContentResponse(content, point).canAccept()) {
-        return each;
+        Window window = UIUtil.getWindow(each.getContainerComponent());
+        if (window != null && window.isActive()) return each;
+        if (candidate == null || Comparing.equal(candidate, myCurrentDragSession.myStartDragContainer)) {
+          candidate = each;
+        }
       }
     }
 
-    for (DockContainer each : getAllContainers()) {
+    for (DockContainer each : getContainers()) {
       RelativeRectangle rec = each.getAcceptAreaFallback();
       if (rec.contains(point) && each.getContentResponse(content, point).canAccept()) {
-        return each;
+        Window window = UIUtil.getWindow(each.getContainerComponent());
+        if (window != null && window.isActive()) return candidate;
+        if (candidate == null || Comparing.equal(candidate, myCurrentDragSession.myStartDragContainer)) {
+          candidate = each;
+        }
       }
     }
 
-    return null;
+    return candidate;
   }
 
   private DockContainerFactory getFactory(String type) {
@@ -468,6 +473,7 @@ public final class DockManagerImpl extends DockManager implements PersistentStat
           getReady().doWhenDone(() -> {
             if (myContainer.isEmpty()) {
               close();
+              myContainers.remove(myContainer);
             }
           });
         }

@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.refactoring.inline;
 
 import com.intellij.java.refactoring.JavaRefactoringBundle;
@@ -10,6 +10,9 @@ import com.intellij.refactoring.HelpID;
 import com.intellij.refactoring.JavaRefactoringSettings;
 import com.intellij.refactoring.RefactoringBundle;
 import com.intellij.refactoring.inline.InlineOptionsDialog;
+import org.jetbrains.annotations.Nls;
+
+import static org.jetbrains.annotations.Nls.Capitalization.Title;
 
 /**
 * @author Max Medvedev
@@ -31,7 +34,7 @@ class InlineGroovyFieldDialog extends InlineOptionsDialog {
   protected String getNameLabelText() {
     @SuppressWarnings("StaticFieldReferencedViaSubclass")
     String fieldText = PsiFormatUtil.formatVariable(myField, PsiFormatUtil.SHOW_NAME | PsiFormatUtil.SHOW_TYPE, PsiSubstitutor.EMPTY);
-    return JavaRefactoringBundle.message("inline.field.field.name.label", fieldText);
+    return JavaRefactoringBundle.message("inline.field.field.name.label", fieldText, "");
   }
 
   @Override
@@ -70,7 +73,7 @@ class InlineGroovyFieldDialog extends InlineOptionsDialog {
     return HelpID.INLINE_FIELD;
   }
 
-  public static String getRefactoringName() {
+  public static @Nls(capitalization = Title) String getRefactoringName() {
     return JavaRefactoringBundle.message("inline.field.title");
   }
 }

@@ -4,6 +4,7 @@ package com.intellij.openapi.extensions;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.extensions.impl.ExtensionProcessingHelper;
 import com.intellij.util.ThreeState;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -15,7 +16,13 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 /**
- * Consider using application level extension point. Avoid project level - extension should be stateless and operate on passed context.
+ * Provides access to a project-level or module-level extension point. Since extensions are supposed to be stateless, storing different
+ * instances of an extension for each project or module just waste the memory and complicates code, so <strong>it's strongly recommended not
+ * to introduce new project-level and module-level extension points</strong>. If you need to have {@link com.intellij.openapi.project.Project Project}
+ * or {@link com.intellij.openapi.module.Module Module} instance in some extension's method, just pass it as a parameter and use the default
+ * application-level extension point.
+ *
+ * <p>Instances of this class can be safely stored in static final fields.</p>
  */
 public final class ProjectExtensionPointName<T> extends BaseExtensionPointName<T> {
   public ProjectExtensionPointName(@NotNull @NonNls String name) {
@@ -51,7 +58,7 @@ public final class ProjectExtensionPointName<T> extends BaseExtensionPointName<T
     return ExtensionProcessingHelper.findFirstSafe(predicate, getPointImpl(areaInstance));
   }
 
-  public @Nullable <R> R computeSafeIfAny(@NotNull AreaInstance areaInstance, @NotNull Function<T, R> processor) {
+  public @Nullable <R> R computeSafeIfAny(@NotNull AreaInstance areaInstance, @NotNull Function<? super T, ? extends R> processor) {
     return ExtensionProcessingHelper.computeSafeIfAny(processor, getPointImpl(areaInstance));
   }
 
@@ -68,5 +75,10 @@ public final class ProjectExtensionPointName<T> extends BaseExtensionPointName<T
 
   public void processWithPluginDescriptor(@NotNull AreaInstance areaInstance, @NotNull BiConsumer<? super T, ? super PluginDescriptor> consumer) {
     getPointImpl(areaInstance).processWithPluginDescriptor(true, consumer);
+  }
+
+  @ApiStatus.Experimental
+  public final @NotNull Iterable<T> getIterable(@NotNull AreaInstance areaInstance) {
+    return getPointImpl(areaInstance);
   }
 }

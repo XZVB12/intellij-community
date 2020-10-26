@@ -34,7 +34,7 @@ object EventLogExternalUploader {
               EventLogSystemLogger.logStartingExternalSend(recorderId, event.timestamp)
             }
             is ExternalUploadSendEvent -> {
-              EventLogSystemLogger.logFilesSend(recorderId, event.total, event.succeed, event.failed, true)
+              EventLogSystemLogger.logFilesSend(recorderId, event.total, event.succeed, event.failed, true, event.successfullySentFiles)
             }
             is ExternalUploadFinishedEvent -> {
               EventLogSystemLogger.logFinishedExternalSend(recorderId, event.error, event.timestamp)
@@ -85,7 +85,7 @@ object EventLogExternalUploader {
     val tempDir = getOrCreateTempDir()
     val uploader = findUploader()
     val libs = findLibsByPrefixes(
-      "kotlin-stdlib", "gson", "commons-logging", "log4j.jar", "httpclient", "httpcore", "httpmime", "jdom.jar", "annotations.jar"
+      "platform-statistics-config.jar", "kotlin-stdlib", "gson", "commons-logging", "log4j.jar", "httpclient", "httpcore", "httpmime", "annotations.jar"
     )
 
     val libPaths = libs.map { it.path }
@@ -107,7 +107,8 @@ object EventLogExternalUploader {
     addArgument(args, BUCKET_OPTION, device.bucket.toString())
     addArgument(args, URL_OPTION, applicationInfo.templateUrl)
     addArgument(args, PRODUCT_OPTION, applicationInfo.productCode)
-    addArgument(args, USER_AGENT_OPTION, applicationInfo.userAgent)
+    addArgument(args, PRODUCT_VERSION_OPTION, applicationInfo.productVersion)
+    addArgument(args, USER_AGENT_OPTION, applicationInfo.connectionSettings.getUserAgent())
 
     if (applicationInfo.isInternal) {
       args += INTERNAL_OPTION
@@ -115,6 +116,10 @@ object EventLogExternalUploader {
 
     if (applicationInfo.isTest) {
       args += TEST_OPTION
+    }
+
+    if (applicationInfo.isEAP) {
+      args += EAP_OPTION
     }
     return ArrayUtil.toStringArray(args)
   }

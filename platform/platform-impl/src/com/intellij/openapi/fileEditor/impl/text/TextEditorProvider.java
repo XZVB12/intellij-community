@@ -1,7 +1,8 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.fileEditor.impl.text;
 
 import com.intellij.codeHighlighting.BackgroundEditorHighlighter;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.structureView.StructureViewBuilder;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -31,7 +32,6 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -39,7 +39,7 @@ import java.util.Objects;
  * @author Anton Katilin
  * @author Vladimir Kondratyev
  */
-public class TextEditorProvider implements DefaultPlatformFileEditorProvider, DumbAware {
+public class TextEditorProvider implements DefaultPlatformFileEditorProvider, QuickDefinitionProvider, DumbAware {
   protected static final Logger LOG = Logger.getInstance(TextEditorProvider.class);
 
   private static final Key<TextEditor> TEXT_EDITOR_KEY = Key.create("textEditor");
@@ -254,8 +254,6 @@ public class TextEditorProvider implements DefaultPlatformFileEditorProvider, Du
   protected void setStateImpl(final Project project, final Editor editor, final TextEditorState state, boolean exactState){
     TextEditorState.CaretState[] carets = state.CARETS;
     if (carets != null && carets.length > 0) {
-      if (!editor.getCaretModel().supportsMultipleCarets()) carets = Arrays.copyOf(carets, 1);
-      CaretModel caretModel = editor.getCaretModel();
       List<CaretState> states = new ArrayList<>(carets.length);
       for (TextEditorState.CaretState caretState : carets) {
         states.add(new CaretState(new LogicalPosition(caretState.LINE, caretState.COLUMN, caretState.LEAN_FORWARD),
@@ -263,7 +261,7 @@ public class TextEditorProvider implements DefaultPlatformFileEditorProvider, Du
                                   new LogicalPosition(caretState.SELECTION_START_LINE, caretState.SELECTION_START_COLUMN),
                                   new LogicalPosition(caretState.SELECTION_END_LINE, caretState.SELECTION_END_COLUMN)));
       }
-      caretModel.setCaretsAndSelections(states, false);
+      editor.getCaretModel().setCaretsAndSelections(states, false);
     }
 
     final int relativeCaretPosition = state.RELATIVE_CARET_POSITION;
@@ -310,7 +308,7 @@ public class TextEditorProvider implements DefaultPlatformFileEditorProvider, Du
     @Override
     @NotNull
     public String getName() {
-      return "Text";
+      return IdeBundle.message("tab.title.text");
     }
 
     @Override

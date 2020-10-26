@@ -23,6 +23,7 @@ import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.history.VcsRevisionNumber;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.vcs.log.Hash;
 import com.intellij.vcs.log.impl.HashImpl;
@@ -33,6 +34,7 @@ import git4idea.commands.*;
 import git4idea.config.GitVersionSpecialty;
 import git4idea.repo.GitRepository;
 import git4idea.util.StringScanner;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -59,11 +61,20 @@ public class GitIndexUtil {
   }
 
   @NotNull
-  public static List<StagedFile> listStaged(@NotNull GitRepository repository, @NotNull Collection<? extends FilePath> filePaths) throws VcsException {
-    List<StagedFile> result = new ArrayList<>();
+  public static List<StagedFile> listStaged(@NotNull GitRepository repository, @NotNull Collection<? extends FilePath> filePaths)
+    throws VcsException {
+    Project project = repository.getProject();
     VirtualFile root = repository.getRoot();
 
-    GitLineHandler h = new GitLineHandler(repository.getProject(), root, GitCommand.LS_FILES);
+    return listStaged(project, root, filePaths);
+  }
+
+  @NotNull
+  public static List<StagedFile> listStaged(@NotNull Project project,
+                                            @NotNull VirtualFile root,
+                                            @NotNull Collection<? extends FilePath> filePaths) throws VcsException {
+    List<StagedFile> result = new ArrayList<>();
+    GitLineHandler h = new GitLineHandler(project, root, GitCommand.LS_FILES);
     h.addParameters("-s");
     h.endOptions();
     h.addRelativePaths(filePaths);
@@ -168,6 +179,42 @@ public class GitIndexUtil {
   }
 
   @NotNull
+  public static Hash loadStagedSubmoduleHash(@NotNull GitRepository submodule,
+                                             @NotNull GitRepository parentRepo) throws VcsException {
+    GitLineHandler h = new GitLineHandler(parentRepo.getProject(), parentRepo.getRoot(), GitCommand.SUBMODULE);
+    h.addParameters("status", "--cached");
+    h.addRelativeFiles(Collections.singletonList(submodule.getRoot()));
+    String out = Git.getInstance().runCommand(h).getOutputOrThrow();
+
+    StringScanner s = new StringScanner(out);
+    s.skipChars(1); // status char
+    String hash = s.spaceToken();
+    return HashImpl.build(hash);
+  }
+
+  @Nullable
+  public static Hash loadSubmoduleHashAt(@NotNull GitRepository submodule,
+                                         @NotNull GitRepository parentRepo,
+                                         @NotNull VcsRevisionNumber revisionNumber) throws VcsException {
+    FilePath filePath = VcsUtil.getFilePath(submodule.getRoot());
+    List<StagedFileOrDirectory> lsTree = listTree(parentRepo, Collections.singletonList(filePath), revisionNumber);
+    if (lsTree.size() != 1) {
+      LOG.warn(String.format("Unexpected output of ls-tree command for submodule [%s] at [%s]: %s", filePath, revisionNumber, lsTree));
+      return null;
+    }
+    StagedSubrepo tree = ObjectUtils.tryCast(lsTree.get(0), GitIndexUtil.StagedSubrepo.class);
+    if (tree == null) {
+      LOG.warn(String.format("Unexpected type of ls-tree for submodule [%s] at [%s]: %s", filePath, revisionNumber, tree));
+      return null;
+    }
+    if (!filePath.equals(tree.getPath())) {
+      LOG.warn(String.format("Submodule path [%s] doesn't match the ls-tree output path [%s]", tree.getPath(), filePath));
+      return null;
+    }
+    return HashImpl.build(tree.getBlobHash());
+  }
+
+  @NotNull
   public static Hash write(@NotNull GitRepository repository,
                            @NotNull FilePath filePath,
                            byte @NotNull [] bytes,
@@ -176,20 +223,24 @@ public class GitIndexUtil {
   }
 
   @NotNull
-  public static Hash write(@NotNull GitRepository repository,
-                           @NotNull FilePath filePath,
-                           @NotNull InputStream content,
+  public static Hash write(@NotNull GitRepository repository, @NotNull FilePath filePath, @NotNull InputStream content,
                            boolean executable) throws VcsException {
-    Hash hash = hashObject(repository, filePath, content);
-    updateIndex(repository, filePath, hash, executable);
+    return write(repository.getProject(), repository.getRoot(), filePath, content, executable);
+  }
+
+  @NotNull
+  public static Hash write(@NotNull Project project, @NotNull VirtualFile root,
+                           @NotNull FilePath filePath, @NotNull InputStream content,
+                           boolean executable) throws VcsException {
+    Hash hash = hashObject(project, root, filePath, content);
+    updateIndex(project, root, filePath, hash, executable);
     return hash;
   }
 
   @NotNull
-  private static Hash hashObject(@NotNull GitRepository repository,
-                                 @NotNull FilePath filePath,
+  private static Hash hashObject(@NotNull Project project, @NotNull VirtualFile root, @NotNull FilePath filePath,
                                  @NotNull InputStream content) throws VcsException {
-    GitLineHandler h = new GitLineHandler(repository.getProject(), repository.getRoot(), GitCommand.HASH_OBJECT);
+    GitLineHandler h = new GitLineHandler(project, root, GitCommand.HASH_OBJECT);
     h.setSilent(true);
     h.addParameters("-w", "--stdin");
     h.addParameters("--path");
@@ -204,11 +255,17 @@ public class GitIndexUtil {
                                  @NotNull FilePath filePath,
                                  @NotNull Hash blobHash,
                                  boolean isExecutable) throws VcsException {
-    String mode = isExecutable ? EXECUTABLE_MODE : DEFAULT_MODE;
-    String path = VcsFileUtil.relativePath(repository.getRoot(), filePath);
+    updateIndex(repository.getProject(), repository.getRoot(), filePath, blobHash, isExecutable);
+  }
 
-    GitLineHandler h = new GitLineHandler(repository.getProject(), repository.getRoot(), GitCommand.UPDATE_INDEX);
-    if (GitVersionSpecialty.CACHEINFO_SUPPORTS_SINGLE_PARAMETER_FORM.existsIn(repository)) {
+  public static void updateIndex(@NotNull Project project, @NotNull VirtualFile root, @NotNull FilePath filePath,
+                                 @NotNull Hash blobHash,
+                                 boolean isExecutable) throws VcsException {
+    String mode = isExecutable ? EXECUTABLE_MODE : DEFAULT_MODE;
+    String path = VcsFileUtil.relativePath(root, filePath);
+
+    GitLineHandler h = new GitLineHandler(project, root, GitCommand.UPDATE_INDEX);
+    if (GitVersionSpecialty.CACHEINFO_SUPPORTS_SINGLE_PARAMETER_FORM.existsIn(project)) {
       h.addParameters("--cacheinfo", mode + "," + blobHash.asString() + "," + path);
     }
     else {
@@ -241,6 +298,7 @@ public class GitIndexUtil {
       return myPath;
     }
 
+    @NonNls
     @Override
     public String toString() {
       return "StagedFileOrDirectory[" + myPath + "]";
@@ -266,6 +324,7 @@ public class GitIndexUtil {
       return myExecutable;
     }
 
+    @NonNls
     @Override
     public String toString() {
       return "StagedFile[" + myPath + "] at [" + myBlobHash + "]";
@@ -291,6 +350,7 @@ public class GitIndexUtil {
       return myBlobHash;
     }
 
+    @NonNls
     @Override
     public String toString() {
       return "StagedSubRepo[" + myPath + "] at [" + myBlobHash + "]";

@@ -8,7 +8,6 @@ import com.intellij.util.ArrayUtil;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.xmlb.annotations.MapAnnotation;
 import com.intellij.util.xmlb.annotations.XMap;
-import gnu.trove.THashMap;
 import org.jdom.Attribute;
 import org.jdom.Content;
 import org.jdom.Element;
@@ -34,7 +33,7 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
   private final MapAnnotation oldAnnotation;
   private final XMap annotation;
 
-  @NotNull private final Class<? extends Map> mapClass;
+  private final @NotNull Class<? extends Map> mapClass;
 
   private Class<?> keyClass;
   private Class<?> valueClass;
@@ -52,9 +51,8 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
     this.mapClass = mapClass;
   }
 
-  @NotNull
   @Override
-  public MutableAccessor getAccessor() {
+  public @NotNull MutableAccessor getAccessor() {
     return myAccessor;
   }
 
@@ -64,10 +62,25 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
     Type[] typeArguments = type.getActualTypeArguments();
 
     keyClass = ClassUtil.typeToClass(typeArguments[0]);
-    valueClass = ClassUtil.typeToClass(typeArguments[1]);
+    Type valueType;
+    if (typeArguments.length == 1) {
+      String typeName = type.getRawType().getTypeName();
+      if (typeName.equals("it.unimi.dsi.fastutil.objects.Object2IntMap") || typeName.equals("it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap")) {
+        valueClass = Integer.class;
+      }
+      else {
+        throw new UnsupportedOperationException("Value class is unknown for " + type.getTypeName());
+      }
+
+      valueType = Integer.class;
+    }
+    else {
+      valueType = typeArguments[1];
+      valueClass = ClassUtil.typeToClass(valueType);
+    }
 
     keyBinding = serializer.getBinding(keyClass, typeArguments[0]);
-    valueBinding = serializer.getBinding(valueClass, typeArguments[1]);
+    valueBinding = serializer.getBinding(valueClass, valueType);
   }
 
   @Override
@@ -83,9 +96,8 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
     return oldAnnotation == null || oldAnnotation.sortBeforeSave();
   }
 
-  @Nullable
   @Override
-  public Object serialize(@NotNull Object o, @Nullable Object context, @Nullable SerializationFilter filter) {
+  public @Nullable Object serialize(@NotNull Object o, @Nullable Object context, @Nullable SerializationFilter filter) {
     Element serialized = isSurroundWithTag() ? new Element(MAP) : (Element)context;
     assert serialized != null;
 
@@ -135,9 +147,8 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
     return oldAnnotation == null ? VALUE : oldAnnotation.valueAttributeName();
   }
 
-  @Nullable
   @Override
-  public Object deserializeList(@Nullable Object context, @NotNull List<? extends Element> elements) {
+  public @Nullable Object deserializeList(@Nullable Object context, @NotNull List<? extends Element> elements) {
     List<? extends Element> childNodes;
     if (isSurroundWithTag()) {
       assert elements.size() == 1;
@@ -154,8 +165,7 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
     return null;
   }
 
-  @Nullable
-  public Object deserialize(@Nullable Object context, @NotNull Element element) {
+  public @Nullable Object deserialize(@Nullable Object context, @NotNull Element element) {
     if (isSurroundWithTag()) {
       return deserialize(context, element.getChildren());
     }
@@ -164,8 +174,7 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
     }
   }
 
-  @Nullable
-  private Map deserialize(@Nullable Object context, @NotNull List<? extends Element> childNodes) {
+  private @Nullable Map deserialize(@Nullable Object context, @NotNull List<? extends Element> childNodes) {
     // if accessor is null, it is sub-map and we must not use context
     Map map = myAccessor == null ? null : (Map)context;
     if (map != null) {
@@ -185,7 +194,7 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
 
       if (map == null) {
         if (mapClass == Map.class) {
-          map = new THashMap();
+          map = new HashMap();
         }
         else {
           try {
@@ -193,7 +202,7 @@ final class MapBinding implements MultiNodeBinding, NestedBinding {
           }
           catch (Exception e) {
             LOG.warn(e);
-            map = new THashMap();
+            map = new HashMap();
           }
         }
       }

@@ -12,6 +12,7 @@ import com.jetbrains.python.psi.PyFunction;
 import com.jetbrains.python.psi.PyPsiFacade;
 import com.jetbrains.python.psi.impl.PyPsiFacadeImpl;
 import com.jetbrains.python.psi.impl.PythonASTFactory;
+import com.jetbrains.python.psi.impl.PythonLanguageLevelPusher;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
@@ -38,7 +39,6 @@ public class PythonParsingTest extends ParsingTestCase {
     registerExtensionPoint(PythonDialectsTokenSetContributor.EP_NAME, PythonDialectsTokenSetContributor.class);
     registerExtension(PythonDialectsTokenSetContributor.EP_NAME, new PythonTokenSetContributor());
     addExplicitExtension(LanguageASTFactory.INSTANCE, PythonLanguage.getInstance(), new PythonASTFactory());
-    PythonDialectsTokenSetProvider.reset();
     getProject().registerService(PyPsiFacade.class, PyPsiFacadeImpl.class);
   }
 
@@ -868,6 +868,10 @@ public class PythonParsingTest extends ParsingTestCase {
     doTest(LanguageLevel.PYTHON36);
   }
 
+  public void testFStringTextTokenMerging() {
+    doTest(LanguageLevel.PYTHON36);
+  }
+
   // PY-19036
   public void testAwaitInNonAsyncNestedFunction() {
     doTest(LanguageLevel.PYTHON35);
@@ -936,6 +940,11 @@ public class PythonParsingTest extends ParsingTestCase {
     doTest(LanguageLevel.PYTHON36);
   }
 
+  // PY-41305
+  public void testExpressionsInDecorators() {
+    doTest(LanguageLevel.getLatest());
+  }
+
   public void doTest() {
     doTest(LanguageLevel.PYTHON26);
   }
@@ -955,7 +964,7 @@ public class PythonParsingTest extends ParsingTestCase {
   @Override
   protected PsiFile createFile(@NotNull String name, @NotNull String text) {
     final PsiFile file = super.createFile(name, text);
-    file.getVirtualFile().putUserData(LanguageLevel.KEY, myLanguageLevel);
+    PythonLanguageLevelPusher.specifyFileLanguageLevel(file.getVirtualFile(), myLanguageLevel);
     return file;
   }
 

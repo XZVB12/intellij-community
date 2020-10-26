@@ -1,15 +1,14 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.gradle.execution.test.runner;
 
 import com.intellij.build.BuildViewSettingsProvider;
 import com.intellij.execution.Platform;
 import com.intellij.execution.testframework.TestConsoleProperties;
+import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsListener;
 import com.intellij.execution.testframework.sm.runner.SMTestLocator;
 import com.intellij.execution.testframework.sm.runner.SMTestProxy;
 import com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
-import com.intellij.openapi.util.registry.Registry;
-import com.intellij.openapi.util.text.StringUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -22,10 +21,16 @@ import java.util.Map;
 public class GradleTestsExecutionConsole extends SMTRunnerConsoleView implements BuildViewSettingsProvider {
   private final Map<String, SMTestProxy> testsMap = new HashMap<>();
   private final StringBuilder myBuffer = new StringBuilder();
+  private final SMTRunnerEventsListener myEventPublisher;
   private boolean lastMessageWasEmptyLine;
 
   public GradleTestsExecutionConsole(TestConsoleProperties consoleProperties, @Nullable String splitterProperty) {
     super(consoleProperties, splitterProperty);
+    myEventPublisher = consoleProperties.getProject().getMessageBus().syncPublisher(SMTRunnerEventsListener.TEST_STATUS);
+  }
+
+  public SMTRunnerEventsListener getEventPublisher() {
+    return myEventPublisher;
   }
 
   public Map<String, SMTestProxy> getTestsMap() {
@@ -48,7 +53,7 @@ public class GradleTestsExecutionConsole extends SMTRunnerConsoleView implements
 
   @Override
   public boolean isExecutionViewHidden() {
-    return Registry.is("build.view.side-by-side", true);
+    return true;
   }
 
   @Override

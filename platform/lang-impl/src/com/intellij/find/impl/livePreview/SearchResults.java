@@ -52,15 +52,15 @@ public class SearchResults implements DocumentListener, CaretListener {
   @Override
   public void caretPositionChanged(@NotNull CaretEvent event) {
     Caret caret = event.getCaret();
-    if (caret != null && myEditor.getCaretModel().getAllCarets().size() == 1 && caret.isUpToDate()) {
+    if (caret != null && myEditor.getCaretModel().getCaretCount() == 1) {
       int offset = caret.getOffset();
       FindResult occurrenceAtCaret = getOccurrenceAtCaret();
       if (occurrenceAtCaret != null && occurrenceAtCaret != myCursor) {
         moveCursorTo(occurrenceAtCaret, false, false);
         myEditor.getCaretModel().moveToOffset(offset);
+        notifyCursorMoved();
       }
     }
-    notifyCursorMoved();
   }
 
   public enum Direction {UP, DOWN}
@@ -328,6 +328,7 @@ public class SearchResults implements DocumentListener, CaretListener {
 
   public void dispose() {
     myDisposed = true;
+    myEditor.getCaretModel().removeCaretListener(this);
     myEditor.getDocument().removeDocumentListener(this);
   }
 

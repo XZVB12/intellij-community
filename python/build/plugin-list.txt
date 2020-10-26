@@ -1,3 +1,5 @@
+intellij.completionMlRanking
+intellij.completionMlRankingModels
 intellij.configurationScript
 intellij.copyright
 intellij.editorconfig
@@ -10,6 +12,7 @@ intellij.sh
 intellij.statsCollector
 intellij.tasks.core
 intellij.terminal
+intellij.emojipicker
 intellij.textmate
 intellij.vcs.changeReminder
 intellij.vcs.git

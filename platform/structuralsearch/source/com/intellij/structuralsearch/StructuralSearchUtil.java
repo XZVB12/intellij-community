@@ -1,26 +1,23 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch;
 
+import com.intellij.ide.highlighter.XmlFileType;
 import com.intellij.lang.Language;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.fileTypes.LanguageFileType;
-import com.intellij.openapi.fileTypes.StdFileTypes;
-import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.text.NaturalComparator;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
 import com.intellij.structuralsearch.plugin.ui.Configuration;
+import com.intellij.util.SmartList;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
 
 import java.text.Normalizer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -29,19 +26,55 @@ import java.util.stream.Collectors;
  */
 public final class StructuralSearchUtil {
   private static final String REG_EXP_META_CHARS = ".$|()[]{}^?*+\\";
-  private static final Key<StructuralSearchProfile> STRUCTURAL_SEARCH_PROFILE_KEY = new Key<>("Structural Search Profile");
   private static final Pattern ACCENTS = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
-  private static LanguageFileType ourDefaultFileType = null;
+  private static final Comparator<? super Configuration> CONFIGURATION_COMPARATOR =
+    Comparator.comparing(Configuration::getCategory, NaturalComparator.INSTANCE)
+      .thenComparing(Configuration::getName, NaturalComparator.INSTANCE);
+  private static LanguageFileType ourDefaultFileType;
 
-  public static boolean ourUseUniversalMatchingAlgorithm = false;
-  private static StructuralSearchProfile[] ourNewStyleProfiles;
-  private static List<Configuration> ourPredefinedConfigurations = null;
+  private static boolean ourUseUniversalMatchingAlgorithm;
+  private static final Map<String, StructuralSearchProfile> cache = new HashMap<>();
+
+  private static List<Configuration> ourPredefinedConfigurations;
+  static {
+    StructuralSearchProfile.EP_NAME.addChangeListener(() -> {
+      ourPredefinedConfigurations = null;
+      ourDefaultFileType = null;
+      cache.clear();
+    }, null);
+  }
 
   private StructuralSearchUtil() {}
+
+  public static void setUseUniversalMatchingAlgorithm(boolean useUniversalMatchingAlgorithm) {
+    ourUseUniversalMatchingAlgorithm = useUniversalMatchingAlgorithm;
+    cache.clear();
+  }
 
   @Nullable
   public static StructuralSearchProfile getProfileByPsiElement(@NotNull PsiElement element) {
     return getProfileByLanguage(element.getLanguage());
+  }
+
+  @Nullable
+  public static StructuralSearchProfile getProfileByFileType(@NotNull LanguageFileType fileType) {
+    return getProfileByLanguage(fileType.getLanguage());
+  }
+
+  @Nullable
+  public static StructuralSearchProfile getProfileByLanguage(@NotNull Language language) {
+    final String id = language.getID();
+    if (cache.containsKey(id)) {
+      return cache.get(id);
+    }
+    for (StructuralSearchProfile profile : getProfiles()) {
+      if (profile.isMyLanguage(language)) {
+        cache.put(id, profile);
+        return profile;
+      }
+    }
+    cache.put(id, null);
+    return null;
   }
 
   @Contract("null -> false")
@@ -52,7 +85,7 @@ public final class StructuralSearchUtil {
   }
 
   public static PsiElement getParentIfIdentifier(PsiElement element) {
-    return !isIdentifier(element) ? element : element.getParent();
+    return isIdentifier(element) ? element.getParent() : element;
   }
 
   @Contract("!null -> !null")
@@ -63,18 +96,14 @@ public final class StructuralSearchUtil {
   }
 
   private static StructuralSearchProfile[] getNewStyleProfiles() {
-    if (ourNewStyleProfiles == null) {
-      final List<StructuralSearchProfile> list = new ArrayList<>();
-
-      for (StructuralSearchProfile profile : StructuralSearchProfile.EP_NAME.getExtensions()) {
-        if (profile instanceof StructuralSearchProfileBase) {
-          list.add(profile);
-        }
+    final List<StructuralSearchProfile> list = new SmartList<>();
+    for (StructuralSearchProfile profile : StructuralSearchProfile.EP_NAME.getExtensions()) {
+      if (profile instanceof StructuralSearchProfileBase) {
+        list.add(profile);
       }
-      list.add(new XmlStructuralSearchProfile());
-      ourNewStyleProfiles = list.toArray(new StructuralSearchProfile[0]);
     }
-    return ourNewStyleProfiles;
+    list.add(new XmlStructuralSearchProfile());
+    return list.toArray(new StructuralSearchProfile[0]);
   }
 
   private static StructuralSearchProfile[] getProfiles() {
@@ -90,37 +119,14 @@ public final class StructuralSearchUtil {
         ourDefaultFileType = profile.getDefaultFileType(ourDefaultFileType);
       }
       if (ourDefaultFileType == null) {
-        ourDefaultFileType = StdFileTypes.XML;
+        ourDefaultFileType = XmlFileType.INSTANCE;
       }
     }
     return ourDefaultFileType;
   }
 
-  @TestOnly
-  public static void clearProfileCache(@NotNull Language language) {
-    language.putUserData(STRUCTURAL_SEARCH_PROFILE_KEY, null);
-  }
-
-  @Nullable
-  public static StructuralSearchProfile getProfileByLanguage(@NotNull Language language) {
-    final StructuralSearchProfile cachedProfile = language.getUserData(STRUCTURAL_SEARCH_PROFILE_KEY);
-    if (cachedProfile != null) return cachedProfile;
-    for (StructuralSearchProfile profile : getProfiles()) {
-      if (profile.isMyLanguage(language)) {
-        language.putUserData(STRUCTURAL_SEARCH_PROFILE_KEY, profile);
-        return profile;
-      }
-    }
-    return null;
-  }
-
   public static boolean isTypedVariable(@NotNull String name) {
     return name.length() > 1 && name.charAt(0) == '$' && name.charAt(name.length() - 1) == '$';
-  }
-
-  @Nullable
-  public static StructuralSearchProfile getProfileByFileType(LanguageFileType fileType) {
-    return getProfileByLanguage(fileType.getLanguage());
   }
 
   public static LanguageFileType @NotNull [] getSuitableFileTypes() {
@@ -144,8 +150,18 @@ public final class StructuralSearchUtil {
     return REG_EXP_META_CHARS.indexOf(ch) >= 0;
   }
 
-  public static String shieldRegExpMetaChars(String word) {
+  @NotNull
+  public static String shieldRegExpMetaChars(@NotNull String word) {
     return shieldRegExpMetaChars(word, new StringBuilder(word.length())).toString();
+  }
+
+  public static String makeExtremeSpacesOptional(String word) {
+    if (word.trim().isEmpty()) return word;
+
+    String result = word;
+    if (word.startsWith(" ")) result = "(?:\\s|\\b)" + result.substring(1);
+    if (word.endsWith(" ")) result = result.substring(0, result.length() - 1) + "(?:\\s|\\b)";
+    return result;
   }
 
   @NotNull
@@ -176,13 +192,13 @@ public final class StructuralSearchUtil {
       for (StructuralSearchProfile profile : getProfiles()) {
         Collections.addAll(result, profile.getPredefinedTemplates());
       }
-      Collections.sort(result);
+      Collections.sort(result, CONFIGURATION_COMPARATOR);
       ourPredefinedConfigurations = Collections.unmodifiableList(result);
     }
     return ourPredefinedConfigurations;
   }
 
-  public static boolean isDocCommentOwner(PsiElement match) {
+  public static boolean isDocCommentOwner(@NotNull PsiElement match) {
     final StructuralSearchProfile profile = getProfileByPsiElement(match);
     return profile != null && profile.isDocCommentOwner(match);
   }
@@ -192,11 +208,12 @@ public final class StructuralSearchUtil {
     return profile != null ? profile.getMeaningfulText(matchedNode) : matchedNode.getText();
   }
 
-  public static String getAlternativeText(PsiElement matchedNode, String previousText) {
+  public static String getAlternativeText(@NotNull PsiElement matchedNode, @NotNull String previousText) {
     final StructuralSearchProfile profile = getProfileByPsiElement(matchedNode);
     return profile != null ? profile.getAlternativeText(matchedNode, previousText) : null;
   }
 
+  @NotNull
   public static String normalizeWhiteSpace(@NotNull String text) {
     text = text.trim();
     final StringBuilder result = new StringBuilder();
@@ -217,10 +234,12 @@ public final class StructuralSearchUtil {
     return result.toString();
   }
 
+  @NotNull
   public static String stripAccents(@NotNull String input) {
     return ACCENTS.matcher(Normalizer.normalize(input, Normalizer.Form.NFD)).replaceAll("");
   }
 
+  @NotNull
   public static String normalize(@NotNull String text) {
     return stripAccents(normalizeWhiteSpace(text));
   }

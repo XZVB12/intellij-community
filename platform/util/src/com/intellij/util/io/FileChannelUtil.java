@@ -11,7 +11,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.nio.channels.FileChannel;
 
-class FileChannelUtil {
+final class FileChannelUtil {
   private static final Logger LOG = Logger.getInstance(FileChannelUtil.class);
 
   private static final Class<?> sunNioChFileChannelImpl = setupFileChannelImpl();
@@ -37,15 +37,16 @@ class FileChannelUtil {
       }
     }
     catch (NoSuchMethodException e) {
-      LOG.info("interruptible FileChannel-s will be used for indexes");
+      LOG.info("interruptible FileChannels will be used for indexes");
     }
     catch (IllegalAccessException e) {
       LOG.error(e);
     }
     if (setUnInterruptible != null) {
-      LOG.info("un-interruptible FileChannel-s will be used for indexes");
-    } else {
-      LOG.info("interruptible FileChannel-s will be used for indexes");
+      LOG.info("uninterruptible FileChannels will be used for indexes");
+    }
+    else {
+      LOG.info("interruptible FileChannels will be used for indexes");
     }
     return setUnInterruptible;
   }

@@ -19,17 +19,19 @@ import com.intellij.util.xml.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.devkit.dom.impl.ActionOrGroupResolveConverter;
 
+import java.util.List;
+
 public interface ActionOrGroup extends DomElement {
 
   @NotNull
   @NameValue
   @Stubbed
-  @Required(value = false)
+  @Required(false)
   GenericAttributeValue<String> getId();
 
   @NotNull
   @Stubbed
-  @Required(value = false)
+  @Required(false)
   GenericAttributeValue<String> getIcon();
 
   @NotNull
@@ -38,15 +40,19 @@ public interface ActionOrGroup extends DomElement {
 
   @NotNull
   @Stubbed
-  @Required(value = false)
+  @Required(false)
   GenericAttributeValue<String> getText();
 
   @NotNull
   @Stubbed
-  @Required(value = false)
+  @Required(false)
   GenericAttributeValue<String> getDescription();
 
   @NotNull
   @Convert(ActionOrGroupResolveConverter.OnlyActions.class)
   GenericAttributeValue<ActionOrGroup> getUseShortcutOf();
+
+  @NotNull
+  List<OverrideText> getOverrideTexts();
+  OverrideText addOverrideText();
 }

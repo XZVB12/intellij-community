@@ -13,17 +13,18 @@ import com.intellij.java.codeInsight.JavaExternalDocumentationTest;
 import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.editor.ex.EditorSettingsExternalizable;
 import com.intellij.openapi.editor.impl.EditorImpl;
-import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.registry.RegistryValue;
 import com.intellij.psi.JavaCodeFragmentFactory;
 import com.intellij.psi.PsiExpressionCodeFragment;
 import com.intellij.psi.PsiMethod;
 import com.intellij.testFramework.EditorTestUtil;
+import com.intellij.testFramework.NeedsIndex;
 import com.intellij.testFramework.fixtures.EditorMouseFixture;
 
 import java.util.LinkedHashMap;
 
+@NeedsIndex.SmartMode(reason = "Hints shouldn't work in dumb mode")
 public class CompletionHintsTest extends AbstractParameterInfoTestCase {
   private boolean myStoredSettingValue;
 
@@ -793,7 +794,7 @@ public class CompletionHintsTest extends AbstractParameterInfoTestCase {
   public void testGenericType() {
     disableVirtualComma();
 
-    configureJava("class C { void abcd(Class<?> c) {} void m() { abc<caret> } }");
+    configureJava("class C { void efgh(Class<?> c) {} void m() { efg<caret> } }");
     complete();
     waitForAllAsyncStuff();
     checkHintContents("<html><b>Class&lt;?&gt;</b></html>");

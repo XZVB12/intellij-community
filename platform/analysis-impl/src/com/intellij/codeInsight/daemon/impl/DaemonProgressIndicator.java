@@ -25,9 +25,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
-/**
- * @author cdr
- */
 public class DaemonProgressIndicator extends AbstractProgressIndicatorBase implements StandardProgressIndicator, Disposable {
   private static boolean debug;
   private final TraceableDisposable myTraceableDisposable = new TraceableDisposable(debug);
@@ -108,7 +105,7 @@ public class DaemonProgressIndicator extends AbstractProgressIndicatorBase imple
 
   @Override
   public final void start() {
-    assert !isCanceled() : "canceled";
+    checkCanceled();
     assert !isRunning() : "running";
     super.start();
   }

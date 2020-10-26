@@ -6,13 +6,7 @@ import com.intellij.codeInsight.highlighting.HighlightManagerImpl;
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.codeInsight.hint.HintManagerImpl;
 import com.intellij.codeInsight.hint.HintUtil;
-import com.intellij.find.EditorSearchSession;
-import com.intellij.find.FindBundle;
-import com.intellij.find.FindInProjectSettings;
-import com.intellij.find.FindManager;
-import com.intellij.find.FindModel;
-import com.intellij.find.FindResult;
-import com.intellij.find.FindSettings;
+import com.intellij.find.*;
 import com.intellij.find.findUsages.FindUsagesManager;
 import com.intellij.find.impl.livePreview.SearchResults;
 import com.intellij.lang.Language;
@@ -32,11 +26,7 @@ import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.FoldRegion;
-import com.intellij.openapi.editor.FoldingModel;
-import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.ex.FoldingModelEx;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
@@ -49,50 +39,36 @@ import com.intellij.openapi.fileTypes.SyntaxHighlighterFactory;
 import com.intellij.openapi.fileTypes.impl.AbstractFileType;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.KeyWithDefaultValue;
-import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.patterns.StringPattern;
-import com.intellij.psi.CustomHighlighterTokenType;
-import com.intellij.psi.FileViewProvider;
-import com.intellij.psi.PsiDocumentManager;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiManager;
+import com.intellij.psi.*;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.tree.TokenSet;
+import com.intellij.reference.SoftReference;
 import com.intellij.ui.LightweightHint;
 import com.intellij.ui.ReplacePromptDialog;
 import com.intellij.usages.ChunkExtractor;
 import com.intellij.usages.impl.SyntaxHighlighterOverEditorHighlighter;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.IntObjectMap;
-import com.intellij.util.containers.Predicate;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.ImmutableCharSequence;
 import com.intellij.util.text.StringSearcher;
 import gnu.trove.THashSet;
-import java.awt.Point;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Objects;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.swing.JComponent;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import javax.swing.*;
+import java.awt.*;
+import java.util.List;
+import java.util.*;
+import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class FindManagerImpl extends FindManager {
   private static final Logger LOG = Logger.getInstance(FindManagerImpl.class);
@@ -174,6 +150,7 @@ public final class FindManagerImpl extends FindManager {
     else{
       myReplaceInFilePromptPos = replacePromptDialog.getLocation();
     }
+    //noinspection MagicConstant
     return replacePromptDialog.getExitCode();
   }
 
@@ -299,7 +276,7 @@ public final class FindManagerImpl extends FindManager {
     final char[] textArray = CharArrayUtil.fromSequenceWithoutCopying(text);
     while(true) {
       FindResult result = doFindString(text, textArray, offset, model, file);
-      if (filter == null || filter.apply(result)) {
+      if (filter == null || filter.test(result)) {
         if (!model.isWholeWordsOnly()) {
           return result;
         }
@@ -316,42 +293,52 @@ public final class FindManagerImpl extends FindManager {
     }
   }
 
-  private class FindExceptCommentsOrLiteralsData implements Predicate<FindResult> {
+  private static class FindExceptCommentsOrLiteralsData implements Predicate<FindResult> {
     private final VirtualFile myFile;
     private final FindModel myFindModel;
     private final TreeMap<Integer, Integer> mySkipRangesSet;
     private final CharSequence myText;
 
-    private FindExceptCommentsOrLiteralsData(VirtualFile file, FindModel model, CharSequence text) {
-      myFile = file;
-      myFindModel = model.clone();
-      myText = ImmutableCharSequence.asImmutable(text);
-
-      TreeMap<Integer, Integer> result = new TreeMap<>();
+    static FindExceptCommentsOrLiteralsData create(@NotNull VirtualFile file,
+                                                   @NotNull FindModel model,
+                                                   @NotNull CharSequence text,
+                                                   @NotNull FindManagerImpl manager) {
+      TreeMap<Integer, Integer> skipRangesSet = new TreeMap<>();
 
       if (model.isExceptComments() || model.isExceptCommentsAndStringLiterals()) {
-        addRanges(file, model, text, result, FindModel.SearchContext.IN_COMMENTS);
+        addRanges(file, model, text, skipRangesSet, FindModel.SearchContext.IN_COMMENTS, manager);
       }
 
       if (model.isExceptStringLiterals() || model.isExceptCommentsAndStringLiterals()) {
-        addRanges(file, model, text, result, FindModel.SearchContext.IN_STRING_LITERALS);
+        addRanges(file, model, text, skipRangesSet, FindModel.SearchContext.IN_STRING_LITERALS, manager);
       }
 
-      mySkipRangesSet = result;
+      return new FindExceptCommentsOrLiteralsData(file, model.clone(), ImmutableCharSequence.asImmutable(text), skipRangesSet);
     }
 
-    private void addRanges(VirtualFile file,
-                           FindModel model,
-                           CharSequence text,
-                           TreeMap<Integer, Integer> result,
-                           FindModel.SearchContext searchContext) {
+    FindExceptCommentsOrLiteralsData(@NotNull VirtualFile file,
+                                     @NotNull FindModel model,
+                                     @NotNull CharSequence text,
+                                     @NotNull TreeMap<Integer, Integer> skipRangesSet) {
+      myFile = file;
+      myFindModel = model.clone();
+      myText = ImmutableCharSequence.asImmutable(text);
+      mySkipRangesSet = skipRangesSet;
+    }
+
+    private static void addRanges(VirtualFile file,
+                                  FindModel model,
+                                  CharSequence text,
+                                  TreeMap<Integer, Integer> result,
+                                  FindModel.SearchContext searchContext,
+                                  FindManagerImpl manager) {
       FindModel clonedModel = model.clone();
       clonedModel.setSearchContext(searchContext);
       clonedModel.setForward(true);
       int offset = 0;
 
       while(true) {
-        FindResult customResult = findStringLoop(text, offset, clonedModel, file, null);
+        FindResult customResult = manager.findStringLoop(text, offset, clonedModel, file, null);
         if (!customResult.isStringFound()) break;
         result.put(customResult.getStartOffset(), customResult.getEndOffset());
         offset = Math.max(customResult.getEndOffset(), offset + 1);  // avoid loop for zero size reg exps matches
@@ -367,7 +354,7 @@ public final class FindManagerImpl extends FindManager {
     }
 
     @Override
-    public boolean apply(@Nullable FindResult input) {
+    public boolean test(@Nullable FindResult input) {
       if (input == null || !input.isStringFound()) return true;
       NavigableMap<Integer, Integer> map = mySkipRangesSet.headMap(input.getStartOffset(), true);
       for(Map.Entry<Integer, Integer> e:map.descendingMap().entrySet()) {
@@ -378,9 +365,10 @@ public final class FindManagerImpl extends FindManager {
       return true;
     }
   }
-  private static final Key<ThreadLocal<FindExceptCommentsOrLiteralsData>> ourExceptCommentsOrLiteralsDataKey = KeyWithDefaultValue.create("except.comments.literals.search.data", () -> new ThreadLocal<>());
+  private static final Key<ThreadLocal<SoftReference<FindExceptCommentsOrLiteralsData>>> ourExceptCommentsOrLiteralsDataKey
+    = KeyWithDefaultValue.create("except.comments.literals.search.data", () -> new ThreadLocal<>());
 
-  private Predicate<FindResult> getFindContextPredicate(@NotNull FindModel model, VirtualFile file, CharSequence text) {
+  private Predicate<FindResult> getFindContextPredicate(@NotNull FindModel model, @Nullable VirtualFile file, @NotNull CharSequence text) {
     if (file == null) return null;
     FindModel.SearchContext context = model.getSearchContext();
     if( context == FindModel.SearchContext.ANY || context == FindModel.SearchContext.IN_COMMENTS ||
@@ -388,15 +376,16 @@ public final class FindManagerImpl extends FindManager {
       return null;
     }
 
-    ThreadLocal<FindExceptCommentsOrLiteralsData> data;
+    ThreadLocal<SoftReference<FindExceptCommentsOrLiteralsData>> data;
     synchronized (model) {
       data = model.getUserData(ourExceptCommentsOrLiteralsDataKey);
       assert data != null;
     }
 
-    FindExceptCommentsOrLiteralsData currentThreadData = data.get();
+    SoftReference<FindExceptCommentsOrLiteralsData> currentThreadDataRef = data.get();
+    FindExceptCommentsOrLiteralsData currentThreadData = currentThreadDataRef == null ? null : currentThreadDataRef.get();
     if (currentThreadData == null || !currentThreadData.isAcceptableFor(model, file, text)) {
-      data.set(currentThreadData = new FindExceptCommentsOrLiteralsData(file, model, text));
+      data.set(new SoftReference<>(currentThreadData = FindExceptCommentsOrLiteralsData.create(file, model, text, this)));
     }
     return currentThreadData;
   }
@@ -543,7 +532,8 @@ public final class FindManagerImpl extends FindManager {
     }
   }
 
-  private static final Key<ThreadLocal<CommentsLiteralsSearchData>> ourCommentsLiteralsSearchDataKey = KeyWithDefaultValue.create("comments.literals.search.data", () -> new ThreadLocal<>());
+  private static final Key<ThreadLocal<SoftReference<CommentsLiteralsSearchData>>> ourCommentsLiteralsSearchDataKey
+    = KeyWithDefaultValue.create("comments.literals.search.data", () -> new ThreadLocal<>());
 
   @NotNull
   private FindResult findInCommentsAndLiterals(@NotNull CharSequence text,
@@ -551,7 +541,7 @@ public final class FindManagerImpl extends FindManager {
                                                       int offset,
                                                       @NotNull FindModel model,
                                                       @NotNull final VirtualFile file) {
-    ThreadLocal<CommentsLiteralsSearchData> data;
+    ThreadLocal<SoftReference<CommentsLiteralsSearchData>> data;
     synchronized (model) {
       data = model.getUserData(ourCommentsLiteralsSearchDataKey);
       assert data != null;
@@ -560,7 +550,8 @@ public final class FindManagerImpl extends FindManager {
     FileType ftype = file.getFileType();
     Language lang = LanguageUtil.getLanguageForPsi(myProject, file);
 
-    CommentsLiteralsSearchData currentThreadData = data.get();
+    SoftReference<CommentsLiteralsSearchData> currentThreadDataRef = data.get();
+    CommentsLiteralsSearchData currentThreadData = currentThreadDataRef == null ? null : currentThreadDataRef.get();
     if (currentThreadData == null || !Comparing.equal(currentThreadData.lastFile, file) || !currentThreadData.model.equals(model)) {
       SyntaxHighlighter highlighter = getHighlighter(file, lang);
 
@@ -619,7 +610,7 @@ public final class FindManagerImpl extends FindManager {
         LayeredLexer.ourDisableLayersFlag.set(null);
       }
 
-      data.set(currentThreadData);
+      data.set(new SoftReference<>(currentThreadData));
     }
 
     int initialStartOffset = model.isForward() && currentThreadData.startOffset < offset ? currentThreadData.startOffset : 0;
@@ -776,10 +767,10 @@ public final class FindManagerImpl extends FindManager {
 
       if (!ApplicationManager.getApplication().isHeadlessEnvironment() &&
           ourReportedPatterns.put(stringToFind.hashCode(), Boolean.TRUE) == null) {
-        String content = stringToFind + " produced stack overflow when matching content of the file";
+        String content = FindBundle.message("notification.content.regular.expression.soe", stringToFind, file.getPresentableUrl());
         LOG.info(content);
         GROUP.createNotification(FindBundle.message("notification.title.regular.expression.failed.to.match"),
-                                     content + " " + file.getPath(),
+                                 content,
                                  NotificationType.ERROR,
                                  null
                                    ).notify(myProject);
@@ -829,6 +820,7 @@ public final class FindManagerImpl extends FindManager {
   private static Matcher compileRegexAndFindFirst(FindModel model, CharSequence text, int startOffset) {
     model = normalizeIfMultilined(model);
     Matcher matcher = compileRegExp(model, text);
+    assert matcher != null;
 
     if (model.isForward()){
       if (!matcher.find(startOffset)) {
@@ -858,7 +850,8 @@ public final class FindManagerImpl extends FindManager {
     if (foundString.isEmpty() || toReplace.isEmpty()) return toReplace;
     StringBuilder buffer = new StringBuilder();
 
-    if (Character.isUpperCase(foundString.charAt(0))) {
+    char firstChar = foundString.charAt(0);
+    if (Character.isUpperCase(firstChar)) {
       buffer.append(Character.toUpperCase(toReplace.charAt(0)));
     }
     else {
@@ -884,12 +877,18 @@ public final class FindManagerImpl extends FindManager {
 
     boolean isTailUpper = true;
     boolean isTailLower = true;
+    boolean isTailChecked = false;
     for (int i = 1; i < foundString.length(); i++) {
       char foundChar = foundString.charAt(i);
       if (!Character.isLetter(foundChar)) continue;
       isTailUpper &= Character.isUpperCase(foundChar);
       isTailLower &= Character.isLowerCase(foundChar);
+      isTailChecked = true;
       if (!isTailUpper && !isTailLower) break;
+    }
+    if (!isTailChecked) {
+      isTailUpper = Character.isLetter(firstChar) && Character.isUpperCase(firstChar);
+      isTailLower = Character.isLetter(firstChar) && Character.isLowerCase(firstChar);
     }
 
     if (isTailUpper && (isReplacementLowercase || isReplacementUppercase)) {
@@ -901,6 +900,7 @@ public final class FindManagerImpl extends FindManager {
     else {
       buffer.append(toReplace.substring(1));
     }
+    System.out.println(foundString + "/"+toReplace+ "->" + buffer.toString());
     return buffer.toString();
   }
 
@@ -1029,6 +1029,7 @@ public final class FindManagerImpl extends FindManager {
       }
       editor.getScrollingModel().scrollToCaret(scrollType);
       editor.putUserData(HIGHLIGHTER_WAS_NOT_FOUND_KEY, null);
+      EditorSearchSession.logSelectionUpdate();
       return true;
     }
 

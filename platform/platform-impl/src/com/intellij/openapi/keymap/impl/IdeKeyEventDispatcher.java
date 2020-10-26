@@ -3,10 +3,7 @@ package com.intellij.openapi.keymap.impl;
 
 import com.intellij.diagnostic.EventWatcher;
 import com.intellij.diagnostic.LoadingState;
-import com.intellij.ide.DataManager;
-import com.intellij.ide.IdeBundle;
-import com.intellij.ide.IdeEventQueue;
-import com.intellij.ide.ProhibitAWTEvents;
+import com.intellij.ide.*;
 import com.intellij.ide.impl.DataManagerImpl;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.MnemonicHelper;
@@ -33,6 +30,7 @@ import com.intellij.openapi.ui.popup.ListPopupStep;
 import com.intellij.openapi.ui.popup.PopupStep;
 import com.intellij.openapi.ui.popup.util.BaseListPopupStep;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.registry.Registry;
@@ -50,7 +48,7 @@ import com.intellij.util.Alarm;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.ui.KeyboardLayoutUtil;
+import com.intellij.util.text.KeyboardLayoutUtil;
 import com.intellij.util.ui.MacUIUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
@@ -132,9 +130,22 @@ public final class IdeKeyEventDispatcher implements Disposable {
    */
   public boolean dispatchKeyEvent(final KeyEvent e){
     if (myDisposed) return false;
-    KeyboardLayoutUtil.storeAsciiForChar(e);
+
+    if (e.getID() == KeyEvent.KEY_PRESSED) {
+      storeAsciiForChar(e);
+    }
 
     if (e.isConsumed()) {
+      return false;
+    }
+
+    var focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+    var focusOwner = focusManager.getFocusOwner();
+
+    if (focusOwner instanceof KeyboardAwareFocusOwner && ((KeyboardAwareFocusOwner)focusOwner).skipKeyEventDispatcher(e)) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(String.format("Key event not processed because %s is in focus and implements %s", focusOwner, KeyboardAwareFocusOwner.class));
+      }
       return false;
     }
 
@@ -165,9 +176,6 @@ public final class IdeKeyEventDispatcher implements Disposable {
         myRightAltPressed = false;
       }
     }
-
-    KeyboardFocusManager focusManager=KeyboardFocusManager.getCurrentKeyboardFocusManager();
-    Component focusOwner = focusManager.getFocusOwner();
 
     // shortcuts should not work in shortcut setup fields
     if (focusOwner instanceof ShortcutTextField) {
@@ -240,6 +248,15 @@ public final class IdeKeyEventDispatcher implements Disposable {
     }
   }
 
+  private static void storeAsciiForChar(@NotNull KeyEvent e) {
+    char aChar = e.getKeyChar();
+    if (aChar == KeyEvent.CHAR_UNDEFINED) return;
+    int mods = e.getModifiers();
+    if ((mods & ~InputEvent.SHIFT_MASK & ~InputEvent.SHIFT_DOWN_MASK) != 0) return;
+
+    KeyboardLayoutUtil.storeAsciiForChar(e.getKeyCode(), aChar, KeyEvent.VK_A, KeyEvent.VK_Z);
+  }
+
   private static boolean isSpeedSearchEditing(KeyEvent e) {
     int keyCode = e.getKeyCode();
     if (keyCode == KeyEvent.VK_BACK_SPACE) {
@@ -304,7 +321,7 @@ public final class IdeKeyEventDispatcher implements Disposable {
     return true;
   }
 
-  private static class ReflectionHolder {
+  private static final class ReflectionHolder {
     static final Method getCachedStroke = Objects.requireNonNull(
       ReflectionUtil.getDeclaredMethod(AWTKeyStroke.class, "getCachedStroke", char.class, int.class, int.class, boolean.class));
   }
@@ -468,7 +485,7 @@ public final class IdeKeyEventDispatcher implements Disposable {
       final ArrayList<Pair<AnAction, KeyStroke>> secondKeyStrokes = getSecondKeystrokeActions();
 
       final Project project = CommonDataKeys.PROJECT.getData(dataContext);
-      StringBuilder message = new StringBuilder();
+      @NlsContexts.StatusBarText StringBuilder message = new StringBuilder();
       message.append(KeyMapBundle.message("prefix.key.pressed.message"));
       message.append(' ');
       for (int i = 0; i < secondKeyStrokes.size(); i++) {
@@ -649,8 +666,7 @@ public final class IdeKeyEventDispatcher implements Disposable {
         ((DataManagerImpl.MyDataContext)context).setEventCount(IdeEventQueue.getInstance().getEventCount());
       }
       actionManager.fireBeforeActionPerformed(action, actionEvent.getDataContext(), actionEvent);
-      Component component = actionEvent.getData(PlatformDataKeys.CONTEXT_COMPONENT);
-      if (component != null && !component.isShowing()) {
+      if (isContextComponentNotVisible(actionEvent)) {
         logTimeMillis(startedAt, action);
         return true;
       }
@@ -679,6 +695,11 @@ public final class IdeKeyEventDispatcher implements Disposable {
 
     IdeEventQueue.getInstance().flushDelayedKeyEvents();
     return false;
+  }
+
+  private static boolean isContextComponentNotVisible(AnActionEvent actionEvent) {
+    Component component = actionEvent.getData(PlatformDataKeys.CONTEXT_COMPONENT);
+    return component != null && !component.isShowing();
   }
 
   private static void showDumbModeBalloonLaterIfNobodyConsumesEvent(@Nullable Project project,
@@ -735,10 +756,18 @@ public final class IdeKeyEventDispatcher implements Disposable {
   /**
    * This method fills {@code myActions} list.
    */
+  KeyEvent lastKeyEventForCurrentContext;
   public void updateCurrentContext(Component component, @NotNull Shortcut sc) {
+    KeyEvent keyEvent = myContext.getInputEvent();
     myContext.setFoundComponent(null);
     myContext.setHasSecondStroke(false);
     myContext.getActions().clear();
+
+    if (Registry.is("ide.edt.update.context.only.on.key.pressed.event")) {
+      if (keyEvent == null || keyEvent.getID() != KeyEvent.KEY_PRESSED) return;
+      if (keyEvent == lastKeyEventForCurrentContext) return;
+      lastKeyEventForCurrentContext = keyEvent;
+    }
 
     if (isControlEnterOnDialog(component, sc)) return;
 
@@ -935,7 +964,7 @@ public final class IdeKeyEventDispatcher implements Disposable {
       return new ActionListCellRenderer();
     }
 
-    private static ListPopupStep buildStep(@NotNull final List<? extends Pair<AnAction, KeyStroke>> actions, final DataContext ctx) {
+    private static ListPopupStep<?> buildStep(@NotNull final List<? extends Pair<AnAction, KeyStroke>> actions, final DataContext ctx) {
       return new BaseListPopupStep<Pair<AnAction, KeyStroke>>(IdeBundle.message("popup.title.choose.action"), ContainerUtil.findAll(actions, pair -> {
         final AnAction action = pair.getFirst();
         final Presentation presentation = action.getTemplatePresentation().clone();

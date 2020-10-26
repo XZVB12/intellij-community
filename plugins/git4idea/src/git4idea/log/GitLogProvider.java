@@ -7,6 +7,7 @@ import com.intellij.openapi.diagnostic.Attachment;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.util.registry.RegistryValue;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.VcsException;
@@ -339,11 +340,10 @@ public class GitLogProvider implements VcsLogProvider, VcsIndexableLogProvider {
     return !repository.getInfo().isShallow();
   }
 
-  @NotNull
   @Override
-  public List<? extends VcsCommitMetadata> readMetadata(@NotNull final VirtualFile root, @NotNull List<String> hashes)
+  public void readMetadata(@NotNull VirtualFile root, @NotNull List<String> hashes, @NotNull Consumer<? super VcsCommitMetadata> consumer)
     throws VcsException {
-    return GitLogUtil.collectMetadata(myProject, myVcs, root, hashes);
+    GitLogUtil.collectMetadata(myProject, myVcs, root, hashes, consumer);
   }
 
   @NotNull
@@ -389,7 +389,7 @@ public class GitLogProvider implements VcsLogProvider, VcsIndexableLogProvider {
   @Override
   public Disposable subscribeToRootRefreshEvents(@NotNull final Collection<? extends VirtualFile> roots,
                                                  @NotNull final VcsLogRefresher refresher) {
-    MessageBusConnection connection = myProject.getMessageBus().connect(myProject);
+    MessageBusConnection connection = myProject.getMessageBus().connect();
     connection.subscribe(GitRepository.GIT_REPO_CHANGE, repository -> {
       VirtualFile root = repository.getRoot();
       if (roots.contains(root)) {
@@ -634,7 +634,11 @@ public class GitLogProvider implements VcsLogProvider, VcsIndexableLogProvider {
   }
 
   public static boolean isIndexingOn() {
-    return Registry.is("vcs.log.index.git");
+    return getIndexingRegistryOption().asBoolean();
+  }
+
+  public static @NotNull RegistryValue getIndexingRegistryOption() {
+    return Registry.get("vcs.log.index.git");
   }
 
   private static String prepareParameter(String paramName, String value) {

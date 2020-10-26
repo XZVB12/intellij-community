@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.diff.tools.util.base;
 
 import com.intellij.diff.DiffContext;
@@ -29,6 +29,7 @@ import com.intellij.ui.ToggleActionButton;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -39,7 +40,7 @@ import java.util.*;
 
 import static com.intellij.diff.util.DiffUtil.isUserDataFlagSet;
 
-public class TextDiffViewerUtil {
+public final class TextDiffViewerUtil {
   private static final Logger LOG = Logger.getInstance(TextDiffViewerUtil.class);
 
   @NotNull
@@ -188,7 +189,7 @@ public class TextDiffViewerUtil {
     protected abstract void setValue(@NotNull T option);
 
     @NotNull
-    protected abstract String getText(@NotNull T option);
+    protected abstract @Nls String getText(@NotNull T option);
 
     private class MyAction extends AnAction implements DumbAware {
       @NotNull private final T myOption;
@@ -205,10 +206,10 @@ public class TextDiffViewerUtil {
     }
   }
 
-  private static abstract class EnumPolicySettingAction<T extends Enum> extends TextDiffViewerUtil.ComboBoxSettingAction<T> {
+  public static abstract class EnumPolicySettingAction<T extends Enum> extends TextDiffViewerUtil.ComboBoxSettingAction<T> {
     private final T @NotNull [] myPolicies;
 
-    EnumPolicySettingAction(T @NotNull [] policies) {
+    public EnumPolicySettingAction(T @NotNull [] policies) {
       assert policies.length > 0;
       myPolicies = policies;
     }
@@ -244,7 +245,9 @@ public class TextDiffViewerUtil {
     protected abstract T getStoredValue();
 
     @NotNull
-    protected abstract List<T> getValueSubstitutes(@NotNull T value);
+    protected List<T> getValueSubstitutes(@NotNull T value) {
+      return Collections.emptyList();
+    }
   }
 
   public static class HighlightPolicySettingAction extends EnumPolicySettingAction<HighlightPolicy> {
@@ -281,6 +284,7 @@ public class TextDiffViewerUtil {
       return Collections.singletonList(HighlightPolicy.BY_WORD);
     }
 
+    @Nls
     @NotNull
     @Override
     protected String getText(@NotNull HighlightPolicy option) {
@@ -322,6 +326,7 @@ public class TextDiffViewerUtil {
       return Collections.singletonList(IgnorePolicy.DEFAULT);
     }
 
+    @Nls
     @NotNull
     @Override
     protected String getText(@NotNull IgnorePolicy option) {

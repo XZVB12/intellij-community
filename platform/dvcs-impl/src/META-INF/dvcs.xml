@@ -22,8 +22,9 @@
     <action id="Vcs.CherryPick" class="com.intellij.dvcs.cherrypick.VcsCherryPickAction" icon="DvcsImplIcons.CherryPick"/>
     <action id="Vcs.Push" class="com.intellij.dvcs.push.VcsPushAction" icon="AllIcons.Vcs.Push">
       <keyboard-shortcut first-keystroke="control shift K" keymap="$default"/>
-      <add-to-group group-id="VcsToobarActions" anchor="after" relative-to-action="ChangesView.ToggleCommitUi"/>
-      <add-to-group group-id="VcsNavBarToobarActions" anchor="after" relative-to-action="ChangesView.ToggleCommitUi"/>
+      <add-to-group group-id="VcsToolbarActions" anchor="after" relative-to-action="ChangesView.ToggleCommitUi"/>
+      <add-to-group group-id="VcsNavBarToolbarActions" anchor="after" relative-to-action="ChangesView.ToggleCommitUi"/>
+      <add-to-group group-id="SegmentedVcsActionsBarGroup" anchor="after" relative-to-action="ChangesView.ToggleCommitUi"/>
     </action>
     <action id="Vcs.Force.Push" class="com.intellij.dvcs.push.ui.ForcePushAction"/>
 
@@ -74,6 +75,9 @@
 
     <projectService serviceImplementation="com.intellij.dvcs.repo.VcsRepositoryManager"/>
     <vcsStartupActivity implementation="com.intellij.dvcs.repo.VcsRepositoryManager$MyStartupActivity"/>
+    <iconDescriptionBundle resourceBundle="messages.DvcsBundle"/>
+
+    <editorNotificationProvider implementation="com.intellij.dvcs.ignore.IgnoredToExcludeNotificationProvider"/>
   </extensions>
 </idea-plugin>
 

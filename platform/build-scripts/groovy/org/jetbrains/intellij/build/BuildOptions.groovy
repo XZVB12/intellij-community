@@ -11,9 +11,19 @@ class BuildOptions {
   /**
    * By default build scripts compile project classes to a special output directory (to not interfere with the default project output if
    * invoked on a developer machine). Pass 'true' to this system property to skip compilation step and use compiled classes from the project output instead.
+   *
+   * @see {@link org.jetbrains.intellij.build.impl.CompilationContextImpl#getProjectOutputDirectory}
    */
   public static final String USE_COMPILED_CLASSES_PROPERTY = "intellij.build.use.compiled.classes"
   boolean useCompiledClassesFromProjectOutput = SystemProperties.getBooleanProperty(USE_COMPILED_CLASSES_PROPERTY, false)
+
+  /**
+   * Use this property to change the project compiled classes output directory.
+   *
+   * @see {@link org.jetbrains.intellij.build.impl.CompilationContextImpl#getProjectOutputDirectory}
+   */
+  public static final String PROJECT_CLASSES_OUTPUT_DIRECTORY_PROPERTY = "intellij.project.classes.output.directory"
+  String projectClassesOutputDirectory = System.getProperty(PROJECT_CLASSES_OUTPUT_DIRECTORY_PROPERTY)
 
   /**
    * Specifies for which operating systems distributions should be built.
@@ -77,12 +87,22 @@ class BuildOptions {
    * Note: skipping this step won't affect publication of 'Artifact paths' in TeamCity build settings and vice versa
    */
   static final String TEAMCITY_ARTIFACTS_PUBLICATION = "teamcity_artifacts_publication"
+  /**
+   * @see org.jetbrains.intellij.build.fus.StatisticsRecorderBundledMetadataProvider
+   */
+  static final String FUS_METADATA_BUNDLE_STEP = "fus_metadata_bundle_step"
 
   /**
    * Pass 'true' to this system property to produce an additional .dmg archive for macOS without bundled JRE.
    */
   public static final String BUILD_DMG_WITHOUT_BUNDLED_JRE = "intellij.build.dmg.without.bundled.jre"
   boolean buildDmgWithoutBundledJre = SystemProperties.getBooleanProperty(BUILD_DMG_WITHOUT_BUNDLED_JRE, SystemProperties.getBooleanProperty("artifact.mac.no.jdk", false))
+
+  /**
+   * Pass 'false' to this system property to skip building .dmg with bundled JRE.
+   */
+  public static final String BUILD_DMG_WITH_BUNDLED_JRE = "intellij.build.dmg.with.bundled.jre"
+  boolean buildDmgWithBundledJre = SystemProperties.getBooleanProperty(BUILD_DMG_WITH_BUNDLED_JRE, true)
 
   /**
    * Pass 'true' to this system property to produce .snap packages.
@@ -129,6 +149,9 @@ class BuildOptions {
    */
   String outputRootPath = System.getProperty("intellij.build.output.root")
 
+  static final String CLEAN_OUTPUT_FOLDER_PROPERTY = "intellij.build.clean.output.root"
+  boolean cleanOutputFolder = SystemProperties.getBooleanProperty(CLEAN_OUTPUT_FOLDER_PROPERTY, true)
+
   /**
    * If {@code true} the build is running in 'Development mode' i.e. its artifacts aren't supposed to be used in production. In development
    * mode build scripts won't fail if some non-mandatory dependencies are missing and will just show warnings.
@@ -159,26 +182,40 @@ class BuildOptions {
   int bundledJreVersion = System.getProperty("intellij.build.bundled.jre.version", "11").toInteger()
 
   /**
-   * Specifies JRE build to be bundled with distributions. If {@code null} then jdkBuild from gradle.properties will be used.
+   * Specifies JRE build to be bundled with distributions. If {@code null} then {@code jdkBuild} from gradle.properties will be used.
    */
   String bundledJreBuild = System.getProperty("intellij.build.bundled.jre.build")
 
   /**
-   * Directory path to unpack JetBrains JDK builds into
+   * Specifies a prefix to use when looking for an artifact of a JRE to be bundled with distributions.
+   * If {@code null}, {@code "jbr-"} will be used.
+   *
+   * @see org.jetbrains.intellij.build.JetBrainsRuntimeDistribution
+   */
+  String bundledJrePrefix = System.getProperty("intellij.build.bundled.jre.prefix")
+
+  /**
+   * Directory path to unpack JetBrains Runtime builds into
    */
   static final String JDKS_TARGET_DIR_OPTION = "intellij.build.jdks.target.dir"
   String jdksTargetDir = System.getProperty(JDKS_TARGET_DIR_OPTION)
 
   /**
-   * Specifies JetBrains JDK version to be used by build scripts, 8 by default.
+   * Specifies JetBrains Runtime version to be used as project SDK, 11 by default.
    */
   static final String JDK_VERSION_OPTION = "intellij.build.jdk.version"
-  int jbrVersion = System.getProperty(JDK_VERSION_OPTION, "8").toInteger()
+  int jbrVersion = System.getProperty(JDK_VERSION_OPTION, "11").toInteger()
 
   /**
    * Specifies an algorithm to build distribution checksums.
    */
   String hashAlgorithm = "SHA-384"
+
+  /**
+   * Enables module structure validation, false by default
+   */
+  static final String VALIDATE_MODULES_STRUCTURE = "intellij.build.module.structure"
+  boolean validateModuleStructure = System.getProperty(VALIDATE_MODULES_STRUCTURE, "false").toBoolean()
 
   BuildOptions() {
     targetOS = System.getProperty("intellij.build.target.os")

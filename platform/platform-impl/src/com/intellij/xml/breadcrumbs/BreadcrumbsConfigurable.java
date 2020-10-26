@@ -21,7 +21,6 @@ import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -180,7 +179,7 @@ final class BreadcrumbsConfigurable extends CompositeConfigurable<BreadcrumbsCon
     for (JCheckBox box : map.values()) box.setEnabled(enabled);
   }
 
-  static class BreadcrumbsProviderConfigurable implements SearchableConfigurable {
+  static final class BreadcrumbsProviderConfigurable implements SearchableConfigurable {
 
     private final BreadcrumbsProvider myProvider;
     private final Language myLanguage;
@@ -190,9 +189,8 @@ final class BreadcrumbsConfigurable extends CompositeConfigurable<BreadcrumbsCon
       myLanguage = language;
     }
 
-    @Nullable
     @Override
-    public JCheckBox createComponent() {
+    public @NotNull JCheckBox createComponent() {
       return new JCheckBox(myLanguage.getDisplayName());
     }
 

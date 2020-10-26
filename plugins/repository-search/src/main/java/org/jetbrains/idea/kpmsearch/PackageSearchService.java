@@ -14,8 +14,8 @@ import org.jetbrains.idea.reposearch.DependencySearchProvider;
 import org.jetbrains.idea.reposearch.RepositoryArtifactData;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
@@ -35,13 +35,33 @@ public class PackageSearchService implements DependencySearchProvider {
 
   @Override
   public void fulltextSearch(@NotNull String searchString, @NotNull Consumer<RepositoryArtifactData> consumer) {
+    searchString = normalize(searchString);
     ProgressManager.checkCanceled();
     String url = createUrlFullTextSearch(searchString);
     doRequest(consumer, url);
   }
 
+  private String normalize(String string) {
+    if (string == null) return null;
+    StringBuilder builder = new StringBuilder();
+    boolean isOK = true;
+    for (char c : string.toCharArray()) {
+      if ((c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z') ||
+          c == ':' || c == '-') {
+        builder.append(c);
+      }
+      else {
+        isOK = false;
+      }
+    }
+    return isOK ? string : builder.toString();
+  }
+
   @Override
   public void suggestPrefix(@Nullable String groupId, @Nullable String artifactId, @NotNull Consumer<RepositoryArtifactData> consumer) {
+    artifactId = normalize(artifactId);
+    groupId = normalize(groupId);
     ProgressManager.checkCanceled();
     String url = createUrlSuggestPrefix(groupId, artifactId);
     doRequest(consumer, url);
@@ -141,11 +161,6 @@ public class PackageSearchService implements DependencySearchProvider {
 
   @NotNull
   private static String encode(@NotNull String s) {
-    try {
-      return URLEncoder.encode(s.trim(), "UTF-8");
-    }
-    catch (UnsupportedEncodingException e) {
-      throw new RuntimeException(e);
-    }
+    return URLEncoder.encode(s.trim(), StandardCharsets.UTF_8);
   }
 }

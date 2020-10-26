@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.resolve;
 
 import com.intellij.openapi.util.Key;
@@ -21,7 +21,7 @@ import static com.intellij.util.containers.ContainerUtil.mapNotNull;
 /**
  * @author ven
  */
-public class CollectClassMembersUtil {
+public final class CollectClassMembersUtil {
 
   private static class ClassMembers {
     private final Map<String, CandidateInfo> fields = new LinkedHashMap<>();
@@ -86,11 +86,11 @@ public class CollectClassMembersUtil {
 
   @NotNull
   private static ClassMembers buildCache(@NotNull final PsiClass aClass, final boolean includeSynthetic) {
-    return CachedValuesManager.getManager(aClass.getProject()).getCachedValue(aClass, getMemberCacheKey(includeSynthetic), () -> {
+    return CachedValuesManager.getCachedValue(aClass, getMemberCacheKey(includeSynthetic), () -> {
       ClassMembers result = new ClassMembers();
       processClass(aClass, result.fields, result.methods, result.innerClasses, new HashSet<>(), PsiSubstitutor.EMPTY, includeSynthetic);
-      return CachedValueProvider.Result.create(result, PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT);
-    }, false);
+      return CachedValueProvider.Result.create(result, PsiModificationTracker.MODIFICATION_COUNT);
+    });
   }
 
   @NotNull

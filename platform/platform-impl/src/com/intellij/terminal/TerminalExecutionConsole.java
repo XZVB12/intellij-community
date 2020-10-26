@@ -169,10 +169,8 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
   }
 
   @Override
-  public void attachToProcess(ProcessHandler processHandler) {
-    if (processHandler != null) {
-      attachToProcess(processHandler, true);
-    }
+  public void attachToProcess(@NotNull ProcessHandler processHandler) {
+    attachToProcess(processHandler, true);
   }
 
   /**
@@ -310,7 +308,7 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
            !(processHandler instanceof ColoredProcessHandler);
   }
 
-  private class ConsoleTerminalWidget extends JBTerminalWidget implements DataProvider {
+  private final class ConsoleTerminalWidget extends JBTerminalWidget implements DataProvider {
     private ConsoleTerminalWidget(@NotNull Project project, @NotNull JBTerminalSystemSettingsProviderBase provider) {
       super(project, 200, 24, provider, TerminalExecutionConsole.this, TerminalExecutionConsole.this);
     }
@@ -347,9 +345,8 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
         @Override
         public byte[] getCode(int key, int modifiers) {
           if (key == KeyEvent.VK_ENTER && modifiers == 0 && myEnterKeyDefaultCodeEnabled) {
-            // pty4j expects \r as Enter key code
-            // https://github.com/JetBrains/pty4j/blob/0.9.4/test/com/pty4j/PtyTest.java#L54
-            return LineSeparator.CR.getSeparatorBytes();
+            PtyProcess process = getPtyProcess();
+            return process != null ? new byte[]{process.getEnterKeyCode()} : LineSeparator.CR.getSeparatorBytes();
           }
           return super.getCode(key, modifiers);
         }
@@ -366,7 +363,13 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
     }
   }
 
-  private class ClearAction extends DumbAwareAction {
+  private @Nullable PtyProcess getPtyProcess() {
+    ProcessHandlerTtyConnector phc = ObjectUtils.tryCast(myTerminalWidget.getTtyConnector(), ProcessHandlerTtyConnector.class);
+    BaseProcessHandler<?> processHandler = phc != null ? phc.getProcessHandler() : null;
+    return processHandler != null ? ObjectUtils.tryCast(processHandler.getProcess(), PtyProcess.class) : null;
+  }
+
+  private final class ClearAction extends DumbAwareAction {
     private ClearAction() {
       super(ExecutionBundle.messagePointer("clear.all.from.console.action.name"),
             ExecutionBundle.messagePointer("clear.all.from.console.action.text"), AllIcons.Actions.GC);
@@ -383,7 +386,7 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
     }
   }
 
-  private class ScrollToTheEndAction extends DumbAwareAction {
+  private final class ScrollToTheEndAction extends DumbAwareAction {
     private ScrollToTheEndAction() {
       super(ActionsBundle.messagePointer("action.EditorConsoleScrollToTheEnd.text"),
             ActionsBundle.messagePointer("action.EditorConsoleScrollToTheEnd.text"),

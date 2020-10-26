@@ -21,6 +21,7 @@ import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.terminal.TerminalExecutionConsole;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -45,7 +46,7 @@ public class TestsOutputConsolePrinter implements Printer, Disposable {
         }
       };
 
-  public TestsOutputConsolePrinter(@NotNull BaseTestsOutputConsoleView testsOutputConsoleView, final TestConsoleProperties properties, final AbstractTestProxy unboundOutputRoot) {
+  public TestsOutputConsolePrinter(@NotNull BaseTestsOutputConsoleView testsOutputConsoleView, @NotNull TestConsoleProperties properties, final AbstractTestProxy unboundOutputRoot) {
     myConsole = testsOutputConsoleView.getConsole();
     myProperties = properties;
     myUnboundOutputRoot = unboundOutputRoot;
@@ -134,8 +135,11 @@ public class TestsOutputConsolePrinter implements Printer, Disposable {
 
   @Override
   public void mark() {
-    if (TestConsoleProperties.SCROLL_TO_STACK_TRACE.value(myProperties))
-      myMarkOffset = myConsole.getContentSize();
+    if (TestConsoleProperties.SCROLL_TO_STACK_TRACE.value(myProperties)) {
+      if (myMarkOffset == 0 || Registry.is("scroll.to.first.trace", true)) {
+        myMarkOffset = myConsole.getContentSize();
+      }
+    }
   }
 
   @Override

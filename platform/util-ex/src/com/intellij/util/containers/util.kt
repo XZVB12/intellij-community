@@ -1,11 +1,11 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.containers
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.util.SmartList
 import com.intellij.util.lang.CompoundRuntimeException
-import gnu.trove.THashSet
 import java.util.*
+import java.util.HashSet
 import java.util.stream.Stream
 
 fun <K, V> MutableMap<K, MutableList<V>>.remove(key: K, value: V) {
@@ -27,9 +27,39 @@ fun <K, V> MutableMap<K, MutableList<V>>.putValue(key: K, value: V) {
 
 fun Collection<*>?.isNullOrEmpty(): Boolean = this == null || isEmpty()
 
-val <T> List<T>.tail: List<T> get() = this.subList(1, this.size)
+/**
+ * @return all the elements of a non-empty list except the first one
+ */
+fun <T> List<T>.tail(): List<T> {
+  require(isNotEmpty())
+  return subList(1, size)
+}
 
-fun <T> List<T>.toHeadAndTail(): Pair<T, List<T>>? = if (this.isEmpty()) null else this.first() to this.tail
+/**
+ * @return all the elements of a non-empty list except the first one or empty list
+ */
+fun <T> List<T>.tailOrEmpty(): List<T> {
+  if (isEmpty()) return emptyList()
+  return subList(1, size)
+}
+
+/**
+ * @return pair of the first element and the rest of a non-empty list
+ */
+fun <T> List<T>.headTail(): Pair<T, List<T>> = Pair(first(), tail())
+
+/**
+ * @return pair of the first element and the rest of a non-empty list, or `null` if a list is empty
+ */
+fun <T> List<T>.headTailOrNull(): Pair<T, List<T>>? = if (isEmpty()) null else headTail()
+
+/**
+ * @return all the elements of a non-empty list except the last one
+ */
+fun <T> List<T>.init(): List<T> {
+  require(isNotEmpty())
+  return subList(0, size - 1)
+}
 
 fun <T> List<T>?.nullize(): List<T>? = if (isNullOrEmpty()) null else this
 
@@ -146,12 +176,10 @@ inline fun <T, R> Collection<T>.mapSmart(transform: (T) -> R): List<R> {
 inline fun <T, R> Collection<T>.mapSmartSet(transform: (T) -> R): Set<R> {
   return when (val size = size) {
     1 -> {
-      val result = SmartHashSet<R>()
-      result.add(transform(first()))
-      result
+      Collections.singleton(transform(first()))
     }
     0 -> emptySet()
-    else -> mapTo(THashSet(size), transform)
+    else -> mapTo(HashSet(size), transform)
   }
 }
 

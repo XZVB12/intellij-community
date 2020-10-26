@@ -1,15 +1,11 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.startup.impl;
 
-import com.intellij.diagnostic.Activity;
-import com.intellij.diagnostic.ActivityCategory;
-import com.intellij.diagnostic.PerformanceWatcher;
-import com.intellij.diagnostic.StartUpMeasurer;
+import com.intellij.diagnostic.*;
 import com.intellij.diagnostic.StartUpMeasurer.Activities;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.plugins.cl.PluginClassLoader;
-import com.intellij.ide.startup.ProjectLoadListener;
 import com.intellij.ide.startup.ServiceNotReadyException;
 import com.intellij.ide.startup.StartupManagerEx;
 import com.intellij.openapi.application.Application;
@@ -27,27 +23,34 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressIndicatorProvider;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.util.BackgroundTaskUtil;
+import com.intellij.openapi.project.DumbAwareRunnable;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.impl.ProjectManagerImpl;
+import com.intellij.openapi.project.impl.ProjectManagerExImplKt;
 import com.intellij.openapi.startup.StartupActivity;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.GuiUtils;
+import com.intellij.util.TimeoutUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
-import com.intellij.codeWithMe.ClientId;
+import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+@SuppressWarnings("IncorrectParentDisposable")
 @ApiStatus.Internal
 public class StartupManagerImpl extends StartupManagerEx {
   private static final Logger LOG = Logger.getInstance(StartupManagerImpl.class);
@@ -55,11 +58,15 @@ public class StartupManagerImpl extends StartupManagerEx {
 
   private final Object myLock = new Object();
 
-  private final Deque<Runnable> myStartupActivities = new ArrayDeque<>();
+  private final Deque<Runnable> startupActivities = new ArrayDeque<>();
+  private final Deque<Runnable> postStartupActivities = new ArrayDeque<>();
 
-  private final Deque<Runnable> myDumbAwarePostStartupActivities = new ArrayDeque<>();
-  private final Deque<Runnable> myNotDumbAwarePostStartupActivities = new ArrayDeque<>();
-  private volatile boolean postStartupActivitiesPassed;
+  @MagicConstant(intValues = {0, DUMB_AWARE_PASSED, ALL_PASSED})
+  private volatile int postStartupActivitiesPassed;
+  private final CompletableFuture<Object> allActivitiesPassed = new CompletableFuture<>();
+
+  private static final int DUMB_AWARE_PASSED = 1;
+  private static final int ALL_PASSED = 2;
 
   private volatile boolean myStartupActivitiesPassed;
 
@@ -78,35 +85,31 @@ public class StartupManagerImpl extends StartupManagerEx {
     checkNonDefaultProject();
     LOG.assertTrue(!myStartupActivitiesPassed, "Registering startup activity that will never be run");
     synchronized (myLock) {
-      myStartupActivities.add(runnable);
+      startupActivities.add(runnable);
     }
   }
 
   @Override
   public void registerPostStartupActivity(@NotNull Runnable runnable) {
-    checkBeforeAddingPostStartupActivity();
-    Deque<Runnable> list = DumbService.isDumbAware(runnable) ? myDumbAwarePostStartupActivities : myNotDumbAwarePostStartupActivities;
-    synchronized (myLock) {
-      checkThatPostActivitiesNotPassed();
-      list.add(runnable);
+    if (DumbService.isDumbAware(runnable)) {
+      runAfterOpened(runnable);
+      return;
     }
-  }
 
-  @Override
-  public void registerPostStartupDumbAwareActivity(@NotNull Runnable runnable) {
-    checkBeforeAddingPostStartupActivity();
-    synchronized (myLock) {
-      myDumbAwarePostStartupActivities.add(ClientId.decorateRunnable(runnable));
-    }
-  }
-
-  private void checkBeforeAddingPostStartupActivity() {
     checkNonDefaultProject();
     checkThatPostActivitiesNotPassed();
+
+    LOG.warn("Activities registered via registerPostStartupActivity must be dumb-aware: " + runnable);
+    synchronized (myLock) {
+      checkThatPostActivitiesNotPassed();
+      postStartupActivities.add((DumbAwareRunnable)() -> {
+        DumbService.getInstance(myProject).unsafeRunWhenSmart(runnable);
+      });
+    }
   }
 
   private void checkThatPostActivitiesNotPassed() {
-    if (postStartupActivitiesPassed) {
+    if (postStartupActivityPassed()) {
       LOG.error("Registering post-startup activity that will never be run:" +
                 " disposed=" + myProject.isDisposed() + "; open=" + myProject.isOpen() +
                 "; passed=" + myStartupActivitiesPassed);
@@ -120,46 +123,51 @@ public class StartupManagerImpl extends StartupManagerEx {
 
   @Override
   public boolean postStartupActivityPassed() {
-    return postStartupActivitiesPassed;
+    return postStartupActivitiesPassed == ALL_PASSED;
+  }
+
+  @Override
+  public @NotNull Future<Object> getAllActivitiesPassedFuture() {
+    return allActivitiesPassed;
   }
 
   public final void projectOpened(@Nullable ProgressIndicator indicator) {
-    if (indicator != null && ApplicationManager.getApplication().isInternal()) {
+    Application app = ApplicationManager.getApplication();
+    if (indicator != null && app.isInternal()) {
       indicator.setText(IdeBundle.message("startup.indicator.text.running.startup.activities"));
     }
 
-    doRunStartUpActivities(indicator);
+    runStartUpActivities(indicator);
 
-    // If called in EDT - client expect that work will be done after call, executing in a pooled thread maybe not expected.
-    // In test mode project opened not under progress, so, execute directly in current thread.
-    Application app = ApplicationManager.getApplication();
-    if (app.isUnitTestMode() || app.isDispatchThread()) {
-      runPostStartupActivities();
+    if (indicator != null) {
+      indicator.checkCanceled();
+    }
+
+    LoadingState phase = DumbService.isDumb(myProject) ? LoadingState.PROJECT_OPENED : LoadingState.INDEXING_FINISHED;
+    StartUpMeasurer.compareAndSetCurrentState(LoadingState.COMPONENTS_LOADED, phase);
+
+    if (app.isUnitTestMode() && !app.isDispatchThread()) {
+      BackgroundTaskUtil.runUnderDisposeAwareIndicator(myProject, this::runPostStartupActivities);
     }
     else {
-      if (indicator != null) {
-        indicator.checkCanceled();
-      }
-
-      app.executeOnPooledThread(() -> {
-        if (myProject.isDisposed()) {
-          return;
+      AppExecutorUtil.getAppExecutorService().execute(() -> {
+        if (!myProject.isDisposed()) {
+          BackgroundTaskUtil.runUnderDisposeAwareIndicator(myProject, this::runPostStartupActivities);
         }
-
-        BackgroundTaskUtil.runUnderDisposeAwareIndicator(myProject, () -> {
-          runPostStartupActivities();
-
-          ApplicationManager.getApplication().getMessageBus().syncPublisher(ProjectLoadListener.TOPIC).postStartUpActivitiesPassed();
-        });
       });
+
+      if (app.isUnitTestMode()) {
+        LOG.assertTrue(app.isDispatchThread());
+        ProjectManagerExImplKt.waitAndProcessInvocationEventsInIdeEventQueue(this);
+      }
     }
   }
 
-  private void doRunStartUpActivities(@Nullable ProgressIndicator indicator) {
+  private void runStartUpActivities(@Nullable ProgressIndicator indicator) {
     LOG.assertTrue(!myStartupActivitiesPassed);
 
-    Activity activity = StartUpMeasurer.startMainActivity(Activities.PROJECT_STARTUP);
-    runActivities(myStartupActivities, indicator, null);
+    Activity activity = StartUpMeasurer.startMainActivity("project startup");
+    runActivities(startupActivities, indicator, null);
     ExtensionsAreaImpl area = (ExtensionsAreaImpl)ApplicationManager.getApplication().getExtensionArea();
     executeActivitiesFromExtensionPoint(indicator, area.getExtensionPoint("com.intellij.startupActivity"));
     myStartupActivitiesPassed = true;
@@ -195,26 +203,18 @@ public class StartupManagerImpl extends StartupManagerEx {
     });
   }
 
-  @TestOnly
-  public void runStartupActivities() {
-    if (!myStartupActivitiesPassed) {
-      doRunStartUpActivities(null);
-    }
-  }
-
   // Must be executed in a pooled thread outside of project loading modal task. The only exclusion - test mode.
-  public final void runPostStartupActivities() {
+  private void runPostStartupActivities() {
     LOG.assertTrue(myStartupActivitiesPassed);
 
     PerformanceWatcher.Snapshot snapshot = PerformanceWatcher.takeSnapshot();
     // strictly speaking, the activity is not sequential, because sub-activities are performed in different threads
-    // (depending on dumb-awareness), but because there is no other concurrent phase,
+    // (depending on dumb-awareness), but because there is no other concurrent phase,ur
     // we measure it as a sequential activity to put it on the timeline and make clear what's going on the end (avoid last "unknown" phase)
     Activity dumbAwareActivity = StartUpMeasurer.startMainActivity(Activities.PROJECT_DUMB_POST_START_UP_ACTIVITIES);
 
     AtomicReference<Activity> edtActivity = new AtomicReference<>();
     AtomicBoolean uiFreezeWarned = new AtomicBoolean();
-    AtomicBoolean eventAboutDumbUnawareActivities = new AtomicBoolean();
 
     AtomicInteger counter = new AtomicInteger();
     DumbService dumbService = DumbService.getInstance(myProject);
@@ -233,42 +233,55 @@ public class StartupManagerImpl extends StartupManagerEx {
       }
 
       counter.incrementAndGet();
-      runDumbUnawareActivity(dumbService, () -> {
+      dumbService.unsafeRunWhenSmart(() -> {
         runActivity(uiFreezeWarned, extension, pluginDescriptor, ProgressIndicatorProvider.getGlobalProgressIndicator());
-        dumbUnawarePostActivitiesPassed(edtActivity, eventAboutDumbUnawareActivities, counter.decrementAndGet());
+        dumbUnawarePostActivitiesPassed(edtActivity, counter.decrementAndGet());
       });
     });
 
-    dumbUnawarePostActivitiesPassed(edtActivity, eventAboutDumbUnawareActivities, counter.get());
+    dumbUnawarePostActivitiesPassed(edtActivity, counter.get());
 
     if (myProject.isDisposed()) {
       return;
     }
 
-    StartupActivity.POST_STARTUP_ACTIVITY.addExtensionPointListener(new ExtensionPointListener<StartupActivity>() {
+    runPostStartupActivitiesRegisteredDynamically();
+    dumbAwareActivity.end();
+
+    snapshot.logResponsivenessSinceCreation("Post-startup activities under progress");
+
+    if (!myProject.isDisposed() && !ApplicationManager.getApplication().isUnitTestMode()) {
+      scheduleBackgroundPostStartupActivities();
+      //noinspection TestOnlyProblems
+      addActivityEpListener(myProject);
+    }
+  }
+
+  @TestOnly
+  public static void addActivityEpListener(@NotNull Project project) {
+    StartupActivity.POST_STARTUP_ACTIVITY.addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
       public void extensionAdded(@NotNull StartupActivity extension, @NotNull PluginDescriptor pluginDescriptor) {
+        StartupManagerImpl startupManager = ((StartupManagerImpl)getInstance(project));
         if (DumbService.isDumbAware(extension)) {
-          runActivity(new AtomicBoolean(), extension, pluginDescriptor, ProgressIndicatorProvider.getGlobalProgressIndicator());
+          AppExecutorUtil.getAppExecutorService().execute(() -> {
+            if (!project.isDisposed()) {
+              BackgroundTaskUtil.runUnderDisposeAwareIndicator(project, () -> {
+                startupManager.runActivity(null, extension, pluginDescriptor, ProgressManager.getInstance().getProgressIndicator());
+              });
+            }
+          });
         }
         else {
-          runDumbUnawareActivity(DumbService.getInstance(myProject), () -> {
-            runActivity(null, extension, pluginDescriptor, ProgressIndicatorProvider.getGlobalProgressIndicator());
+          DumbService.getInstance(project).unsafeRunWhenSmart(() -> {
+            startupManager.runActivity(null, extension, pluginDescriptor, ProgressIndicatorProvider.getGlobalProgressIndicator());
           });
         }
       }
-    }, myProject);
-
-    runActivities(myDumbAwarePostStartupActivities, null, null);
-    dumbAwareActivity.end();
-    snapshot.logResponsivenessSinceCreation("Post-startup activities under progress");
-
-    runDumbUnawarePostStartupActivitiesRegisteredDynamically();
+    }, project);
   }
 
-  private static void dumbUnawarePostActivitiesPassed(@NotNull AtomicReference<Activity> edtActivity,
-                                                      @NotNull AtomicBoolean eventAboutDumbUnawareActivities,
-                                                      int count) {
+  private static void dumbUnawarePostActivitiesPassed(@NotNull AtomicReference<Activity> edtActivity, int count) {
     if (count != 0) {
       return;
     }
@@ -276,11 +289,6 @@ public class StartupManagerImpl extends StartupManagerEx {
     Activity activity = edtActivity.getAndSet(null);
     if (activity != null) {
       activity.end();
-    }
-
-    if (eventAboutDumbUnawareActivities.compareAndSet(false, true)) {
-      ApplicationManager.getApplication().getMessageBus().syncPublisher(ProjectLoadListener.TOPIC)
-        .dumbUnawarePostStartUpActivitiesPassed();
     }
   }
 
@@ -323,68 +331,40 @@ public class StartupManagerImpl extends StartupManagerEx {
     }
   }
 
-  @TestOnly
-  public final void runPostStartupActivitiesRegisteredDynamically() {
-    if (postStartupActivitiesPassed) {
-      return;
-    }
+  private void runPostStartupActivitiesRegisteredDynamically() {
+    runActivities(postStartupActivities, null, "project post-startup");
+    postStartupActivitiesPassed = DUMB_AWARE_PASSED;
 
-    runActivities(myDumbAwarePostStartupActivities, null, Activities.PROJECT_DUMB_POST_STARTUP);
-    runDumbUnawarePostStartupActivitiesRegisteredDynamically();
-  }
-
-  private void runDumbUnawarePostStartupActivitiesRegisteredDynamically() {
-    DumbService dumbService = DumbService.getInstance(myProject);
-    runDumbUnawareActivity(dumbService, new Runnable() {
+    DumbService.getInstance(myProject).unsafeRunWhenSmart(new Runnable() {
       @Override
       public void run() {
-        // todo should it be moved out of EDT? Not clear, do we really have a lot of such activities
-        // myDumbAwarePostStartupActivities might be non-empty if new activities were registered during dumb mode
-        runActivities(myDumbAwarePostStartupActivities, null, Activities.PROJECT_DUMB_POST_STARTUP);
-
-        while (true) {
-          List<Runnable> dumbUnaware = takeDumbUnawareStartupActivities();
-          if (dumbUnaware.isEmpty()) {
-            break;
-          }
-
-          // queue each activity in smart mode separately so that if one of them starts the dumb mode, the next ones just wait for it to finish
-          for (Runnable activity : dumbUnaware) {
-            runDumbUnawareActivity(dumbService, () -> runActivity(activity));
+        synchronized (myLock) {
+          if (postStartupActivities.isEmpty()) {
+            postStartupActivitiesPassed = ALL_PASSED;
+            allActivitiesPassed.complete(null);
+            return;
           }
         }
 
+        runActivities(postStartupActivities, null, null);
+        DumbService dumbService = DumbService.getInstance(myProject);
         if (dumbService.isDumb()) {
-          // return here later to process newly submitted activities (if any) and set myPostStartupActivitiesPassed
-          DumbService.getInstance(myProject).unsafeRunWhenSmart(this);
+          // return here later to process newly submitted activities (if any) and set postStartupActivitiesPassed
+          dumbService.unsafeRunWhenSmart(this);
         }
         else {
-          postStartupActivitiesPassed = true;
+          postStartupActivitiesPassed = ALL_PASSED;
+          allActivitiesPassed.complete(null);
         }
       }
     });
-
-    //noinspection TestOnlyProblems
-    if (!myProject.isDisposed() && !ProjectManagerImpl.isLight(myProject)) {
-      scheduleBackgroundPostStartupActivities();
-    }
-  }
-
-  private @NotNull List<Runnable> takeDumbUnawareStartupActivities() {
-    synchronized (myLock) {
-      if (myNotDumbAwarePostStartupActivities.isEmpty()) {
-        return Collections.emptyList();
-      }
-
-      List<Runnable> result = new ArrayList<>(myNotDumbAwarePostStartupActivities);
-      myNotDumbAwarePostStartupActivities.clear();
-      return result;
-    }
   }
 
   private void runActivities(@NotNull Deque<? extends Runnable> activities, @Nullable ProgressIndicator indicator, @Nullable String activityName) {
-    if (activities.isEmpty()) {
-      return;
+    synchronized (myLock) {
+      if (activities.isEmpty()) {
+        return;
+      }
     }
 
     Activity activity = activityName == null ? null : StartUpMeasurer.startMainActivity(activityName);
@@ -421,22 +401,19 @@ public class StartupManagerImpl extends StartupManagerEx {
   }
 
   private void scheduleBackgroundPostStartupActivities() {
-    if (myProject.isDisposed() || ApplicationManager.getApplication().isUnitTestMode()) {
-      return;
-    }
-
     ScheduledFuture<?> scheduledFuture = AppExecutorUtil.getAppScheduledExecutorService().schedule(() -> {
       if (myProject.isDisposed()) {
         return;
       }
 
-      List<StartupActivity.Background> activities = StartupActivity.BACKGROUND_POST_STARTUP_ACTIVITY.getExtensionList();
-      StartupActivity.BACKGROUND_POST_STARTUP_ACTIVITY.addExtensionPointListener(new ExtensionPointListener<StartupActivity.Background>() {
+      long startTimeNano = System.nanoTime();
+      StartupActivity.BACKGROUND_POST_STARTUP_ACTIVITY.addExtensionPointListener(new ExtensionPointListener<>() {
         @Override
         public void extensionAdded(@NotNull StartupActivity.Background extension, @NotNull PluginDescriptor pluginDescriptor) {
           extension.runActivity(myProject);
         }
       }, myProject);
+      List<StartupActivity.Background> activities = StartupActivity.BACKGROUND_POST_STARTUP_ACTIVITY.getExtensionList();
 
       BackgroundTaskUtil.runUnderDisposeAwareIndicator(myProject, () -> {
         for (StartupActivity activity : activities) {
@@ -449,6 +426,9 @@ public class StartupManagerImpl extends StartupManagerEx {
           activity.runActivity(myProject);
         }
       });
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Background post-startup activities done in " + TimeoutUtil.getDurationMillis(startTimeNano) + "ms");
+      }
     }, Registry.intValue("ide.background.post.startup.activity.delay"), TimeUnit.MILLISECONDS);
     Disposer.register(myProject, () -> {
       scheduledFuture.cancel(false);
@@ -466,42 +446,33 @@ public class StartupManagerImpl extends StartupManagerEx {
     catch (ProcessCanceledException e) {
       throw e;
     }
-    catch (Throwable ex) {
-      LOG.error(ex);
+    catch (Throwable e) {
+      LOG.error(e);
     }
   }
 
   @Override
   public void runWhenProjectIsInitialized(@NotNull Runnable action) {
-    checkNonDefaultProject();
-
-    GuiUtils.invokeLaterIfNeeded(() -> {
-      // in tests that simulate project opening, post-startup activities could have been run already
-      // then we should act as if the project was initialized
-      if (myStartupActivitiesPassed && (myProject.isOpen() || myProject.isDefault() || (postStartupActivitiesPassed && ApplicationManager.getApplication().isUnitTestMode()))) {
-        action.run();
-        return;
-      }
-
-      registerPostStartupDumbAwareActivity(() -> {
-        if (DumbService.isDumbAware(action)) {
-          runActivity(action);
-        }
-        else {
-          runDumbUnawareActivity(DumbService.getInstance(myProject), action);
-        }
+    if (DumbService.isDumbAware(action)) {
+      runAfterOpened(() -> {
+        GuiUtils.invokeLaterIfNeeded(action, ModalityState.NON_MODAL, myProject.getDisposed());
       });
-    }, ModalityState.NON_MODAL, myProject.getDisposed());
+    }
+    else {
+      runAfterOpened(() -> {
+        DumbService.getInstance(myProject).unsafeRunWhenSmart(action);
+      });
+    }
   }
 
   @Override
   public void runAfterOpened(@NotNull Runnable runnable) {
     checkNonDefaultProject();
 
-    if (!postStartupActivitiesPassed) {
+    if (postStartupActivitiesPassed < DUMB_AWARE_PASSED) {
       synchronized (myLock) {
-        if (!postStartupActivitiesPassed) {
-          myDumbAwarePostStartupActivities.add(runnable);
+        if (postStartupActivitiesPassed < DUMB_AWARE_PASSED) {
+          postStartupActivities.add(runnable);
           return;
         }
       }
@@ -510,18 +481,11 @@ public class StartupManagerImpl extends StartupManagerEx {
     runnable.run();
   }
 
-  private void runDumbUnawareActivity(@NotNull DumbService dumbService, @NotNull Runnable action) {
-    GuiUtils.invokeLaterIfNeeded(() -> {
-      dumbService.unsafeRunWhenSmart(action);
-    }, ModalityState.NON_MODAL, myProject.getDisposed());
-  }
-
   @TestOnly
   public synchronized void prepareForNextTest() {
     synchronized (myLock) {
-      myStartupActivities.clear();
-      myDumbAwarePostStartupActivities.clear();
-      myNotDumbAwarePostStartupActivities.clear();
+      startupActivities.clear();
+      postStartupActivities.clear();
     }
   }
 
@@ -529,9 +493,8 @@ public class StartupManagerImpl extends StartupManagerEx {
   public synchronized void checkCleared() {
     try {
       synchronized (myLock) {
-        assert myStartupActivities.isEmpty() : "Activities: " + myStartupActivities;
-        assert myDumbAwarePostStartupActivities.isEmpty() : "DumbAware Post Activities: " + myDumbAwarePostStartupActivities;
-        assert myNotDumbAwarePostStartupActivities.isEmpty() : "Post Activities: " + myNotDumbAwarePostStartupActivities;
+        assert startupActivities.isEmpty() : "Activities: " + startupActivities;
+        assert postStartupActivities.isEmpty() : "DumbAware Post Activities: " + postStartupActivities;
       }
     }
     finally {

@@ -142,7 +142,8 @@ class PatternReference extends PsiReferenceBase.Poly<RncRef> implements Function
   @Override
   @NotNull
   public String getUnresolvedMessagePattern() {
-    return RelaxngBundle.message("unresolved.pattern.reference.0");
+    //noinspection UnresolvedPropertyKey
+    return RelaxngBundle.message("relaxng.annotator.unresolved-pattern-reference");
   }
 
   @Override
@@ -163,13 +164,13 @@ class PatternReference extends PsiReferenceBase.Poly<RncRef> implements Function
     @NotNull
     @Override
     public String getName() {
-      return RelaxngBundle.message("create.pattern.0", myReference.getCanonicalText());
+      return RelaxngBundle.message("relaxng.quickfix.create-pattern.name", myReference.getCanonicalText());
     }
 
     @Override
     @NotNull
     public String getFamilyName() {
-      return RelaxngBundle.message("create.pattern");
+      return RelaxngBundle.message("relaxng.quickfix.create-pattern.family");
     }
 
     @Override

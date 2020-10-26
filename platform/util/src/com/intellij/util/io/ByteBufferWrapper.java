@@ -15,12 +15,14 @@
  */
 package com.intellij.util.io;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 
+@ApiStatus.Internal
 public abstract class ByteBufferWrapper {
   protected final Path myFile;
   protected final long myPosition;
@@ -46,28 +48,22 @@ public abstract class ByteBufferWrapper {
 
   public abstract ByteBuffer getBuffer() throws IOException;
 
-  public abstract void unmap();
-
   public abstract void flush();
 
-  public void dispose() {
-    unmap();
-  }
+  public abstract void release();
+
+  protected abstract boolean isReadOnly();
 
   public static ByteBufferWrapper readWriteDirect(Path file, final long offset, final int length) {
-    return new ReadWriteDirectBufferWrapper(file, offset, length);
+    return new ReadWriteDirectBufferWrapper(file, offset, length, false);
   }
 
-  public static ByteBufferWrapper readOnly(Path file, final int offset) throws IOException {
-    return new ReadOnlyMappedBufferWrapper(file, offset);
+  public static ByteBufferWrapper readOnlyDirect(Path file, final long offset, final int length) {
+    return new ReadWriteDirectBufferWrapper(file, offset, length, true);
   }
 
   @Override
   public String toString() {
     return "Buffer for " + myFile + ", offset:" + myPosition + ", size: " + myLength;
-  }
-
-  public int allocationSize() {
-    return (int)myLength;
   }
 }

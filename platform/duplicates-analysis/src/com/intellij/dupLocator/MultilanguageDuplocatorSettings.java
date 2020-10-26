@@ -2,8 +2,8 @@
 package com.intellij.dupLocator;
 
 import com.intellij.lang.Language;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.util.xmlb.SkipDefaultValuesSerializationFilters;
@@ -22,19 +22,19 @@ import java.util.TreeMap;
   storages = @Storage("duplocatorSettings.xml")
 )
 public class MultilanguageDuplocatorSettings implements PersistentStateComponent<Element> {
-  private final Map<String, ExternalizableDuplocatorState> mySettingsMap = new TreeMap<>();
+  private final Map<String, DefaultDuplocatorState> mySettingsMap = new TreeMap<>();
 
   public static MultilanguageDuplocatorSettings getInstance() {
-    return ServiceManager.getService(MultilanguageDuplocatorSettings.class);
+    return ApplicationManager.getApplication().getService(MultilanguageDuplocatorSettings.class);
   }
 
-  public void registerState(@NotNull Language language, @NotNull ExternalizableDuplocatorState state) {
+  public void registerState(@NotNull Language language, @NotNull DefaultDuplocatorState state) {
     synchronized (mySettingsMap) {
       mySettingsMap.put(language.getDisplayName(), state);
     }
   }
 
-  public ExternalizableDuplocatorState getState(@NotNull Language language) {
+  public DefaultDuplocatorState getState(@NotNull Language language) {
     synchronized (mySettingsMap) {
       return mySettingsMap.get(language.getDisplayName());
     }
@@ -64,10 +64,6 @@ public class MultilanguageDuplocatorSettings implements PersistentStateComponent
   @Override
   public void loadState(@NotNull Element state) {
     synchronized (mySettingsMap) {
-      if (state == null) {
-        return;
-      }
-
       for (Element objectElement : state.getChildren("object")) {
         String language = objectElement.getAttributeValue("language");
         if (language != null) {

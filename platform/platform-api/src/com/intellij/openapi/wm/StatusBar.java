@@ -5,6 +5,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupManager;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.ApiStatus;
@@ -25,17 +26,19 @@ import java.awt.*;
  */
 public interface StatusBar extends StatusBarInfo, Disposable {
   @SuppressWarnings("AbstractClassNeverImplemented")
-  abstract class Info implements StatusBarInfo {
-    public static final Topic<StatusBarInfo> TOPIC = Topic.create("IdeStatusBar.Text", StatusBarInfo.class);
+  final class Info {
+    @Topic.ProjectLevel
+    public static final Topic<StatusBarInfo> TOPIC = new Topic<>("IdeStatusBar.Text", StatusBarInfo.class, Topic.BroadcastDirection.NONE);
 
     private Info() {
     }
 
-    public static void set(@Nullable final String text, @Nullable final Project project) {
+    public static void set(@NlsContexts.StatusBarText @Nullable final String text, @Nullable final Project project) {
       set(text, project, null);
     }
 
-    public static void set(@Nullable final String text, @Nullable final Project project, @Nullable final String requestor) {
+    public static void set(@NlsContexts.StatusBarText @Nullable final String text, @Nullable final Project project,
+                           @NonNls @Nullable final String requestor) {
       if (project != null) {
         if (project.isDisposed()) {
           return;
@@ -135,13 +138,6 @@ public interface StatusBar extends StatusBarInfo, Disposable {
   default StatusBar createChild() {
     return this;
   }
-
-  /**
-   * @deprecated frame is immutable now
-   */
-  @Deprecated
-  @ApiStatus.ScheduledForRemoval(inVersion = "2020.1")
-  default void install(@NotNull IdeFrame frame) {}
 
   final class Anchors {
     public static final String DEFAULT_ANCHOR = after(StandardWidgets.COLUMN_SELECTION_MODE_PANEL);

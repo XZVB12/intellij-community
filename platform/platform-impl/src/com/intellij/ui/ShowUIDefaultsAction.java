@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui;
 
 import com.intellij.ide.DataManager;
@@ -23,7 +23,6 @@ import com.intellij.ui.components.JBTextField;
 import com.intellij.ui.speedSearch.FilteringTableModel;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.ui.UI;
 import com.intellij.util.ui.*;
 import com.intellij.util.ui.components.BorderLayoutPanel;
 import org.jetbrains.annotations.NotNull;
@@ -44,11 +43,13 @@ import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.*;
 
+import static com.intellij.ui.render.RenderingUtil.PAINT_HOVERED_BACKGROUND;
 import static com.intellij.util.ui.JBUI.Panels.simplePanel;
 
 /**
  * @author Konstantin Bulenkov
  */
+@SuppressWarnings("HardCodedStringLiteral")
 public class ShowUIDefaultsAction extends AnAction implements DumbAware {
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
@@ -215,6 +216,7 @@ public class ShowUIDefaultsAction extends AnAction implements DumbAware {
 
         new TableSpeedSearch(table, (o, cell) -> cell.column == 1 ? null : String.valueOf(o));
         table.setShowGrid(false);
+        table.putClientProperty(PAINT_HOVERED_BACKGROUND, false);
         myTable = table;
         TableUtil.ensureSelectionExists(myTable);
         mySearchField.getDocument().addDocumentListener(new DocumentAdapter() {
@@ -296,9 +298,8 @@ public class ShowUIDefaultsAction extends AnAction implements DumbAware {
               .createPanel();
           }
 
-          @Nullable
           @Override
-          public JComponent getPreferredFocusedComponent() {
+          public @NotNull JComponent getPreferredFocusedComponent() {
             return name;
           }
 

@@ -1,7 +1,8 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.util;
 
 import com.intellij.ide.ui.UISettings;
+import com.intellij.lang.LangBundle;
 import com.intellij.navigation.ColoredItemPresentation;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.navigation.NavigationItem;
@@ -14,6 +15,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.IPopupChooserBuilder;
 import com.intellij.openapi.ui.popup.PopupChooserBuilder;
 import com.intellij.openapi.util.Iconable;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.FileStatus;
 import com.intellij.openapi.vcs.FileStatusManager;
@@ -31,6 +34,8 @@ import com.intellij.util.ObjectUtils;
 import com.intellij.util.text.Matcher;
 import com.intellij.util.text.MatcherHolder;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -124,7 +129,7 @@ public abstract class PsiElementListCellRenderer<T extends PsiElement> extends J
 
       if (value instanceof PsiElement) {
         T element = (T)value;
-        String name = ((PsiElement)value).isValid() ? getElementText(element) : "INVALID";
+        @NlsContexts.Label String name = ((PsiElement)value).isValid() ? getElementText(element) : "INVALID";
 
         TextAttributes attributes = element.isValid() ? getNavigationItemAttributes(value) : null;
         SimpleTextAttributes nameAttributes = attributes != null ? SimpleTextAttributes.fromTextAttributes(attributes) : null;
@@ -132,11 +137,11 @@ public abstract class PsiElementListCellRenderer<T extends PsiElement> extends J
 
         if (name == null) {
           LOG.error("Null name for PSI element " + element.getClass() + " (by " + PsiElementListCellRenderer.this + ")");
-          name = "Unknown";
+          name = LangBundle.message("label.unknown");
         }
         SpeedSearchUtil.appendColoredFragmentForMatcher(name, this, nameAttributes, myMatchers.nameMatcher, bgColor, selected);
         if (!element.isValid()) {
-          append(" Invalid", SimpleTextAttributes.ERROR_ATTRIBUTES);
+          append(" " + LangBundle.message("label.invalid"), SimpleTextAttributes.ERROR_ATTRIBUTES);
           return;
         }
         setIcon(PsiElementListCellRenderer.this.getIcon(element));
@@ -153,12 +158,13 @@ public abstract class PsiElementListCellRenderer<T extends PsiElement> extends J
       }
       else if (!customizeNonPsiElementLeftRenderer(this, list, value, index, selected, hasFocus)) {
         setIcon(IconUtil.getEmptyIcon(false));
-        append(value == null ? "" : value.toString(), new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, list.getForeground()));
+        @NlsSafe String text = value == null ? "" : value.toString();
+        append(text, new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, list.getForeground()));
       }
       setBackground(selected ? UIUtil.getListSelectionBackground(true) : bgColor);
     }
 
-    private void appendLocationText(boolean selected, Color bgColor, boolean isProblemFile, String containerText) {
+    private void appendLocationText(boolean selected, Color bgColor, boolean isProblemFile, @Nls String containerText) {
       SimpleTextAttributes locationAttrs = SimpleTextAttributes.GRAYED_ATTRIBUTES;
       if (isProblemFile) {
         SimpleTextAttributes wavedAttributes = SimpleTextAttributes.merge(new SimpleTextAttributes(SimpleTextAttributes.STYLE_WAVED, UIUtil.getInactiveTextColor(), JBColor.RED), locationAttrs);
@@ -255,7 +261,8 @@ public abstract class PsiElementListCellRenderer<T extends PsiElement> extends J
     return null;
   }
 
-  private static DefaultListCellRenderer getModuleRenderer(Object value) {
+  @ApiStatus.Internal
+  public static @Nullable DefaultListCellRenderer getModuleRenderer(Object value) {
     final DefaultListCellRenderer renderer = ModuleRendererFactory.findInstance(value).getModuleRenderer();
     if (renderer instanceof PlatformModuleRendererFactory.PlatformModuleRenderer) {
       // it won't display any new information
@@ -264,13 +271,13 @@ public abstract class PsiElementListCellRenderer<T extends PsiElement> extends J
     return renderer;
   }
 
-  public abstract String getElementText(T element);
+  public abstract @NlsSafe String getElementText(T element);
 
   @Nullable
-  protected abstract String getContainerText(T element, final String name);
+  protected abstract @NlsSafe String getContainerText(T element, final String name);
 
   @Nullable
-  protected String getContainerTextForLeftComponent(T element, String name, int maxWidth, FontMetrics fm) {
+  protected @NlsSafe String getContainerTextForLeftComponent(T element, String name, int maxWidth, FontMetrics fm) {
     return getContainerText(element, name);
   }
 

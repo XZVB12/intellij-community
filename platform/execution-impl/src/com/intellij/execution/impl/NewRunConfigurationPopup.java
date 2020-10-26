@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.impl;
 
 import com.intellij.execution.ExecutionBundle;
@@ -14,6 +14,7 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.DumbAwareAction;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.ListPopupStep;
@@ -42,7 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * @author Irina.Chernushina on 10/8/2015.
  */
-public class NewRunConfigurationPopup {
+public final class NewRunConfigurationPopup {
   static final ConfigurationType HIDDEN_ITEMS_STUB = new ConfigurationType() {
     @NotNull
     @Override
@@ -164,7 +165,8 @@ public class NewRunConfigurationPopup {
         values.clear();
         values.addAll(RunConfigurable.Companion.configurationTypeSorted(project,
                                                                         false,
-                                                                        ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()));
+                                                                        ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList(),
+                                                                        true));
 
         getListModel().updateOriginalList();
         super.onSpeedSearchPatternChanged();
@@ -235,6 +237,11 @@ public class NewRunConfigurationPopup {
         if (!(userData instanceof NodeDescriptor)) return false;
         if (getStructure().getChildElements(userData).length > 0) return false;
         userData = ((NodeDescriptor<?>)userData).getElement();
+        if (!project.isDefault() &&
+            DumbService.getInstance(project).isDumb() &&
+            !NewRunConfigurationTreePopupFactory.isEditableInDumbMode(userData)) {
+          return false;
+        }
         return isAutoSelectionPassed.get() || userData == selectedConfigurationType;
       }
 

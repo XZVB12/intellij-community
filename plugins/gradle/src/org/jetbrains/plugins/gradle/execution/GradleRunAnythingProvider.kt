@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.gradle.execution
 
 import com.intellij.execution.Executor
@@ -12,18 +12,18 @@ import com.intellij.ide.util.gotoByName.GotoClassModel2
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.externalSystem.model.project.ModuleData
 import com.intellij.openapi.externalSystem.model.task.TaskData
+import com.intellij.openapi.externalSystem.service.project.manage.ExternalProjectsDataStorage
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil.findProjectData
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.util.text.StringUtil.substringBeforeLast
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.util.containers.MultiMap
 import com.intellij.util.indexing.FindSymbolParameters
-import groovyjarjarcommonscli.Option
 import icons.GradleIcons
+import org.apache.commons.cli.Option
 import org.jetbrains.plugins.gradle.action.GradleExecuteTaskAction
 import org.jetbrains.plugins.gradle.service.execution.cmd.GradleCommandLineOptionsProvider
 import org.jetbrains.plugins.gradle.service.project.GradleProjectResolverUtil
@@ -48,7 +48,7 @@ class GradleRunAnythingProvider : RunAnythingCommandLineProvider() {
 
   override fun getHelpCommand() = HELP_COMMAND
 
-  override fun getHelpCommandAliases() = listOf(SECONDARY_HELP_COMMAND)
+  override fun getHelpCommandAliases() = SECONDARY_HELP_COMMANDS
 
   override fun getHelpIcon(): Icon? = GradleIcons.Gradle
 
@@ -163,7 +163,7 @@ class GradleRunAnythingProvider : RunAnythingCommandLineProvider() {
 
   private fun fetchTasks(project: Project): Map<String, MultiMap<String, TaskData>> {
     return CachedValuesManager.getManager(project).getCachedValue(project) {
-      CachedValueProvider.Result.create(getGradleTasksMap(project), ProjectRootManager.getInstance(project))
+      CachedValueProvider.Result.create(getGradleTasksMap(project), ExternalProjectsDataStorage.getInstance(project))
     }
   }
 
@@ -216,6 +216,6 @@ class GradleRunAnythingProvider : RunAnythingCommandLineProvider() {
 
   companion object {
     const val HELP_COMMAND = "gradle"
-    private const val SECONDARY_HELP_COMMAND = "gradlew"
+    private val SECONDARY_HELP_COMMANDS = listOf("gradlew", "./gradlew", "gradle.bat")
   }
 }

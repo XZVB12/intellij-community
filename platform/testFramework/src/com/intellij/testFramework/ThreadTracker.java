@@ -30,9 +30,6 @@ import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 
-/**
- * @author cdr
- */
 public final class ThreadTracker {
   private static final Logger LOG = Logger.getInstance(ThreadTracker.class);
   private final Map<String, Thread> before;
@@ -85,10 +82,13 @@ public final class ThreadTracker {
     "Monitor Ctrl-Break",
     "Netty ",
     "ObjectCleanerThread",
+    "OkHttp ConnectionPool", // Dockers okhttp3.internal.connection.RealConnectionPool
+    "Okio Watchdog", // Dockers "okio.AsyncTimeout.Watchdog"
     "Reference Handler",
     "RMI GC Daemon",
     "RMI TCP ",
     "Signal Dispatcher",
+    "tc-okhttp-stream", // Dockers "com.github.dockerjava.okhttp.UnixDomainSocket.recv"
     "timer-int", //serverIm,
     "timer-sys", //clientim,
     "TimerQueue",
@@ -248,11 +248,12 @@ public final class ThreadTracker {
     // at java.base@11.0.6/java.util.concurrent.locks.LockSupport.park(LockSupport.java:194)
     // at java.base@11.0.6/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1628)
     // at java.base@11.0.6/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:177)
-    boolean isWaitingWorkInJdk11 = stackTrace.length > 2
-          && stackTrace[0].getClassName().equals("sun.misc.Unsafe") && stackTrace[0].getMethodName().equals("park")
+    boolean isWaitingWorkInJdk = stackTrace.length > 2
+          // can be both sun.misc.Unsafe and jdk.internal.misc.Unsafe on depending on the jdk
+          && stackTrace[0].getClassName().endsWith(".Unsafe") && stackTrace[0].getMethodName().equals("park")
           && stackTrace[1].getClassName().equals("java.util.concurrent.locks.LockSupport") && stackTrace[1].getMethodName().equals("park")
           && stackTrace[2].getClassName().equals("java.util.concurrent.ForkJoinPool") && stackTrace[2].getMethodName().equals("runWorker");
-    return isWaitingWorkInJdk11;
+    return isWaitingWorkInJdk;
   }
 
   // in newer JDKs strange long hangups observed in Unsafe.unpark:
@@ -311,16 +312,11 @@ public final class ThreadTracker {
   }
 
   public static void awaitJDIThreadsTermination(int timeout, @NotNull TimeUnit unit) {
-    awaitThreadTerminationWithParentParentGroup("JDI main", timeout, unit);
-  }
-  private static void awaitThreadTerminationWithParentParentGroup(@NotNull final String grandThreadGroup,
-                                                                  int timeout,
-                                                                  @NotNull TimeUnit unit) {
     long start = System.currentTimeMillis();
     while (System.currentTimeMillis() < start + unit.toMillis(timeout)) {
       Thread jdiThread = ContainerUtil.find(getThreads().values(), thread -> {
         ThreadGroup group = thread.getThreadGroup();
-        return group != null && group.getParent() != null && grandThreadGroup.equals(group.getParent().getName());
+        return group != null && group.getParent() != null && "JDI main".equals(group.getParent().getName());
       });
 
       if (jdiThread == null) {

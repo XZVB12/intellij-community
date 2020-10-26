@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.externalSystem.autoimport
 
 import com.intellij.core.CoreBundle
@@ -9,17 +9,29 @@ import com.intellij.openapi.application.invokeAndWaitIfNeeded
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.ComponentManager
 import com.intellij.openapi.editor.Document
-import com.intellij.openapi.externalSystem.model.ProjectSystemId
+import com.intellij.openapi.externalSystem.ExternalSystemAutoImportAware
+import com.intellij.openapi.externalSystem.ExternalSystemManager
+import com.intellij.openapi.externalSystem.autoimport.ExternalSystemProjectTrackerSettings.AutoReloadType
+import com.intellij.openapi.externalSystem.autoimport.ExternalSystemProjectTrackerSettings.AutoReloadType.*
+import com.intellij.openapi.externalSystem.autoimport.MockProjectAware.RefreshCollisionPassType
+import com.intellij.openapi.externalSystem.autoimport.ProjectStatus.ModificationType
+import com.intellij.openapi.externalSystem.importing.ProjectResolverPolicy
+import com.intellij.openapi.externalSystem.service.project.autoimport.ProjectAware
 import com.intellij.openapi.externalSystem.test.ExternalSystemTestCase
+import com.intellij.openapi.externalSystem.test.ExternalSystemTestUtil.TEST_EXTERNAL_SYSTEM_ID
+import com.intellij.openapi.externalSystem.test.TestExternalSystemManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.util.BackgroundTaskUtil
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.Ref
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.use
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.testFramework.ExtensionTestUtil
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.replaceService
 import org.jetbrains.concurrency.AsyncPromise
@@ -35,6 +47,7 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
   private lateinit var testDisposable: Disposable
   private val notificationAware get() = ProjectNotificationAware.getInstance(myProject)
   private val projectTracker get() = AutoImportProjectTracker.getInstance(myProject).also { it.enableAutoImportInTests() }
+  private val projectTrackerSettings get() = AutoImportProjectTrackerSettings.getInstance(myProject)
 
   private fun ensureExistsParentDirectory(relativePath: String): VirtualFile {
     return relativePath.split("/").dropLast(1)
@@ -78,6 +91,10 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
   private fun <R> runWriteAction(update: () -> R): R =
     WriteCommandAction.runWriteCommandAction(myProject, Computable { update() })
 
+  protected fun pathsOf(vararg files: VirtualFile): Set<String> {
+    return files.mapTo(LinkedHashSet()) { it.path }
+  }
+
   private fun getPath(relativePath: String) = "$projectPath/$relativePath"
 
   private fun getFile(relativePath: String) = File(projectPath, relativePath)
@@ -91,6 +108,12 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
     val localFileSystem = LocalFileSystem.getInstance()
     localFileSystem.refreshIoFiles(paths.map { File(it) }, false, true, null)
   }
+
+  protected fun VirtualFile.appendLineInIoFile(line: String) =
+    appendStringInIoFile(line + "\n")
+
+  protected fun VirtualFile.appendStringInIoFile(string: String) =
+    updateIoFile { appendText(string) }
 
   protected fun VirtualFile.replaceContentInIoFile(content: String) =
     updateIoFile { writeText(content) }
@@ -137,6 +160,9 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
       VfsUtil.saveText(this, before + prefix + string + after)
     }
 
+  protected fun VirtualFile.appendLine(line: String) =
+    appendString(line + "\n")
+
   protected fun VirtualFile.appendString(string: String) =
     runWriteAction { VfsUtil.saveText(this, VfsUtil.loadText(this) + string) }
 
@@ -164,8 +190,13 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
       replaceString(startOffset, endOffset, new)
     }
 
-  protected fun register(projectAware: ExternalSystemProjectAware, activate: Boolean = true) {
-    projectTracker.register(projectAware)
+  protected fun register(projectAware: ExternalSystemProjectAware, activate: Boolean = true, parentDisposable: Disposable? = null) {
+    if (parentDisposable != null) {
+      projectTracker.register(projectAware, parentDisposable)
+    }
+    else {
+      projectTracker.register(projectAware)
+    }
     if (activate) activate(projectAware.projectId)
   }
 
@@ -177,29 +208,29 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
 
   protected fun refreshProject() = projectTracker.scheduleProjectRefresh()
 
+  protected fun markDirty(projectId: ExternalSystemProjectId) = projectTracker.markDirty(projectId)
+
   protected fun forceRefreshProject(projectId: ExternalSystemProjectId) {
-    projectTracker.markDirty(projectId)
-    projectTracker.scheduleProjectRefresh()
+    markDirty(projectId)
+    refreshProject()
   }
-
-  private fun loadState(state: AutoImportProjectTracker.State) = projectTracker.loadState(state)
-
 
   protected fun enableAsyncExecution() {
     projectTracker.isAsyncChangesProcessing = true
   }
 
-  protected fun enableAutoReloadExternalChanges() {
-    projectTracker.isAutoReloadExternalChanges = true
-  }
-
-  protected fun disableAutoReloadExternalChanges() {
-    projectTracker.isAutoReloadExternalChanges = false
+  protected fun setAutoReloadType(type: AutoReloadType) {
+    projectTrackerSettings.autoReloadType = type
   }
 
   protected fun initialize() = projectTracker.initializeComponent()
 
-  protected fun getState() = projectTracker.state
+  protected fun getState() = projectTracker.state to projectTrackerSettings.state
+
+  private fun loadState(state: Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State>) {
+    projectTracker.loadState(state.first)
+    projectTrackerSettings.loadState(state.second)
+  }
 
   protected fun assertProjectAware(projectAware: MockProjectAware,
                                    refresh: Int? = null,
@@ -220,12 +251,13 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
     assertEquals("$message on $event", expected, actual)
   }
 
-  protected fun assertProjectTracker(isAutoReload: Boolean, event: String) {
-    val message = when (isAutoReload) {
-      true -> "Auto reload must be enabled"
-      false -> "Auto reload must be disabled"
+  protected fun assertProjectTrackerSettings(autoReloadType: AutoReloadType, event: String) {
+    val message = when (autoReloadType) {
+      ALL -> "Auto reload must be enabled"
+      SELECTIVE -> "Auto reload must be enabled"
+      NONE -> "Auto reload must be disabled"
     }
-    assertEquals("$message on $event", isAutoReload, projectTracker.isAutoReloadExternalChanges)
+    assertEquals("$message on $event", autoReloadType, projectTrackerSettings.autoReloadType)
   }
 
   protected fun assertActivationStatus(vararg projects: ExternalSystemProjectId, event: String) {
@@ -260,6 +292,7 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
   override fun setUp() {
     super.setUp()
     testDisposable = Disposer.newDisposable()
+    myProject.replaceService(ExternalSystemProjectTrackerSettings::class.java, AutoImportProjectTrackerSettings(), testDisposable)
     myProject.replaceService(ExternalSystemProjectTracker::class.java, AutoImportProjectTracker(myProject), testDisposable)
   }
 
@@ -268,28 +301,101 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
     super.tearDown()
   }
 
-  protected fun simpleTest(fileRelativePath: String,
-                           content: String? = null,
-                           state: AutoImportProjectTracker.State = AutoImportProjectTracker.State(),
-                           test: SimpleTestBench.(VirtualFile) -> Unit): AutoImportProjectTracker.State {
-    return myProject.replaceService(ExternalSystemProjectTracker::class.java, AutoImportProjectTracker(myProject)) {
-      val systemId = ProjectSystemId("External System")
-      val projectId = ExternalSystemProjectId(systemId, projectPath)
-      val projectAware = MockProjectAware(projectId)
-      loadState(state)
-      initialize()
-      val file = findOrCreateVirtualFile(fileRelativePath)
-      content?.let { file.replaceContent(it) }
-      projectAware.settingsFiles.add(file.path)
-      register(projectAware)
-      SimpleTestBench(projectAware).test(file)
-      val newState = getState()
-      remove(projectAware.projectId)
-      newState
+  protected fun simpleModificationTest(test: SimpleModificationTestBench.() -> Unit) {
+    simpleTest("settings.groovy", "") {
+      assertState(
+        refresh = 1,
+        notified = false,
+        subscribe = 2,
+        unsubscribe = 0,
+        autoReloadType = SELECTIVE,
+        event = "register project without cache"
+      )
+      resetAssertionCounters()
+      SimpleModificationTestBench(projectAware, it).test()
     }
   }
 
-  protected inner class SimpleTestBench(private val projectAware: MockProjectAware) {
+  protected fun simpleTest(
+    fileRelativePath: String,
+    content: String? = null,
+    state: Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State> =
+      AutoImportProjectTracker.State() to AutoImportProjectTrackerSettings.State(),
+    test: SimpleTestBench.(VirtualFile) -> Unit
+  ): Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State> {
+    return projectTrackerTest(state) {
+      val projectId = ExternalSystemProjectId(TEST_EXTERNAL_SYSTEM_ID, projectPath)
+      val projectAware = MockProjectAware(projectId)
+      val file = findOrCreateVirtualFile(fileRelativePath)
+      content?.let { file.replaceContent(it) }
+      projectAware.settingsFiles.add(file.path)
+      register(projectAware, parentDisposable = it)
+      SimpleTestBench(projectAware).test(file)
+    }
+  }
+
+  protected fun simpleTest(
+    state: Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State> =
+      AutoImportProjectTracker.State() to AutoImportProjectTrackerSettings.State(),
+    test: SimpleTestBench.() -> Unit
+  ): Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State> {
+    return projectTrackerTest(state) {
+      val projectId = ExternalSystemProjectId(TEST_EXTERNAL_SYSTEM_ID, projectPath)
+      val projectAware = MockProjectAware(projectId)
+      register(projectAware, parentDisposable = it)
+      SimpleTestBench(projectAware).test()
+    }
+  }
+
+  protected fun testWithDummyExternalSystem(
+    fileRelativePath: String,
+    content: String? = null,
+    autoImportAwareCondition: Ref<Boolean>? = null,
+    state: Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State> =
+      AutoImportProjectTracker.State() to AutoImportProjectTrackerSettings.State(),
+    test: DummyExternalSystemTestBench.(VirtualFile) -> Unit
+  ): Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State> {
+    val externalSystemManagers = ExternalSystemManager.EP_NAME.extensionList + TestExternalSystemManager(myProject)
+    ExtensionTestUtil.maskExtensions(ExternalSystemManager.EP_NAME, externalSystemManagers, testRootDisposable)
+    return projectTrackerTest(state) {
+      val projectId = ExternalSystemProjectId(TEST_EXTERNAL_SYSTEM_ID, projectPath)
+      val autoImportAware = object : ExternalSystemAutoImportAware {
+        override fun getAffectedExternalProjectPath(changedFileOrDirPath: String, project: Project): String? {
+          return fileRelativePath
+        }
+
+        override fun isApplicable(resolverPolicy: ProjectResolverPolicy?): Boolean {
+          return autoImportAwareCondition == null || autoImportAwareCondition.get()
+        }
+      }
+      val file = findOrCreateVirtualFile(fileRelativePath)
+      content?.let { file.replaceContent(it) }
+      val projectAware = ProjectAwareWrapper(ProjectAware(myProject, projectId, autoImportAware), it)
+      register(projectAware, parentDisposable = it)
+      DummyExternalSystemTestBench(projectAware).test(file)
+    }
+  }
+
+  private fun projectTrackerTest(
+    state: Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State> =
+      AutoImportProjectTracker.State() to AutoImportProjectTrackerSettings.State(),
+    test: (Disposable) -> Unit
+  ): Pair<AutoImportProjectTracker.State, AutoImportProjectTrackerSettings.State> {
+    return myProject.replaceService(ExternalSystemProjectTrackerSettings::class.java, AutoImportProjectTrackerSettings()) {
+      myProject.replaceService(ExternalSystemProjectTracker::class.java, AutoImportProjectTracker(myProject)) {
+        loadState(state)
+        initialize()
+        Disposer.newDisposable().use {
+          test(it)
+          getState()
+        }
+      }
+    }
+  }
+
+  protected open inner class SimpleTestBench(val projectAware: MockProjectAware) {
+
+    fun markDirty() = markDirty(projectAware.projectId)
 
     fun forceRefreshProject() = forceRefreshProject(projectAware.projectId)
 
@@ -301,28 +407,42 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
 
     fun registerSettingsFile(relativePath: String) = projectAware.settingsFiles.add(getPath(relativePath))
 
-    fun setRefreshStatus(status: ExternalSystemRefreshStatus) {
-      projectAware.refreshStatus = status
+    fun onceDuringRefresh(action: (ExternalSystemProjectReloadContext) -> Unit) = projectAware.onceDuringRefresh(action)
+
+    fun setRefreshStatus(status: ExternalSystemRefreshStatus) = projectAware.refreshStatus.set(status)
+
+    fun setRefreshCollisionPassType(type: RefreshCollisionPassType) = projectAware.refreshCollisionPassType.set(type)
+
+    fun resetAssertionCounters() {
+      projectAware.refreshCounter.set(0)
+      projectAware.subscribeCounter.set(0)
+      projectAware.unsubscribeCounter.set(0)
+    }
+
+    fun createSettingsVirtualFile(relativePath: String): VirtualFile {
+      registerSettingsFile(relativePath)
+      return findOrCreateVirtualFile(relativePath)
     }
 
     fun withLinkedProject(fileRelativePath: String, test: SimpleTestBench.(VirtualFile) -> Unit) {
       val projectId = ExternalSystemProjectId(projectAware.projectId.systemId, "$projectPath/$name")
       val projectAware = MockProjectAware(projectId)
-      register(projectAware)
-      val file = findOrCreateVirtualFile("$name/$fileRelativePath")
-      projectAware.settingsFiles.add(file.path)
-      SimpleTestBench(projectAware).test(file)
-      remove(projectId)
+      Disposer.newDisposable().use {
+        register(projectAware, parentDisposable = it)
+        val file = findOrCreateVirtualFile("$name/$fileRelativePath")
+        projectAware.settingsFiles.add(file.path)
+        SimpleTestBench(projectAware).test(file)
+      }
     }
 
     fun assertState(refresh: Int? = null,
                     subscribe: Int? = null,
                     unsubscribe: Int? = null,
-                    enabled: Boolean = true,
+                    autoReloadType: AutoReloadType = SELECTIVE,
                     notified: Boolean,
                     event: String) {
       assertProjectAware(projectAware, refresh, subscribe, unsubscribe, event)
-      assertProjectTracker(enabled, event = event)
+      assertProjectTrackerSettings(autoReloadType, event = event)
       when (notified) {
         true -> assertNotificationAware(projectAware.projectId, event = event)
         else -> assertNotificationAware(event = event)
@@ -330,7 +450,7 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
     }
 
     fun waitForProjectRefresh(action: () -> Unit) {
-      Disposer.newDisposable().use {
+      Disposer.newDisposable(testDisposable, "waitForProjectRefresh").use {
         val promise = AsyncPromise<ExternalSystemRefreshStatus>()
         projectAware.subscribe(object : ExternalSystemProjectRefreshListener {
           override fun afterProjectRefresh(status: ExternalSystemRefreshStatus) {
@@ -342,6 +462,45 @@ abstract class AutoImportTestCase : ExternalSystemTestCase() {
           PlatformTestUtil.waitForPromise(promise, TimeUnit.SECONDS.toMillis(10))
         }
       }
+    }
+  }
+
+  protected inner class SimpleModificationTestBench(
+    projectAware: MockProjectAware,
+    private val settingsFile: VirtualFile
+  ) : SimpleTestBench(projectAware) {
+    fun modifySettingsFile(modificationType: ModificationType = ModificationType.INTERNAL) {
+      when (modificationType) {
+        ModificationType.INTERNAL -> settingsFile.appendLine("println 'hello'")
+        ModificationType.EXTERNAL -> settingsFile.appendLineInIoFile("println 'hello'")
+      }
+    }
+  }
+
+  inner class DummyExternalSystemTestBench(val projectAware: ProjectAwareWrapper) {
+    fun assertState(refresh: Int? = null,
+                    beforeRefresh: Int? = null,
+                    afterRefresh: Int? = null,
+                    subscribe: Int? = null,
+                    unsubscribe: Int? = null,
+                    autoReloadType: AutoReloadType = SELECTIVE,
+                    event: String) {
+      assertProjectAware(projectAware, refresh, beforeRefresh, afterRefresh, subscribe, unsubscribe, event)
+      assertProjectTrackerSettings(autoReloadType, event = event)
+    }
+
+    private fun assertProjectAware(projectAware: ProjectAwareWrapper,
+                                   refresh: Int? = null,
+                                   beforeRefresh: Int? = null,
+                                   afterRefresh: Int? = null,
+                                   subscribe: Int? = null,
+                                   unsubscribe: Int? = null,
+                                   event: String) {
+      if (refresh != null) assertCountEvent(refresh, projectAware.refreshCounter.get(), "project refresh", event)
+      if (beforeRefresh != null) assertCountEvent(beforeRefresh, projectAware.beforeRefreshCounter.get(), "project before refresh", event)
+      if (afterRefresh != null) assertCountEvent(afterRefresh, projectAware.afterRefreshCounter.get(), "project after refresh", event)
+      if (subscribe != null) assertCountEvent(subscribe, projectAware.subscribeCounter.get(), "subscribe", event)
+      if (unsubscribe != null) assertCountEvent(unsubscribe, projectAware.unsubscribeCounter.get(), "unsubscribe", event)
     }
   }
 }

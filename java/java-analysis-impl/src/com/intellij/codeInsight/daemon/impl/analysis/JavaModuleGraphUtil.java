@@ -1,6 +1,9 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.daemon.impl.analysis;
 
+import com.intellij.lang.jvm.JvmLanguage;
+import com.intellij.openapi.fileTypes.FileTypeRegistry;
+import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
@@ -32,11 +35,12 @@ import java.util.*;
 import java.util.function.BiFunction;
 import java.util.jar.JarFile;
 
-public class JavaModuleGraphUtil {
+import static com.intellij.util.ObjectUtils.tryCast;
+
+public final class JavaModuleGraphUtil {
   private JavaModuleGraphUtil() { }
 
-  @Nullable
-  public static PsiJavaModule findDescriptorByElement(@Nullable PsiElement element) {
+  public static @Nullable PsiJavaModule findDescriptorByElement(@Nullable PsiElement element) {
     if (element != null) {
       PsiFileSystemItem fsItem = element instanceof PsiFileSystemItem ? (PsiFileSystemItem)element : element.getContainingFile();
       if (fsItem != null) {
@@ -47,35 +51,33 @@ public class JavaModuleGraphUtil {
     return null;
   }
 
-  @Nullable
-  public static PsiJavaModule findDescriptorByFile(@Nullable VirtualFile file, @NotNull Project project) {
+  public static @Nullable PsiJavaModule findDescriptorByFile(@Nullable VirtualFile file, @NotNull Project project) {
     if (file == null) return null;
 
     ProjectFileIndex index = ProjectFileIndex.SERVICE.getInstance(project);
-    if (index.isInLibrary(file)) {
-      VirtualFile root = index.getClassRootForFile(file);
-      if (root != null) {
-        VirtualFile descriptorFile = JavaModuleNameIndex.descriptorFile(root);
-        if (descriptorFile != null) {
-          PsiFile psiFile = PsiManager.getInstance(project).findFile(descriptorFile);
-          if (psiFile instanceof PsiJavaFile) {
-            return ((PsiJavaFile)psiFile).getModuleDeclaration();
-          }
-        }
-        else if (root.getFileSystem() instanceof JarFileSystem && "jar".equalsIgnoreCase(root.getExtension())) {
-          return LightJavaModule.findModule(PsiManager.getInstance(project), root);
+    return index.isInLibrary(file)
+           ? findDescriptorInLibrary(project, index, file)
+           : findDescriptorByModule(index.getModuleForFile(file), index.isInTestSourceContent(file));
+  }
+
+  private static PsiJavaModule findDescriptorInLibrary(Project project, ProjectFileIndex index, VirtualFile file) {
+    VirtualFile root = index.getClassRootForFile(file);
+    if (root != null) {
+      VirtualFile descriptorFile = JavaModuleNameIndex.descriptorFile(root);
+      if (descriptorFile != null) {
+        PsiFile psiFile = PsiManager.getInstance(project).findFile(descriptorFile);
+        if (psiFile instanceof PsiJavaFile) {
+          return ((PsiJavaFile)psiFile).getModuleDeclaration();
         }
       }
+      else if (root.getFileSystem() instanceof JarFileSystem && "jar".equalsIgnoreCase(root.getExtension())) {
+        return LightJavaModule.findModule(PsiManager.getInstance(project), root);
+      }
     }
-    else {
-      return findDescriptorByModule(index.getModuleForFile(file), index.isInTestSourceContent(file));
-    }
-
     return null;
   }
 
-  @Nullable
-  public static PsiJavaModule findDescriptorByModule(@Nullable Module module, boolean inTests) {
+  public static @Nullable PsiJavaModule findDescriptorByModule(@Nullable Module module, boolean inTests) {
     if (module != null) {
       JavaSourceRootType rootType = inTests ? JavaSourceRootType.TEST_SOURCE : JavaSourceRootType.SOURCE;
       List<VirtualFile> files = ContainerUtil.mapNotNull(ModuleRootManager.getInstance(module).getSourceRoots(rootType),
@@ -102,8 +104,7 @@ public class JavaModuleGraphUtil {
     return null;
   }
 
-  @NotNull
-  public static Collection<PsiJavaModule> findCycle(@NotNull PsiJavaModule module) {
+  public static @NotNull Collection<PsiJavaModule> findCycle(@NotNull PsiJavaModule module) {
     Project project = module.getProject();
     List<Set<PsiJavaModule>> cycles = CachedValuesManager.getManager(project).getCachedValue(project, () ->
       Result.create(findCycles(project), cacheDependency()));
@@ -121,33 +122,29 @@ public class JavaModuleGraphUtil {
     return getRequiresGraph(source).reads(source, destination);
   }
 
-  @NotNull
-  public static Set<PsiJavaModule> getAllDependencies(PsiJavaModule source) {
+  public static @NotNull Set<PsiJavaModule> getAllDependencies(PsiJavaModule source) {
     return getRequiresGraph(source).getAllDependencies(source);
   }
 
-  @Nullable
-  public static Trinity<String, PsiJavaModule, PsiJavaModule> findConflict(@NotNull PsiJavaModule module) {
+  public static @Nullable Trinity<String, PsiJavaModule, PsiJavaModule> findConflict(@NotNull PsiJavaModule module) {
     return getRequiresGraph(module).findConflict(module);
   }
 
-  @Nullable
-  public static PsiJavaModule findOrigin(@NotNull PsiJavaModule module, @NotNull String packageName) {
+  public static @Nullable PsiJavaModule findOrigin(@NotNull PsiJavaModule module, @NotNull String packageName) {
     return getRequiresGraph(module).findOrigin(module, packageName);
   }
 
   @SuppressWarnings("deprecation")
   private static Object cacheDependency() {
-    return PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT;
+    return PsiModificationTracker.MODIFICATION_COUNT;
   }
 
   /*
    * Looks for cycles between Java modules in the project sources.
-   * Library/JDK modules are excluded — in an assumption there can't be any lib -> src dependencies.
+   * Library/JDK modules are excluded in an assumption there can't be any lib -> src dependencies.
    * Module references are resolved "globally" (i.e., without taking project dependencies into account).
    */
-  @NotNull
-  private static List<Set<PsiJavaModule>> findCycles(Project project) {
+  private static @NotNull List<Set<PsiJavaModule>> findCycles(Project project) {
     Set<PsiJavaModule> projectModules = new HashSet<>();
     for (Module module : ModuleManager.getInstance(project).getModules()) {
       List<PsiJavaModule> descriptors = ContainerUtil.mapNotNull(ModuleRootManager.getInstance(module).getSourceRoots(true),
@@ -246,7 +243,7 @@ public class JavaModuleGraphUtil {
     }
   }
 
-  private static class RequiresGraph {
+  private static final class RequiresGraph {
     private final Graph<PsiJavaModule> myGraph;
     private final Set<String> myTransitiveEdges;
 
@@ -314,8 +311,7 @@ public class JavaModuleGraphUtil {
       return module.getName() + '/' + exporter.getName();
     }
 
-    @NotNull
-    public Set<PsiJavaModule> getAllDependencies(PsiJavaModule module) {
+    public @NotNull Set<PsiJavaModule> getAllDependencies(PsiJavaModule module) {
       Set<PsiJavaModule> requires = new HashSet<>();
       collectDependencies(module, requires);
       return requires;
@@ -332,7 +328,7 @@ public class JavaModuleGraphUtil {
     }
   }
 
-  private static class ChameleonGraph<N> implements Graph<N> {
+  private static final class ChameleonGraph<N> implements Graph<N> {
     private final Set<N> myNodes;
     private final MultiMap<N, N> myEdges;
     private final boolean myInbound;
@@ -347,22 +343,68 @@ public class JavaModuleGraphUtil {
       myInbound = inbound;
     }
 
-    @NotNull
     @Override
-    public Collection<N> getNodes() {
+    public @NotNull Collection<N> getNodes() {
       return myNodes;
     }
 
-    @NotNull
     @Override
-    public Iterator<N> getIn(N n) {
+    public @NotNull Iterator<N> getIn(N n) {
       return myInbound ? myEdges.get(n).iterator() : Collections.emptyIterator();
     }
 
-    @NotNull
     @Override
-    public Iterator<N> getOut(N n) {
+    public @NotNull Iterator<N> getOut(N n) {
       return myInbound ? Collections.emptyIterator() : myEdges.get(n).iterator();
+    }
+  }
+
+  public static class JavaModuleScope extends GlobalSearchScope {
+    private final PsiJavaModule myModule;
+    private final boolean myIncludeLibraries;
+    private final boolean myIsInTests;
+
+    private JavaModuleScope(@NotNull Project project, @NotNull PsiJavaModule module, @NotNull VirtualFile moduleFile) {
+      super(project);
+      myModule = module;
+      ProjectFileIndex fileIndex = ProjectFileIndex.SERVICE.getInstance(project);
+      myIncludeLibraries = fileIndex.isInLibrary(moduleFile);
+      myIsInTests = !myIncludeLibraries && fileIndex.isInTestSourceContent(moduleFile);
+    }
+
+    @Override
+    public boolean isSearchInModuleContent(@NotNull Module aModule) {
+      return findDescriptorByModule(aModule, myIsInTests) == myModule;
+    }
+
+    @Override
+    public boolean isSearchInLibraries() {
+      return myIncludeLibraries;
+    }
+
+    @Override
+    public boolean contains(@NotNull VirtualFile file) {
+      Project project = getProject();
+      if (project == null) return false;
+      if (!isJvmLanguageFile(file)) return false;
+      ProjectFileIndex index = ProjectFileIndex.SERVICE.getInstance(project);
+      if (index.isInLibrary(file)) return myIncludeLibraries && myModule.equals(findDescriptorInLibrary(project, index, file));
+      Module module = index.getModuleForFile(file);
+      return myModule.equals(findDescriptorByModule(module, myIsInTests));
+    }
+
+    private static boolean isJvmLanguageFile(@NotNull VirtualFile file) {
+      FileTypeRegistry fileTypeRegistry = FileTypeRegistry.getInstance();
+      LanguageFileType languageFileType = tryCast(fileTypeRegistry.getFileTypeByFileName(file.getName()), LanguageFileType.class);
+      return languageFileType != null && languageFileType.getLanguage() instanceof JvmLanguage;
+    }
+
+    public static @Nullable JavaModuleScope moduleScope(@NotNull PsiJavaModule module) {
+      PsiFile moduleFile = module.getContainingFile();
+      if (moduleFile == null) return null;
+      VirtualFile virtualFile = moduleFile.getVirtualFile();
+      if (virtualFile == null) return null;
+      return new JavaModuleScope(module.getProject(), module, virtualFile);
     }
   }
 }

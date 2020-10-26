@@ -1,13 +1,12 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution;
 
 import com.intellij.execution.target.*;
 import com.intellij.icons.AllIcons;
-import com.intellij.ide.wizard.AbstractWizardStepEx;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.ui.ColoredListCellRenderer;
 import com.intellij.ui.SeparatorWithText;
 import com.intellij.util.ObjectUtils;
@@ -46,21 +45,26 @@ public class RunOnTargetComboBox extends ComboBox<RunOnTargetComboBox.Item> {
       }
     }
     if (!types.isEmpty()) {
-      model.addElement(new Separator("New Targets"));
+      model.addElement(new Separator(ExecutionBundle.message("run.on.targets.label.new.targets")));
       for (Type<?> type : types) {
         model.addElement(type);
       }
     }
   }
 
-  public void setDefaultLanguageRuntimeTime(@Nullable LanguageRuntimeType<?> defaultLanguageRuntimeType) {
+  public void setDefaultLanguageRuntimeType(@Nullable LanguageRuntimeType<?> defaultLanguageRuntimeType) {
     myDefaultRuntimeType = defaultLanguageRuntimeType;
+  }
+
+  @Nullable
+  public LanguageRuntimeType<?> getDefaultLanguageRuntimeType() {
+    return myDefaultRuntimeType;
   }
 
   public void addTarget(@NotNull TargetEnvironmentConfiguration config, int index) {
     if (!hasSavedTargets) {
       hasSavedTargets = true;
-      ((MyModel)getModel()).insertElementAt(new Separator("Saved Targets"), 1);
+      ((MyModel)getModel()).insertElementAt(new Separator(ExecutionBundle.message("run.on.targets.label.saved.targets")), 1);
     }
     Icon icon = TargetEnvironmentConfigurationKt.getTargetType(config).getIcon();
     ((MyModel)getModel()).insertElementAt(new Target(config.getDisplayName(), icon), index);
@@ -94,16 +98,16 @@ public class RunOnTargetComboBox extends ComboBox<RunOnTargetComboBox.Item> {
   }
 
   public static abstract class Item {
-    private final String displayName;
+    private final @NlsContexts.Label String displayName;
     private final Icon icon;
 
 
-    public Item(String displayName, Icon icon) {
+    public Item(@NlsContexts.Label String displayName, Icon icon) {
       this.displayName = displayName;
       this.icon = icon;
     }
 
-    public String getDisplayName() {
+    public @NlsContexts.Label String getDisplayName() {
       return displayName;
     }
 
@@ -112,19 +116,19 @@ public class RunOnTargetComboBox extends ComboBox<RunOnTargetComboBox.Item> {
     }
   }
 
-  private static class Separator extends Item {
-    private Separator(String displayName) {
+  private static final class Separator extends Item {
+    private Separator(@NlsContexts.Label String displayName) {
       super(displayName, null);
     }
   }
 
-  private static class Target extends Item {
-    private Target(String name, Icon icon) {
+  private static final class Target extends Item {
+    private Target(@NlsContexts.Label String name, Icon icon) {
       super(name, icon);
     }
   }
 
-  private static class Type<T extends TargetEnvironmentConfiguration> extends Item {
+  private static final class Type<T extends TargetEnvironmentConfiguration> extends Item {
     @NotNull
     private final TargetEnvironmentType<T> type;
 
@@ -134,14 +138,8 @@ public class RunOnTargetComboBox extends ComboBox<RunOnTargetComboBox.Item> {
     }
 
     @Nullable
-    private Pair<T, List<AbstractWizardStepEx>> createStepsForNewWizard(Project project, LanguageRuntimeType<?> defaultRuntimeType) {
-      T config = type.createDefaultConfig();
-      List<AbstractWizardStepEx> steps = type.createStepsForNewWizard(project, config, defaultRuntimeType);
-      if (steps == null) {
-        LOGGER.error("Cannot instantiate remote target wizard");
-        return null;
-      }
-      return Pair.create(config, steps);
+    TargetEnvironmentWizard createWizard(@NotNull Project project, @Nullable LanguageRuntimeType<?> languageRuntime) {
+      return TargetEnvironmentWizard.createWizard(project, type, languageRuntime);
     }
   }
 
@@ -152,17 +150,14 @@ public class RunOnTargetComboBox extends ComboBox<RunOnTargetComboBox.Item> {
         return;
       }
       if (anObject instanceof Type) {
+        hidePopup();
         //noinspection unchecked,rawtypes
-        Pair<TargetEnvironmentConfiguration, List<AbstractWizardStepEx>> wizardData =
-          ((Type)anObject).createStepsForNewWizard(myProject, myDefaultRuntimeType);
-        if (wizardData != null) {
-          TargetEnvironmentConfiguration newTarget = wizardData.first;
-          TargetEnvironmentWizard wizard = new TargetEnvironmentWizard(myProject, "New Target", newTarget, wizardData.second);
-          if (wizard.showAndGet()) {
-            TargetEnvironmentsManager.getInstance().addTarget(newTarget);
-            addTarget(newTarget, 2);
-            setSelectedIndex(2);
-          }
+        TargetEnvironmentWizard wizard = ((Type)anObject).createWizard(myProject, myDefaultRuntimeType);
+        if (wizard != null && wizard.showAndGet()) {
+          TargetEnvironmentConfiguration newTarget = wizard.getSubject();
+          TargetEnvironmentsManager.getInstance().addTarget(newTarget);
+          addTarget(newTarget, 2);
+          setSelectedIndex(2);
         }
         return;
       }
@@ -184,7 +179,7 @@ public class RunOnTargetComboBox extends ComboBox<RunOnTargetComboBox.Item> {
     @Override
     protected void customizeCellRenderer(@NotNull JList<? extends Item> list, Item value, int index, boolean selected, boolean hasFocus) {
       if (value == null) {
-        append("Local machine");
+        append(ExecutionBundle.message("local.machine"));
         setIcon(AllIcons.Nodes.HomeFolder);
       }
       else {

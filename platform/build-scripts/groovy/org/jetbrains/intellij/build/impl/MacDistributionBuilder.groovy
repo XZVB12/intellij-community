@@ -75,6 +75,7 @@ class MacDistributionBuilder extends OsSpecificDistributionBuilder {
     layoutMacApp(ideaProperties, customIdeaProperties, docTypes, macDistPath)
     BuildTasksImpl.unpackPty4jNative(buildContext, macDistPath, "macosx")
     BuildTasksImpl.generateBuildTxt(buildContext, "$macDistPath/Resources")
+    SVGPreBuilder.copyIconDb(buildContext, "$macDistPath/Resources")
 
     customizer.copyAdditionalFiles(buildContext, macDistPath)
 
@@ -103,20 +104,25 @@ class MacDistributionBuilder extends OsSpecificDistributionBuilder {
           boolean notarize = SystemProperties.getBooleanProperty("intellij.build.mac.notarize", true) &&
                              !SystemProperties.getBooleanProperty("build.is.personal", false)
           def jreManager = buildContext.bundledJreManager
+
           // With JRE
-          File jreArchive = jreManager.findJreArchive(OsFamily.MACOS)
-          if (jreArchive.file) {
-            MacDmgBuilder.signAndBuildDmg(buildContext, customizer, buildContext.proprietaryBuildTools.macHostProperties, macZipPath,
-                                          jreArchive.absolutePath, jreManager.isBundledJreModular(), "", notarize)
+          if (buildContext.options.buildDmgWithBundledJre) {
+            File jreArchive = jreManager.findJreArchive(OsFamily.MACOS)
+            if (jreArchive.file) {
+              MacDmgBuilder.signAndBuildDmg(buildContext, customizer, buildContext.proprietaryBuildTools.macHostProperties, macZipPath,
+                                            jreArchive.absolutePath, "", notarize)
+            }
+            else {
+              buildContext.messages.info("Skipping building macOS distribution with bundled JRE because JRE archive is missing")
+            }
           }
-          else {
-            buildContext.messages.info("Skipping building macOS distribution with bundled JRE because JRE archive is missing")
-          }
+
           // Without JRE
           if (buildContext.options.buildDmgWithoutBundledJre) {
             MacDmgBuilder.signAndBuildDmg(buildContext, customizer, buildContext.proprietaryBuildTools.macHostProperties, macZipPath,
-                                          null, false, "-no-jdk", notarize)
+                                          null, "-no-jdk", notarize)
           }
+
           buildContext.ant.delete(file: macZipPath)
         }
       }
@@ -170,11 +176,11 @@ class MacDistributionBuilder extends OsSpecificDistributionBuilder {
     }
 
     new File("$target/bin/idea.properties").text = effectiveProperties.toString()
-    def ideaVmOptions = VmOptionsGenerator.computeVmOptions(JvmArchitecture.x64, buildContext.applicationInfo.isEAP, buildContext.productProperties) +
-                           ['-XX:+UseCompressedOops', '-Dfile.encoding=UTF-8'] +
-                           buildContext.productProperties.additionalIdeJvmArguments.split(' ').toList() +
-                           ["-XX:ErrorFile=\$USER_HOME/java_error_in_${executable}_%p.log", "-XX:HeapDumpPath=\$USER_HOME/java_error_in_${executable}.hprof"]
-    new File("$target/bin/${executable}.vmoptions").text = ideaVmOptions.join("\n")
+    def vmOptions = VmOptionsGenerator.computeVmOptions(JvmArchitecture.x64, buildContext.applicationInfo.isEAP, buildContext.productProperties)
+    //todo[r.sh] additional VM options should go into the launcher (probably via Info.plist)
+    vmOptions += buildContext.productProperties.additionalIdeJvmArguments.split(' ').toList()
+    vmOptions += ["-XX:ErrorFile=\$USER_HOME/java_error_in_${executable}_%p.log", "-XX:HeapDumpPath=\$USER_HOME/java_error_in_${executable}.hprof"]
+    new File("$target/bin/${executable}.vmoptions").text = vmOptions.join('\n') + '\n'
 
     String classPath = buildContext.bootClassPathJarNames.collect { "\$APP_PACKAGE/Contents/lib/${it}" }.join(":")
 

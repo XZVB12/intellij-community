@@ -30,9 +30,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author cdr
- */
 public class StructureViewElementWrapper<V extends PsiElement> implements StructureViewTreeElement {
   private final StructureViewTreeElement myTreeElement;
   private final PsiFile myMainFile;
@@ -89,8 +86,7 @@ public class StructureViewElementWrapper<V extends PsiElement> implements Struct
     if (dataFile == null) return null;
 
     PsiElement tlElement = dataFile.findElementAt(offset);
-    while(true) {
-      if (tlElement == null || tlElement.getTextRange().getStartOffset() != offset) break;
+    while (tlElement != null && tlElement.getTextRange().getStartOffset() == offset) {
       if (tlElement instanceof Navigatable) {
         return (Navigatable)tlElement;
       }

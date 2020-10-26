@@ -4,7 +4,6 @@ package com.intellij.lang.properties.editor;
 import com.intellij.lang.properties.IProperty;
 import com.intellij.lang.properties.ResourceBundle;
 import com.intellij.lang.properties.psi.PropertiesFile;
-import com.intellij.lang.properties.psi.Property;
 import com.intellij.lang.properties.xml.XmlProperty;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -17,29 +16,19 @@ import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.FactoryMap;
-import com.intellij.util.containers.IntArrayList;
-import com.intellij.util.graph.CachingSemiGraph;
-import com.intellij.util.graph.DFSTBuilder;
-import com.intellij.util.graph.Graph;
-import com.intellij.util.graph.GraphGenerator;
-import com.intellij.util.graph.InboundSemiGraph;
+import com.intellij.util.graph.*;
 import gnu.trove.THashMap;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.*;
 
 /**
  * @author Dmitry Batkovich
  */
-public class ResourceBundlePropertiesUpdateManager {
+public final class ResourceBundlePropertiesUpdateManager {
   private final static Logger LOG = Logger.getInstance(ResourceBundlePropertiesUpdateManager.class);
 
   private final ResourceBundle myResourceBundle;
@@ -98,7 +87,7 @@ public class ResourceBundlePropertiesUpdateManager {
       }
       final Pair<IProperty, Integer> propertyAndPosition = findExistedPrevSiblingProperty(key, propertiesFile);
       myCodeStyleManager.reformat(
-        propertiesFile.addPropertyAfter(key, value, propertyAndPosition == null ? null : (Property)propertyAndPosition.getFirst())
+        propertiesFile.addPropertyAfter(key, value, propertyAndPosition == null ? null : propertyAndPosition.getFirst())
           .getPsiElement());
     }
     else {
@@ -225,7 +214,7 @@ public class ResourceBundlePropertiesUpdateManager {
 
   private static class PropertiesOrder {
     List<String> myKeys;
-    Map<String, IntArrayList> myKeyIndices;
+    Map<String, IntList> myKeyIndices;
 
     PropertiesOrder(@NotNull PropertiesFile file) {
       final List<IProperty> properties = file.getProperties();
@@ -247,9 +236,9 @@ public class ResourceBundlePropertiesUpdateManager {
     public List<String> getNext(@NotNull String key) {
       List<String> nextProperties = null;
       if (myKeyIndices.containsKey(key)) {
-        final IntArrayList indices = myKeyIndices.get(key);
+        final IntList indices = myKeyIndices.get(key);
         for (int i = 0; i < indices.size(); i++) {
-          final int searchIdx = indices.getQuick(i) + 1;
+          final int searchIdx = indices.getInt(i) + 1;
           if (searchIdx < myKeys.size()) {
             final String nextProperty = myKeys.get(searchIdx);
             if (nextProperty != null) {

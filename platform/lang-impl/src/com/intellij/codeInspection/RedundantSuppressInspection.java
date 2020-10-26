@@ -9,7 +9,6 @@ import com.intellij.codeInspection.ui.SingleCheckboxOptionsPanel;
 import com.intellij.lang.Language;
 import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
@@ -62,7 +61,16 @@ public class RedundantSuppressInspection extends GlobalSimpleInspectionTool {
                         @NotNull ProblemDescriptionsProcessor problemDescriptionsProcessor) {
     InspectionSuppressor extension = LanguageInspectionSuppressors.INSTANCE.forLanguage(file.getLanguage());
     if (!(extension instanceof RedundantSuppressionDetector)) return;
-    final CommonProblemDescriptor[] descriptors = checkElement(file, (RedundantSuppressionDetector)extension, manager);
+    InspectionProfileImpl profile;
+    if (globalContext instanceof GlobalInspectionContextBase) {
+      profile = ((GlobalInspectionContextBase)globalContext).getCurrentProfile();
+    }
+    else {
+      String currentProfileName = ((InspectionManagerBase)manager).getCurrentProfile();
+      InspectionProjectProfileManager profileManager = InspectionProjectProfileManager.getInstance(manager.getProject());
+      profile = ObjectUtils.notNull(profileManager.getProfile(currentProfileName, false), profileManager.getCurrentProfile());
+    }
+    final CommonProblemDescriptor[] descriptors = checkElement(file, (RedundantSuppressionDetector)extension, manager, profile);
     for (CommonProblemDescriptor descriptor : descriptors) {
       if (descriptor instanceof ProblemDescriptor) {
         final PsiElement psiElement = ((ProblemDescriptor)descriptor).getPsiElement();
@@ -84,7 +92,8 @@ public class RedundantSuppressInspection extends GlobalSimpleInspectionTool {
 
   public ProblemDescriptor @NotNull [] checkElement(final @NotNull PsiFile psiElement,
                                                     RedundantSuppressionDetector extension,
-                                                    final @NotNull InspectionManager manager) {
+                                                    final @NotNull InspectionManager manager,
+                                                    @NotNull InspectionProfile profile) {
     final Map<PsiElement, Collection<String>> suppressedScopes = new THashMap<>();
     psiElement.accept(new PsiRecursiveElementWalkingVisitor() {
       @Override
@@ -97,11 +106,12 @@ public class RedundantSuppressInspection extends GlobalSimpleInspectionTool {
     if (suppressedScopes.values().isEmpty()) return ProblemDescriptor.EMPTY_ARRAY;
     // have to visit all file from scratch since inspections can be written in any pervasive way including checkFile() overriding
     Map<InspectionToolWrapper<?, ?>, String> suppressedTools = new THashMap<>();
-    List<InspectionToolWrapper<?, ?>> toolWrappers = getInspectionTools(psiElement, manager);
+    List<InspectionToolWrapper<?, ?>> toolWrappers = getInspectionTools(psiElement, profile);
+    Language language = psiElement.getLanguage();
     for (Collection<String> ids : suppressedScopes.values()) {
       for (Iterator<String> iterator = ids.iterator(); iterator.hasNext(); ) {
         String suppressId = iterator.next().trim();
-        List<InspectionToolWrapper<?, ?>> reportingWrappers = findReportingTools(toolWrappers, suppressId);
+        List<InspectionToolWrapper<?, ?>> reportingWrappers = findReportingTools(toolWrappers, suppressId, language);
         if (reportingWrappers.isEmpty()) {
           iterator.remove();
         }
@@ -192,7 +202,9 @@ public class RedundantSuppressInspection extends GlobalSimpleInspectionTool {
     return result.toArray(ProblemDescriptor.EMPTY_ARRAY);
   }
 
-  private static List<InspectionToolWrapper<?, ?>> findReportingTools(@NotNull List<InspectionToolWrapper<?, ?>> toolWrappers, String suppressedId) {
+  private static List<InspectionToolWrapper<?, ?>> findReportingTools(@NotNull List<InspectionToolWrapper<?, ?>> toolWrappers,
+                                                                      String suppressedId,
+                                                                      Language language) {
     List<InspectionToolWrapper<?, ?>> wrappers = Collections.emptyList();
     String mergedToolName = InspectionElementsMerger.getMergedToolName(suppressedId);
     for (InspectionToolWrapper<?, ?> toolWrapper : toolWrappers) {
@@ -202,7 +214,7 @@ public class RedundantSuppressInspection extends GlobalSimpleInspectionTool {
           (((LocalInspectionToolWrapper)toolWrapper).getTool().getID().equals(suppressedId) ||
            suppressedId.equals(alternativeID) ||
            toolWrapperShortName.equals(mergedToolName))) {
-        if (!((LocalInspectionToolWrapper)toolWrapper).isUnfair()) {
+        if (!((LocalInspectionToolWrapper)toolWrapper).isUnfair() && toolWrapper.isApplicable(language)) {
           if (wrappers.isEmpty()) wrappers = new ArrayList<>();
           wrappers.add(toolWrapper);
         }
@@ -263,11 +275,8 @@ public class RedundantSuppressInspection extends GlobalSimpleInspectionTool {
            ? ((RedundantSuppressionDetector)suppressor).createRemoveRedundantSuppressionFix(toolAndLang[0]) : null;
   }
 
-  protected @NotNull List<InspectionToolWrapper<?,?>> getInspectionTools(PsiElement psiElement, @NotNull InspectionManager manager) {
-    String currentProfileName = ((InspectionManagerBase)manager).getCurrentProfile();
-    InspectionProjectProfileManager profileManager = InspectionProjectProfileManager.getInstance(manager.getProject());
-    InspectionProfileImpl usedProfile = profileManager.getProfile(currentProfileName, false);
-    return (usedProfile == null ? profileManager.getCurrentProfile() : usedProfile).getInspectionTools(psiElement);
+  protected @NotNull List<InspectionToolWrapper<?,?>> getInspectionTools(PsiElement psiElement, @NotNull InspectionProfile profile) {
+    return profile.getInspectionTools(psiElement);
   }
 
   @Override
@@ -325,16 +334,6 @@ public class RedundantSuppressInspection extends GlobalSimpleInspectionTool {
           HashMap<PsiElement, Collection<String>> scopes = new HashMap<>();
           boolean suppressAll = collectSuppressions(element, scopes, IGNORE_ALL, mySuppressor);
           if (suppressAll) {
-            for (String suppressId : myActiveTools) {
-              if (isSuppressedFor(element, suppressId, myToolToSuppressScopes.get(suppressId))) {
-                return;
-              }
-            }
-            TextRange range = mySuppressor.getHighlightingRange(element, SuppressionUtil.ALL);
-            String allSuppression = element.getText().substring(range.getStartOffset(), range.getEndOffset());
-            holder.registerProblem(element, range,
-                                   InspectionsBundle.message("inspection.redundant.suppression.description"),
-                                   mySuppressor.createRemoveRedundantSuppressionFix(allSuppression));
             return;
           }
           Collection<String> suppressIds = scopes.get(element);

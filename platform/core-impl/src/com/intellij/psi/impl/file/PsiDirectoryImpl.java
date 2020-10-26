@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.impl.file;
 
 import com.intellij.core.CoreBundle;
@@ -18,7 +18,10 @@ import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.*;
+import com.intellij.openapi.vfs.InvalidVirtualFileAccessException;
+import com.intellij.openapi.vfs.NonPhysicalFileSystem;
+import com.intellij.openapi.vfs.VfsUtilCore;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.CheckUtil;
 import com.intellij.psi.impl.PsiElementBase;
@@ -28,6 +31,7 @@ import com.intellij.psi.search.PsiElementProcessor;
 import com.intellij.psi.search.PsiFileSystemItemProcessor;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.testFramework.LightVirtualFile;
+import com.intellij.ui.IconManager;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.PlatformIcons;
@@ -174,7 +178,7 @@ public class PsiDirectoryImpl extends PsiElementBase implements PsiDirectory, Qu
   }
 
   @Override
-  public boolean processChildren(@NotNull PsiElementProcessor<PsiFileSystemItem> processor) {
+  public boolean processChildren(@NotNull PsiElementProcessor<? super PsiFileSystemItem> processor) {
     checkValid();
 
     for (VirtualFile vFile : myFile.getChildren()) {
@@ -400,16 +404,18 @@ public class PsiDirectoryImpl extends PsiElementBase implements PsiDirectory, Qu
 
       try {
         VirtualFile newVFile;
-        final PsiDocumentManager psiDocumentManager = PsiDocumentManager.getInstance(myManager.getProject());
         if (originalFile instanceof PsiFileImpl) {
           newVFile = myFile.createChildData(myManager, originalFile.getName());
           String text = originalFile.getText();
           final PsiFile psiFile = getManager().findFile(newVFile);
-          final Document document = psiFile == null ? null : psiDocumentManager.getDocument(psiFile);
+          final Document document = psiFile == null ? null : psiFile.getViewProvider().getDocument();
           final FileDocumentManager fileDocumentManager = FileDocumentManager.getInstance();
           if (document != null) {
             document.setText(text);
-            fileDocumentManager.saveDocument(document);
+            if (psiFile.isPhysical()) {
+              fileDocumentManager.saveDocument(document);
+            }
+            PsiDocumentManager.getInstance(getProject()).commitDocument(document);
           }
           else {
             String lineSeparator = fileDocumentManager.getLineSeparator(newVFile, getProject());
@@ -430,7 +436,6 @@ public class PsiDirectoryImpl extends PsiElementBase implements PsiDirectory, Qu
             newVFile = VfsUtilCore.copyFile(null, originalFile.getVirtualFile(), myFile);
           }
         }
-        psiDocumentManager.commitAllDocuments();
 
         PsiFile newFile = myManager.findFile(newVFile);
         if (newFile == null) throw new IncorrectOperationException("Could not find file " + newVFile);
@@ -450,7 +455,7 @@ public class PsiDirectoryImpl extends PsiElementBase implements PsiDirectory, Qu
     CheckUtil.checkWritable(this);
     if (element instanceof PsiDirectory || element instanceof PsiFile) {
       String name = ((PsiFileSystemItem)element).getName();
-      boolean caseSensitive = getVirtualFile().getFileSystem().isCaseSensitive();
+      boolean caseSensitive = getVirtualFile().isCaseSensitive();
       VirtualFile existing = ContainerUtil.find(getVirtualFile().getChildren(),
                                                 item -> Comparing.strEqual(item.getName(), name, caseSensitive));
       if (existing != null) {
@@ -526,8 +531,8 @@ public class PsiDirectoryImpl extends PsiElementBase implements PsiDirectory, Qu
   }
 
   @Override
-  protected Icon getElementIcon(final int flags) {
-    return PlatformIcons.FOLDER_ICON;
+  protected Icon getElementIcon(int flags) {
+    return IconManager.getInstance().tooltipOnlyIfComposite(PlatformIcons.FOLDER_ICON);
   }
 
   @Override

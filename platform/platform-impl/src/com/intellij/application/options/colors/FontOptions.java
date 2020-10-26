@@ -11,16 +11,17 @@ import com.intellij.openapi.editor.colors.FontPreferences;
 import com.intellij.openapi.editor.colors.impl.AppEditorFontOptions;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ex.Settings;
-import com.intellij.ui.HoverHyperlinkLabel;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.components.labels.LinkLabel;
+import com.intellij.ui.components.labels.LinkListener;
 import com.intellij.util.ui.JBDimension;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import javax.swing.event.HyperlinkEvent;
-import javax.swing.event.HyperlinkListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -39,11 +40,11 @@ public class FontOptions extends AbstractFontOptionsPanel {
   }
 
   @Nullable
-  protected String getInheritedFontTitle() {
+  protected @NlsContexts.LinkLabel String getInheritedFontTitle() {
     return ApplicationBundle.message("settings.editor.font.default");
   }
 
-  protected String getOverwriteFontTitle() {
+  protected @NlsContexts.Checkbox String getOverwriteFontTitle() {
     return ApplicationBundle.message("settings.editor.font.overwrite");
   }
 
@@ -79,7 +80,7 @@ public class FontOptions extends AbstractFontOptionsPanel {
     if (getInheritedFontTitle() != null) {
       JPanel overwritePanel = new JPanel(new FlowLayout(FlowLayout.LEADING, 0,0 ));
       overwritePanel.setBorder(BorderFactory.createEmptyBorder());
-      myOverwriteCheckBox = new JCheckBox(getOverwriteFontTitle() + " ");
+      myOverwriteCheckBox = new JCheckBox(getOverwriteFontTitle());
       myOverwriteCheckBox.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 5));
       myOverwriteCheckBox.addActionListener(new ActionListener() {
         @Override
@@ -103,7 +104,7 @@ public class FontOptions extends AbstractFontOptionsPanel {
     return label;
   }
 
-  private String getBaseFontInfo() {
+  private @NlsSafe String getBaseFontInfo() {
     FontPreferences basePrefs = getBaseFontPreferences();
     return basePrefs.getFontFamily() + ',' + basePrefs.getSize(basePrefs.getFontFamily());
   }
@@ -114,16 +115,12 @@ public class FontOptions extends AbstractFontOptionsPanel {
 
   @NotNull
   private JLabel createHyperlinkLabel() {
-    HoverHyperlinkLabel label = new HoverHyperlinkLabel(getInheritedFontTitle());
-    label.addHyperlinkListener(new HyperlinkListener() {
+    return new LinkLabel<>(getInheritedFontTitle(), null, new LinkListener<Object>() {
       @Override
-      public void hyperlinkUpdate(HyperlinkEvent e) {
-        if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
-          navigateToParentFontConfigurable();
-        }
+      public void linkSelected(LinkLabel<Object> aSource, Object aLinkData) {
+        navigateToParentFontConfigurable();
       }
     });
-    return label;
   }
 
   protected void navigateToParentFontConfigurable() {

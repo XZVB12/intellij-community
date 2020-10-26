@@ -1,51 +1,44 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.refactoring.extractMethod.newImpl
 
-import com.intellij.codeInsight.CodeInsightUtil
 import com.intellij.codeInsight.ExceptionUtil
 import com.intellij.codeInsight.Nullability
-import com.intellij.codeInsight.generation.GenerateMembersUtil
 import com.intellij.codeInspection.dataFlow.*
 import com.intellij.codeInspection.dataFlow.value.DfaValue
-import com.intellij.openapi.diagnostic.Logger
+import com.intellij.java.refactoring.JavaRefactoringBundle
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.*
-import com.intellij.psi.codeStyle.JavaCodeStyleManager
-import com.intellij.psi.codeStyle.VariableKind
 import com.intellij.psi.controlFlow.*
 import com.intellij.psi.controlFlow.ControlFlow
 import com.intellij.psi.controlFlow.ControlFlowUtil.DEFAULT_EXIT_STATEMENTS_CLASSES
-import com.intellij.psi.impl.source.codeStyle.JavaCodeStyleManagerImpl
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.PsiUtil
-import com.intellij.refactoring.extractMethod.newImpl.structures.DataOutput
-import com.intellij.refactoring.extractMethod.newImpl.structures.ExtractOptions
-import com.intellij.refactoring.util.classMembers.ClassMemberReferencesVisitor
-import com.intellij.util.containers.IntArrayList
+import com.intellij.refactoring.util.classMembers.ElementNeedsThis
 import com.siyeh.ig.psiutils.VariableAccessUtils
-import java.util.LinkedHashSet
-import kotlin.Comparator
-import kotlin.collections.ArrayList
-import kotlin.collections.HashSet
+import it.unimi.dsi.fastutil.ints.IntArrayList
 
 data class ExitDescription(val statements: List<PsiStatement>, val numberOfExits: Int, val hasSpecialExits: Boolean)
 data class ExternalReference(val variable: PsiVariable, val references: List<PsiReferenceExpression>)
-data class FieldUsage(val field: PsiField, val classMemberReference: PsiReferenceExpression, val isWrite: Boolean)
+data class MemberUsage(val member: PsiMember, val reference: PsiReferenceExpression)
 
 class CodeFragmentAnalyzer(val elements: List<PsiElement>) {
 
   init {
     require(elements.isNotEmpty())
   }
+
   private val codeFragment = ControlFlowUtil.findCodeFragment(elements.first())
-  private val flow: ControlFlow = createControlFlow(elements)
+  private val flow: ControlFlow = createControlFlow()
   private val flowRange = findFlowRange(flow, elements)
 
-  private fun createControlFlow(elements: List<PsiElement>): ControlFlow {
-    val fragmentToAnalyze: PsiElement = codeFragment
-    val flowPolicy = LocalsControlFlowPolicy(fragmentToAnalyze)
-    val factory: ControlFlowFactory = ControlFlowFactory.getInstance(elements.first().project)
-    return factory.getControlFlow(fragmentToAnalyze, flowPolicy, false, false)
+  private fun createControlFlow(): ControlFlow {
+    try {
+      val fragmentToAnalyze: PsiElement = codeFragment
+      val flowPolicy = LocalsControlFlowPolicy(fragmentToAnalyze)
+      return ControlFlowFactory.getControlFlow(fragmentToAnalyze, flowPolicy, ControlFlowOptions.NO_CONST_EVALUATE)
+    } catch (e: AnalysisCanceledException) {
+      throw ExtractException(JavaRefactoringBundle.message("extract.method.control.flow.analysis.failed"), e.errorElement)
+    }
   }
 
   private fun findFlowRange(flow: ControlFlow, elements: List<PsiElement>): IntRange {
@@ -88,7 +81,7 @@ class CodeFragmentAnalyzer(val elements: List<PsiElement>) {
   fun findOutputVariables(): List<PsiVariable> {
     val exitPoints = IntArrayList()
     ControlFlowUtil.findExitPointsAndStatements(flow, flowRange.first, flowRange.last, exitPoints, *DEFAULT_EXIT_STATEMENTS_CLASSES)
-    return ControlFlowUtil.getOutputVariables(flow, flowRange.first, flowRange.last, exitPoints.toArray()).distinct()
+    return ControlFlowUtil.getOutputVariables(flow, flowRange.first, flowRange.last, exitPoints.toIntArray()).distinct()
   }
 
   fun findUndeclaredVariables(): List<PsiVariable> {
@@ -124,14 +117,15 @@ class CodeFragmentAnalyzer(val elements: List<PsiElement>) {
     return declaredVariables.intersect(externallyWrittenVariables).toList()
   }
 
-  fun findFieldUsages(targetClass: PsiClass, elements: List<PsiElement>): List<FieldUsage> {
-    val usedFields = ArrayList<FieldUsage>()
-    val visitor = object : ClassMemberReferencesVisitor(targetClass) {
+  fun findInstanceMemberUsages(targetClass: PsiClass, elements: List<PsiElement>): List<MemberUsage> {
+    val usedFields = ArrayList<MemberUsage>()
+    val visitor: ElementNeedsThis = object : ElementNeedsThis(targetClass) {
       override fun visitClassMemberReferenceElement(classMember: PsiMember, classMemberReference: PsiJavaCodeReferenceElement) {
-        val expression = PsiTreeUtil.getParentOfType(classMemberReference, PsiExpression::class.java, false)
-        if (classMember is PsiField && expression != null && classMemberReference is PsiReferenceExpression) {
-          usedFields += FieldUsage(classMember, classMemberReference, PsiUtil.isAccessedForWriting(expression))
+        val expression = PsiTreeUtil.getParentOfType(classMemberReference, PsiReferenceExpression::class.java, false)
+        if (expression != null && !classMember.hasModifierProperty(PsiModifier.STATIC)) {
+          usedFields += MemberUsage(classMember, expression)
         }
+        super.visitClassMemberReferenceElement(classMember, classMemberReference)
       }
     }
     elements.forEach { it.accept(visitor) }
@@ -239,17 +233,18 @@ class CodeFragmentAnalyzer(val elements: List<PsiElement>) {
 
   companion object {
     fun inferNullability(expressionGroup: List<PsiExpression>): Nullability {
-      if (expressionGroup.any { it.type == PsiType.NULL }) return Nullability.NULLABLE
+      val expressionSet = expressionGroup.toHashSet()
+      if (expressionSet.any { it.type == PsiType.NULL }) return Nullability.NULLABLE
 
-      if (expressionGroup.isEmpty()) return Nullability.UNKNOWN
-      val fragmentToAnalyze = ControlFlowUtil.findCodeFragment(expressionGroup.first())
+      if (expressionSet.isEmpty()) return Nullability.UNKNOWN
+      val fragmentToAnalyze = ControlFlowUtil.findCodeFragment(expressionSet.first())
       val dfaRunner = DataFlowRunner(fragmentToAnalyze.project)
 
       var nullability = DfaNullability.NOT_NULL
 
       class Visitor : StandardInstructionVisitor() {
         override fun beforeExpressionPush(value: DfaValue, expr: PsiExpression, range: TextRange?, state: DfaMemoryState) {
-          if (expr in expressionGroup) {
+          if (expr in expressionSet) {
             val expressionNullability = when {
               state.isNotNull(value) -> DfaNullability.NOT_NULL
               state.isNull(value) -> DfaNullability.NULL
@@ -269,7 +264,7 @@ class CodeFragmentAnalyzer(val elements: List<PsiElement>) {
       }
     }
 
-    fun inferNullability(place: PsiStatement, probeExpression: String?): Nullability {
+    fun inferNullability(place: PsiElement, probeExpression: String?): Nullability {
       if (probeExpression == null) return Nullability.UNKNOWN
       val factory = PsiElementFactory.getInstance(place.project)
       val sourceClass = findClassMember(place)?.containingClass ?: return Nullability.UNKNOWN

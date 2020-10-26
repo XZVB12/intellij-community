@@ -11,10 +11,7 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.ListPopup;
 import com.intellij.openapi.ui.popup.ListPopupStep;
-import com.intellij.openapi.util.ActionCallback;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Condition;
-import com.intellij.openapi.util.Conditions;
+import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.*;
@@ -24,7 +21,6 @@ import com.intellij.ui.navigation.Place;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.PlatformIcons;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.openapi.util.NlsContexts;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.tree.TreeUtil;
@@ -369,8 +365,8 @@ public abstract class MasterDetailsComponent implements Configurable, DetailsCom
     }
   }
 
-  private static String getNodePathString(final MyNode node) {
-    StringBuilder path = new StringBuilder();
+  private static @NonNls String getNodePathString(final MyNode node) {
+    @NonNls StringBuilder path = new StringBuilder();
     MyNode current = node;
     while (current != null) {
       final Object userObject = current.getUserObject();
@@ -443,30 +439,7 @@ public abstract class MasterDetailsComponent implements Configurable, DetailsCom
     myTree.setRootVisible(false);
     myTree.setShowsRootHandles(true);
     TreeUtil.installActions(myTree);
-    myTree.setCellRenderer(new ColoredTreeCellRenderer() {
-      @Override
-      public void customizeCellRenderer(@NotNull JTree tree,
-                                        Object value,
-                                        boolean selected,
-                                        boolean expanded,
-                                        boolean leaf,
-                                        int row,
-                                        boolean hasFocus) {
-        if (value instanceof MyNode) {
-          final MyNode node = (MyNode)value;
-          setIcon(node.getIcon(expanded));
-          final Font font = UIUtil.getTreeFont();
-          if (node.isDisplayInBold()) {
-            setFont(font.deriveFont(Font.BOLD));
-          }
-          else {
-            setFont(font.deriveFont(Font.PLAIN));
-          }
-          append(node.getDisplayName(),
-                 node.isDisplayInBold() ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : SimpleTextAttributes.REGULAR_ATTRIBUTES);
-        }
-      }
-    });
+    myTree.setCellRenderer(new MyColoredTreeCellRenderer());
     List<AnAction> actions = createActions(true);
     if (actions != null) {
       final DefaultActionGroup group = new DefaultActionGroup();
@@ -578,7 +551,7 @@ public abstract class MasterDetailsComponent implements Configurable, DetailsCom
     return null;
   }
 
-  public void selectNodeInTree(String displayName) {
+  public void selectNodeInTree(@NlsSafe String displayName) {
     final MyNode nodeByName = findNodeByName(myRoot, displayName);
     selectNodeInTree(nodeByName, true);
   }
@@ -765,6 +738,37 @@ public abstract class MasterDetailsComponent implements Configurable, DetailsCom
   protected void onItemDeleted(Object item) {
   }
 
+  public static class MyColoredTreeCellRenderer extends ColoredTreeCellRenderer {
+    @Override
+    public final void customizeCellRenderer(@NotNull JTree tree,
+                                      Object value,
+                                      boolean selected,
+                                      boolean expanded,
+                                      boolean leaf,
+                                      int row,
+                                      boolean hasFocus) {
+      if (value instanceof MyNode) {
+        final MyNode node = (MyNode)value;
+        setIcon(node.getIcon(expanded));
+        final Font font = UIUtil.getTreeFont();
+        if (node.isDisplayInBold()) {
+          setFont(font.deriveFont(Font.BOLD));
+        }
+        else {
+          setFont(font.deriveFont(Font.PLAIN));
+        }
+
+        SimpleTextAttributes attributes = node.isDisplayInBold() ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES :
+                                          SimpleTextAttributes.REGULAR_ATTRIBUTES;
+        append(node.getDisplayName(), SimpleTextAttributes.merge(getAdditionalAttributes(node), attributes));
+      }
+    }
+
+    protected @NotNull SimpleTextAttributes getAdditionalAttributes(@NotNull MyNode node) {
+      return SimpleTextAttributes.REGULAR_ATTRIBUTES;
+    }
+  }
+
   protected class MyDeleteAction extends AnAction implements DumbAware {
     private final Condition<Object[]> myCondition;
 
@@ -818,7 +822,7 @@ public abstract class MasterDetailsComponent implements Configurable, DetailsCom
     }
 
     @NotNull
-    public String getDisplayName() {
+    public @NlsSafe String getDisplayName() {
       final NamedConfigurable configurable = (NamedConfigurable)getUserObject();
       if (configurable != null) return configurable.getDisplayName();
       LOG.debug("Tree was already disposed"); // workaround for IDEA-206547

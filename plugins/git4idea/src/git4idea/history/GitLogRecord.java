@@ -7,6 +7,7 @@ import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.containers.ContainerUtil;
 import git4idea.GitUtil;
 import git4idea.commands.GitHandler;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -19,7 +20,7 @@ import static git4idea.history.GitLogParser.GitLogOption.*;
  * The access methods try heavily to return some default value if real is unavailable, for example, blank string is better than null.
  * BUT if one tries to get an option which was not specified to the GitLogParser, one will get null.
  *
- * @see git4idea.history.GitLogParser
+ * @see GitLogParser
  */
 class GitLogRecord {
   private static final Logger LOG = Logger.getInstance(GitLogRecord.class);
@@ -175,12 +176,13 @@ class GitLogRecord {
   }
 
   /**
-   * for debugging purposes - see {@link GitUtil#parseTimestampWithNFEReport(String, git4idea.commands.GitHandler, String)}.
+   * for debugging purposes - see {@link GitUtil#parseTimestampWithNFEReport(String, GitHandler, String)}.
    */
   public void setUsedHandler(GitHandler handler) {
     myHandler = handler;
   }
 
+  @NonNls
   @Override
   public String toString() {
     return String.format("GitLogRecord{myOptions=%s, mySupportsRawBody=%s, myHandler=%s}",

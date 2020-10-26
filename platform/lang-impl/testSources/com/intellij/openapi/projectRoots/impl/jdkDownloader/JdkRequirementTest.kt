@@ -2,6 +2,7 @@
 package com.intellij.openapi.projectRoots.impl.jdkDownloader
 
 import com.intellij.idea.TestFor
+import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ui.configuration.UnknownSdkLocalSdkFix
 import com.intellij.testFramework.LightPlatformTestCase
 import org.junit.Assert
@@ -136,7 +137,7 @@ class JdkRequirementTest : LightPlatformTestCase() {
     val req = JdkRequirements.parseRequirement(text)
     Assert.assertNotNull(req)
     req!!
-    println("parsed requirement: $req")
+    LOG.debug("parsed requirement: $req")
 
     for (match in matches) {
       Assert.assertTrue("$req matches $match", req.matches(match))
@@ -153,6 +154,7 @@ class JdkRequirementTest : LightPlatformTestCase() {
     override fun getExistingSdkHome() = "mock-home"
     override fun getVersionString() = versionString
     override fun getSuggestedSdkName() = versionString
+    override fun configureSdk(sdk: Sdk) {}
   }
 
   private val Corretto = JdkProduct("Amazon", "Corretto", null)
@@ -172,7 +174,7 @@ class JdkRequirementTest : LightPlatformTestCase() {
     val req = JdkRequirements.parseRequirement(text)
     Assert.assertNotNull(req)
     req!!
-    println("parsed requirement: $req")
+    LOG.debug("parsed requirement: $req")
 
     for (match in matches) {
       Assert.assertTrue("$req matches $match", req.matches(match))

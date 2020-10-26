@@ -69,7 +69,7 @@ public class GotoImplementationHandler extends GotoTargetHandler {
     return createDataForSource(editor, offset, source);
   }
 
-  private GotoData createDataForSource(@NotNull Editor editor, int offset, PsiElement source) {
+  private @NotNull GotoData createDataForSource(@NotNull Editor editor, int offset, PsiElement source) {
     final PsiReference reference = TargetElementUtil.findReference(editor, offset);
     final TargetElementUtil instance = TargetElementUtil.getInstance();
     PsiElement[] targets = new ImplementationSearcher.FirstImplementationsSearcher() {
@@ -84,7 +84,12 @@ public class GotoImplementationHandler extends GotoTargetHandler {
         return false;
       }
     }.searchImplementations(editor, source, offset);
-    if (targets == null) return null;
+    if (targets == null) {
+      //canceled search
+      GotoData data = new GotoData(source, PsiElement.EMPTY_ARRAY, Collections.emptyList());
+      data.isCanceled = true;
+      return data;
+    }
     GotoData gotoData = new GotoData(source, targets, Collections.emptyList());
     gotoData.listUpdaterTask = new ImplementationsUpdaterTask(gotoData, editor, offset, reference) {
       @Override
@@ -123,9 +128,7 @@ public class GotoImplementationHandler extends GotoTargetHandler {
     int offset = editor.getCaretModel().getOffset();
     PsiElementProcessor<PsiElement> navigateProcessor = element -> {
       GotoData data = createDataForSource(editor, offset, element);
-      if (data != null) {
-        successCallback.consume(data);
-      }
+      successCallback.consume(data);
       return true;
     };
     Project project = editor.getProject();

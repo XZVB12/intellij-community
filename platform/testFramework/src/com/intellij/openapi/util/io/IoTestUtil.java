@@ -1,15 +1,20 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.util.io;
 
-import com.intellij.execution.process.ProcessIOExecutorService;
+import com.intellij.ReviseWhenPortedToJDK;
+import com.intellij.execution.ExecutionException;
+import com.intellij.execution.configurations.GeneralCommandLine;
+import com.intellij.execution.configurations.PathEnvironmentVariableUtil;
+import com.intellij.execution.process.ProcessOutput;
+import com.intellij.execution.util.ExecUtil;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.PathUtil;
-import one.util.streamex.StreamEx;
+import com.intellij.util.io.SuperUserStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.junit.Assume;
 import org.junit.AssumptionViolatedException;
 
 import java.io.*;
@@ -18,26 +23,27 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collection;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
+import static org.junit.Assume.assumeFalse;
+import static org.junit.Assume.assumeTrue;
 
-public class IoTestUtil {
-  public static final boolean isSymLinkCreationSupported = SystemInfo.isUnix || SystemInfo.isWinVistaOrNewer && canCreateSymlinks();
+public final class IoTestUtil {
+  @ReviseWhenPortedToJDK("13")
+  private static final @Nullable Boolean symLinkMode = SystemInfo.isUnix ? Boolean.TRUE : canCreateSymlinks();  // `TRUE` == NIO, `FALSE` == "mklink"
+  public static final boolean isSymLinkCreationSupported = symLinkMode != null;
 
   private IoTestUtil() { }
 
+  @SuppressWarnings("SpellCheckingInspection")
   private static final String[] UNICODE_PARTS = {"Юникоде", "Úñíçødê"};
 
   @Nullable
@@ -71,34 +77,76 @@ public class IoTestUtil {
     return file;
   }
 
-  @NotNull
-  public static File createSymLink(@NotNull String target, @NotNull String link) {
-    return createSymLink(target, link, true);
+  public static @NotNull File createSymLink(@NotNull String target, @NotNull String link) {
+    return createSymLink(target, link, Boolean.TRUE);
   }
 
-  @NotNull
-  public static File createSymLink(@NotNull String target, @NotNull String link, boolean shouldExist) {
-    File linkFile = getFullLinkPath(link);
+  public static @NotNull File createSymLink(@NotNull String target, @NotNull String link, boolean shouldExist) {
+    return createSymLink(target, link, Boolean.valueOf(shouldExist));
+  }
+
+  /** A drop-in replacement for `Files#createSymbolicLink` needed until migrating to Java 13+ */
+  public static @NotNull Path createSymbolicLink(@NotNull Path link, @NotNull Path target) throws IOException {
     try {
-      Files.createSymbolicLink(linkFile.toPath(), FileSystems.getDefault().getPath(target));
+      return createSymLink(target.toString(), link.toString(), null).toPath();
+    }
+    catch (UncheckedIOException e) {
+      throw e.getCause();
+    }
+  }
+
+  private static File createSymLink(String target, String link, @Nullable Boolean shouldExist) {
+    File linkFile = getFullLinkPath(link), targetFile = new File(target);
+    try {
+      if (symLinkMode == Boolean.TRUE) {
+        Files.createSymbolicLink(linkFile.toPath(), targetFile.toPath());
+      }
+      else if (Files.isDirectory(targetFile.isAbsolute() ? targetFile.toPath() : linkFile.toPath().getParent().resolve(target))) {
+        runCommand("cmd", "/C", "mklink", "/D", linkFile.getPath(), targetFile.getPath());
+      }
+      else {
+        runCommand("cmd", "/C", "mklink", linkFile.getPath(), targetFile.getPath());
+      }
     }
     catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new UncheckedIOException(e);
     }
-    assertEquals("target=" + target + ", link=" + linkFile, shouldExist, linkFile.exists());
+    if (shouldExist != null) {
+      assertEquals("target=" + target + ", link=" + linkFile, shouldExist, linkFile.exists());
+    }
     return linkFile;
   }
 
   public static void assumeSymLinkCreationIsSupported() throws AssumptionViolatedException {
-    Assume.assumeTrue("Can't create symlinks on " + SystemInfo.getOsNameAndVersion(), isSymLinkCreationSupported);
+    assumeTrue("Can't create symlinks on " + SystemInfo.OS_NAME, isSymLinkCreationSupported);
+  }
+
+  public static void assumeNioSymLinkCreationIsSupported() throws AssumptionViolatedException {
+    assumeTrue("Can't create symlinks via NIO2 on " + SystemInfo.OS_NAME, symLinkMode == Boolean.TRUE);
   }
 
   public static void assumeWindows() throws AssumptionViolatedException {
-    Assume.assumeTrue("Need Windows, can't run on " + SystemInfo.OS_NAME, SystemInfo.isWindows);
+    assumeTrue("Need Windows, can't run on " + SystemInfo.OS_NAME, SystemInfo.isWindows);
+  }
+
+  public static void assumeMacOS() throws AssumptionViolatedException {
+    assumeTrue("Need macOS, can't run on " + SystemInfo.OS_NAME, SystemInfo.isMac);
   }
 
   public static void assumeUnix() throws AssumptionViolatedException {
-    Assume.assumeTrue("Need Unix, can't run on " + SystemInfo.OS_NAME, SystemInfo.isUnix);
+    assumeTrue("Need Unix, can't run on " + SystemInfo.OS_NAME, SystemInfo.isUnix);
+  }
+
+  public static void assumeCaseSensitiveFS() throws AssumptionViolatedException {
+    assumeTrue("Assumed case sensitive FS but got " + SystemInfo.OS_NAME, SystemInfo.isFileSystemCaseSensitive);
+  }
+
+  public static void assumeCaseInsensitiveFS() throws AssumptionViolatedException {
+    assumeFalse("Assumed case insensitive FS but got " + SystemInfo.OS_NAME, SystemInfo.isFileSystemCaseSensitive);
+  }
+
+  public static void assumeWslPresence() throws AssumptionViolatedException {
+    assumeTrue("'wsl.exe' not found in %Path%", PathEnvironmentVariableUtil.findInPath("wsl.exe") != null);
   }
 
   @NotNull
@@ -134,8 +182,10 @@ public class IoTestUtil {
   }
 
   private static char getFirstFreeDriveLetter() {
-    Set<Character> roots =
-      StreamEx.of(FileSystems.getDefault().getRootDirectories()).map(root -> StringUtil.toUpperCase(root.toString()).charAt(0)).toSet();
+    Set<Character> roots = StreamSupport.stream(FileSystems.getDefault().getRootDirectories().spliterator(), false)
+      .map(root -> StringUtil.toUpperCase(root.toString()).charAt(0))
+      .collect(Collectors.toSet());
+    Logger.getInstance(IoTestUtil.class).debug("logical drives: " + roots);
     for (char c = 'E'; c <= 'Z'; c++) {
       if (!roots.contains(c)) {
         return c;
@@ -157,31 +207,13 @@ public class IoTestUtil {
 
   private static void runCommand(String... command) {
     try {
-      ProcessBuilder builder = new ProcessBuilder(command);
-      builder.redirectErrorStream(true);
-
-      Process process = builder.start();
-      StringBuilder output = new StringBuilder();
-
-      Future<?> thread = ProcessIOExecutorService.INSTANCE.submit(() -> {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-          String line;
-          while ((line = reader.readLine()) != null) {
-            output.append(line).append('\n');
-          }
-        }
-        catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      });
-      int ret = process.waitFor();
-      thread.get();
-
-      if (ret != 0) {
-        throw new RuntimeException(builder.command() + "\nresult: " + ret + "\noutput:\n" + output);
+      GeneralCommandLine cmd = new GeneralCommandLine(command).withRedirectErrorStream(true);
+      ProcessOutput output = ExecUtil.execAndGetOutput(cmd, 30_000);
+      if (output.getExitCode() != 0) {
+        fail("failed: " + cmd + "\nexit code: " + output.getExitCode() + "; output:\n" + output.getStdout().trim());
       }
     }
-    catch (IOException | InterruptedException | ExecutionException e) {
+    catch (ExecutionException e) {
       throw new RuntimeException(e);
     }
   }
@@ -201,7 +233,7 @@ public class IoTestUtil {
   }
 
   @NotNull
-  public static File createTestJar(File jarFile) {
+  public static File createTestJar(@NotNull File jarFile) {
     return createTestJar(jarFile, JarFile.MANIFEST_NAME, "");
   }
 
@@ -221,7 +253,7 @@ public class IoTestUtil {
   }
 
   @NotNull
-  public static File createTestJar(@NotNull File jarFile, @NotNull Collection<Pair<String, byte[]>> namesAndContents) {
+  public static File createTestJar(@NotNull File jarFile, @NotNull Collection<? extends Pair<String, byte[]>> namesAndContents) {
     try (ZipOutputStream stream = new ZipOutputStream(new FileOutputStream(jarFile))) {
       for (Pair<String, byte[]> p : namesAndContents) {
         String name = p.first;
@@ -323,14 +355,22 @@ public class IoTestUtil {
     }
   }
 
-  private static boolean canCreateSymlinks() {
+  private static Boolean canCreateSymlinks() {
     try {
       Path target = Files.createTempFile("IOTestUtil_link_target.", ".txt");
       try {
         Path link = target.getParent().resolve("IOTestUtil_link");
         try {
-          Files.createSymbolicLink(link, target.getFileName());
-          return true;
+          try {
+            Files.createSymbolicLink(link, target.getFileName());
+            return Boolean.TRUE;
+          }
+          catch (IOException e) {
+            GeneralCommandLine cmd = new GeneralCommandLine("cmd", "/C", "mklink", link.toString(),
+                                                            target.getFileName().toString()).withRedirectErrorStream(true);
+            ExecUtil.execAndGetOutput(cmd, 30_000);
+            return Boolean.FALSE;
+          }
         }
         finally {
           Files.deleteIfExists(link);
@@ -340,13 +380,39 @@ public class IoTestUtil {
         Files.delete(target);
       }
     }
-    catch (IOException ignored) {
-      return false;
+    catch (Exception e) {
+      //noinspection SSBasedInspection
+      Logger.getInstance("#com.intellij.openapi.util.io.IoTestUtil").debug(e);
+      return null;
     }
   }
 
   /* "C:\path" -> "\\127.0.0.1\C$\path" */
   public static @NotNull String toLocalUncPath(@NotNull String localPath) {
     return "\\\\127.0.0.1\\" + localPath.charAt(0) + '$' + localPath.substring(2);
+  }
+
+  public static @NotNull List<@NotNull String> enumerateWslDistributions() {
+    assertTrue(SystemInfo.isWin10OrNewer);
+    try {
+      GeneralCommandLine cmd = new GeneralCommandLine("wsl", "-l", "-v").withRedirectErrorStream(true).withCharset(StandardCharsets.UTF_16LE);
+      ProcessOutput output = ExecUtil.execAndGetOutput(cmd, 30_000);
+      if (output.getExitCode() == 0) {
+        return output.getStdoutLines().stream().skip(1).map(line -> line.split("\\s+")[1]).collect(Collectors.toList());
+      }
+      else {
+        Logger.getInstance(IoTestUtil.class).debug(output.getExitCode() + " " + output.getStdout().trim());
+      }
+    }
+    catch (Exception e) {
+      Logger.getInstance(IoTestUtil.class).debug(e);
+    }
+
+    return Collections.emptyList();
+  }
+
+  public static void setCaseSensitivity(@NotNull File dir, boolean caseSensitive) {
+    assertTrue("'fsutil.exe' needs elevated privileges to work", SuperUserStatus.isSuperUser());
+    runCommand("fsutil", "file", "setCaseSensitiveInfo", dir.getPath(), caseSensitive ? "enable" : "disable");
   }
 }

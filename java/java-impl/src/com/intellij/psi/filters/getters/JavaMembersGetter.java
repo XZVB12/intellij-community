@@ -12,7 +12,9 @@ import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.Consumer;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
+import com.siyeh.ig.psiutils.TypeUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,6 +40,8 @@ public class JavaMembersGetter extends MembersGetter {
       return;
     }
 
+    addStandardCharsets(results);
+
     addConstantsFromTargetClass(results, searchInheritors);
     if (myExpectedType instanceof PsiPrimitiveType && PsiType.DOUBLE.isAssignableFrom(myExpectedType)) {
       addConstantsFromReferencedClassesInSwitch(results);
@@ -52,6 +56,27 @@ public class JavaMembersGetter extends MembersGetter {
 
     if (psiClass != null && myExpectedType instanceof PsiClassType) {
       new BuilderCompletion((PsiClassType)myExpectedType, psiClass, myPlace).suggestBuilderVariants().forEach(results::consume);
+    }
+  }
+
+  private void addStandardCharsets(Consumer<? super LookupElement> results) {
+    PsiFile file = myParameters.getOriginalFile();
+    if (TypeUtils.typeEquals("java.nio.charset.Charset", myExpectedType) &&
+        PsiUtil.isLanguageLevel7OrHigher(file)) {
+      PsiClass charsetsClass =
+        JavaPsiFacade.getInstance(file.getProject()).findClass("java.nio.charset.StandardCharsets", file.getResolveScope());
+      if (charsetsClass != null) {
+        for (PsiField field : charsetsClass.getFields()) {
+          if (field.hasModifierProperty(PsiModifier.STATIC) &&
+              field.hasModifierProperty(PsiModifier.PUBLIC) && field.getType().equals(myExpectedType)) {
+            LookupElement element = createFieldElement(field);
+            if (element != null && field.getName().equals("UTF_8")) {
+              element = PrioritizedLookupElement.withPriority(element, 1.0);
+            }
+            results.consume(element);
+          }
+        }
+      }
     }
   }
 
@@ -133,7 +158,8 @@ public class JavaMembersGetter extends MembersGetter {
       return null;
     }
 
-    return new VariableLookupItem(field, false);
+    return new VariableLookupItem(field, false)
+      .qualifyIfNeeded(ObjectUtils.tryCast(myParameters.getPosition().getParent(), PsiJavaCodeReferenceElement.class));
   }
 
   @Override

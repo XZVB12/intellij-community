@@ -2,6 +2,7 @@
 package com.intellij.xdebugger.impl.ui;
 
 import com.intellij.codeInsight.hint.HintUtil;
+import com.intellij.ide.nls.NlsMessages;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.AnAction;
@@ -17,6 +18,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.*;
 import com.intellij.openapi.util.DimensionService;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
@@ -48,7 +50,6 @@ import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.PropertyKey;
 import org.jetbrains.concurrency.Promise;
 
 import javax.swing.*;
@@ -435,15 +436,9 @@ public final class DebuggerUIUtil {
   }
 
   @NotNull
-  public static String getSelectionShortcutsAdText(String... actionNames) {
-    return getShortcutsAdText("ad.extra.selection.shortcut", actionNames);
-  }
-
-  @NotNull
-  public static String getShortcutsAdText(@PropertyKey(resourceBundle = XDebuggerBundle.BUNDLE) String key, String... actionNames) {
-    String text = StreamEx.of(actionNames).map(DebuggerUIUtil::getActionShortcutText).nonNull()
-      .joining(XDebuggerBundle.message("xdebugger.shortcuts.text.delimiter"));
-    return StringUtil.isEmpty(text) ? "" : XDebuggerBundle.message(key, text);
+  public static @NlsContexts.PopupAdvertisement String getSelectionShortcutsAdText(String... actionNames) {
+    String text = StreamEx.of(actionNames).map(DebuggerUIUtil::getActionShortcutText).nonNull().collect(NlsMessages.joiningOr());
+    return StringUtil.isEmpty(text) ? "" : XDebuggerBundle.message("ad.extra.selection.shortcut", text);
   }
 
   @Nullable

@@ -28,7 +28,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiNameIdentifierOwner;
 import com.intellij.psi.PsiNamedElement;
-import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil;
+import com.intellij.psi.impl.source.tree.injected.InjectedLanguageEditorUtil;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.refactoring.rename.RenamePsiElementProcessor;
 import org.jetbrains.annotations.NotNull;
@@ -62,7 +62,7 @@ public class MemberInplaceRenameHandler extends VariableInplaceRenameHandler {
     if (elementToRename instanceof PsiNameIdentifierOwner) {
       final RenamePsiElementProcessor processor = RenamePsiElementProcessor.forElement(elementToRename);
       if (processor.isInplaceRenameSupported()) {
-        final StartMarkAction startMarkAction = StartMarkAction.canStart(elementToRename.getProject());
+        final StartMarkAction startMarkAction = StartMarkAction.canStart(editor);
         if (startMarkAction == null || processor.substituteElementToRename(elementToRename, editor) == elementToRename) {
           processor.substituteElementToRename(elementToRename, editor, new Pass<PsiElement>() {
             @Override
@@ -79,7 +79,7 @@ public class MemberInplaceRenameHandler extends VariableInplaceRenameHandler {
         else {
           final InplaceRefactoring inplaceRefactoring = editor.getUserData(InplaceRefactoring.INPLACE_RENAMER);
           if (inplaceRefactoring != null && inplaceRefactoring.getClass() == MemberInplaceRenamer.class) {
-            final TemplateState templateState = TemplateManagerImpl.getTemplateState(InjectedLanguageUtil.getTopLevelEditor(editor));
+            final TemplateState templateState = TemplateManagerImpl.getTemplateState(InjectedLanguageEditorUtil.getTopLevelEditor(editor));
             if (templateState != null) {
               templateState.gotoEnd(true);
             }

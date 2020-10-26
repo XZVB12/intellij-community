@@ -1,11 +1,8 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeStyle;
 
 import com.intellij.lang.Language;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
@@ -18,7 +15,7 @@ import org.jetbrains.annotations.Nullable;
 
 public abstract class CodeStyleFacade {
   public static CodeStyleFacade getInstance() {
-    return ServiceManager.getService(CodeStyleFacade.class);
+    return ApplicationManager.getApplication().getService(CodeStyleFacade.class);
   }
 
   public static CodeStyleFacade getInstance(@Nullable Project project) {
@@ -40,7 +37,7 @@ public abstract class CodeStyleFacade {
   @Nullable
   @Deprecated
   public abstract String getLineIndent(@NotNull Document document, int offset);
-  
+
   /**
    * Calculates the indent that should be used for the line at specified offset in the specified
    * editor. If there is a suitable {@code LineIndentProvider} for the language, it will be used to calculate the indent. Otherwise, if
@@ -61,7 +58,7 @@ public abstract class CodeStyleFacade {
   }
 
   /**
-   * @deprecated Use {@link com.intellij.application.options.CodeStyle#getIndentSize(com.intellij.psi.PsiFile)} instead.
+   * @deprecated Use {@link com.intellij.application.options.CodeStyle#getIndentSize(PsiFile)} instead.
    */
   @Deprecated
   public abstract int getIndentSize(FileType fileType);
@@ -80,7 +77,6 @@ public abstract class CodeStyleFacade {
    *                         <b>NOTE: </b> Committing the document may be slow an cause performance issues on large files.
    * @return non-negative spacing between end- and start-line tokens after the join.
    */
-  @ApiStatus.Experimental
   public abstract int getJoinedLinesSpacing(@NotNull Editor editor, @Nullable Language language, int offset, boolean allowDocCommit);
 
   /**

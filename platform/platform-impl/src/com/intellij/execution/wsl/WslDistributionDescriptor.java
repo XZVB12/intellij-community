@@ -4,10 +4,13 @@ package com.intellij.execution.wsl;
 import com.intellij.execution.ExecutionException;
 import com.intellij.execution.process.ProcessOutput;
 import com.intellij.openapi.util.AtomicNotNullLazyValue;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.xmlb.annotations.Tag;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -20,16 +23,16 @@ import static com.intellij.execution.wsl.WSLUtil.LOG;
 @Tag("descriptor")
 final class WslDistributionDescriptor {
   @Tag("id")
-  private String myId;
+  private @NlsSafe String myId;
   @Tag("microsoft-id")
-  private String myMsId;
+  private @NlsSafe String myMsId;
   /**
    * Absolute or relative executable path. Relative path resolved from default WSL executables root.
    */
   @Tag("executable-path")
-  private String myExecutablePath;
+  private @NlsSafe @Nullable String myExecutablePath;
   @Tag("presentable-name")
-  private String myPresentableName;
+  private @NlsSafe String myPresentableName;
 
   private final AtomicNotNullLazyValue<String> myMntRootProvider = AtomicNotNullLazyValue.createValue(this::computeMntRoot);
 
@@ -40,32 +43,29 @@ final class WslDistributionDescriptor {
   }
 
   WslDistributionDescriptor(@NotNull String id,
-                                   @NotNull String msId,
-                                   @NotNull String executablePath,
-                                   @NotNull String presentableName) {
+                            @NotNull String msId,
+                            @Nullable String executablePath,
+                            @NotNull String presentableName) {
     myId = id;
     myMsId = msId;
     myExecutablePath = executablePath;
     this.myPresentableName = presentableName;
   }
 
-  @NotNull
-  public String getId() {
+  public @NotNull @NlsSafe String getId() {
     return Objects.requireNonNull(myId);
   }
 
-  @NotNull
-  public String getMsId() {
+
+  public @NotNull @NlsSafe String getMsId() {
     return Objects.requireNonNull(myMsId);
   }
 
-  @NotNull
-  public String getExecutablePath() {
-    return Objects.requireNonNull(myExecutablePath);
+  public @Nullable @NlsSafe String getExecutablePath() {
+    return myExecutablePath;
   }
 
-  @NotNull
-  public String getPresentableName() {
+  public @NotNull @NlsSafe String getPresentableName() {
     return Objects.requireNonNull(myPresentableName);
   }
 
@@ -104,16 +104,14 @@ final class WslDistributionDescriptor {
    * @return the mount point for current distribution. Default value of {@code /mnt/} may be overriden with {@code /etc/wsl.conf}
    * @apiNote caches value per IDE run. Meaning - reconfiguring of this option in WSL requires IDE restart.
    */
-  @NotNull
-  final String getMntRoot() {
+  final @NotNull @NlsSafe String getMntRoot() {
     return myMntRootProvider.getValue();
   }
 
   /**
    * @see #getMntRoot()
    */
-  @NotNull
-  private String computeMntRoot() {
+  private @NotNull @NlsSafe String computeMntRoot() {
     String windowsCurrentDirectory = System.getProperty("user.dir");
 
     if (StringUtil.isEmpty(windowsCurrentDirectory) || windowsCurrentDirectory.length() < 3) {
@@ -127,7 +125,8 @@ final class WslDistributionDescriptor {
     }
     ProcessOutput pwdOutput;
     try {
-      pwdOutput = distribution.executeOnWsl(-1, "pwd");
+      WSLCommandLineOptions options = new WSLCommandLineOptions().setLaunchWithWslExe(true).setExecuteCommandInShell(false);
+      pwdOutput = distribution.executeOnWsl(Collections.singletonList("pwd"), options, -1, null);
     }
     catch (ExecutionException e) {
       LOG.warn("Error reading pwd output for " + getId(), e);

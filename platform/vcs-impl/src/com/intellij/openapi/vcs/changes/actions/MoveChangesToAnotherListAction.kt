@@ -23,6 +23,7 @@ class MoveChangesToAnotherListAction : AbstractChangeListAction() {
   override fun update(e: AnActionEvent) {
     val project = e.project
     val enabled = project != null && ProjectLevelVcsManager.getInstance(project).hasActiveVcss() &&
+                  ChangeListManager.getInstance(project).areChangeListsEnabled() &&
                   (!e.getData(ChangesListView.UNVERSIONED_FILE_PATHS_DATA_KEY).isEmpty() ||
                    !e.getData(VcsDataKeys.CHANGES).isNullOrEmpty() ||
                    !e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY).isNullOrEmpty())
@@ -43,7 +44,7 @@ class MoveChangesToAnotherListAction : AbstractChangeListAction() {
 
       if (isEmpty) {
         VcsBalloonProblemNotifier.showOverChangesView(project,
-                                                      VcsBundle.message("move.to.another.changelist.nothing.selected.notification.title"),
+                                                      VcsBundle.message("move.to.another.changelist.nothing.selected.notification"),
                                                       MessageType.INFO)
         return
       }
@@ -69,7 +70,7 @@ class MoveChangesToAnotherListAction : AbstractChangeListAction() {
 
       val targetList = askTargetList(project, changes)
       if (targetList != null) {
-        val changeListManager = ChangeListManagerImpl.getInstanceImpl(project)
+        val changeListManager = ChangeListManagerEx.getInstanceEx(project)
 
         changeListManager.moveChangesTo(targetList, *changes.toTypedArray())
         if (unversionedFiles.isNotEmpty()) {

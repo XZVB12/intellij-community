@@ -26,6 +26,7 @@ import com.intellij.openapi.editor.colors.CodeInsightColors;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.markup.GutterIconRenderer;
 import com.intellij.openapi.editor.markup.TextAttributes;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Segment;
 import com.intellij.openapi.util.TextRange;
 import org.jetbrains.annotations.ApiStatus;
@@ -48,7 +49,7 @@ public final class Annotation implements Segment {
   private final int myStartOffset;
   private final int myEndOffset;
   private final HighlightSeverity mySeverity;
-  private final String myMessage;
+  private final @NlsContexts.DetailedDescription String myMessage;
 
   private ProblemHighlightType myHighlightType = ProblemHighlightType.GENERIC_ERROR_OR_WARNING;
   private TextAttributesKey myEnforcedAttributesKey;
@@ -56,7 +57,7 @@ public final class Annotation implements Segment {
 
   private List<QuickFixInfo> myQuickFixes;
   private Boolean myNeedsUpdateOnTyping;
-  private String myTooltip;
+  private @NlsContexts.Tooltip String myTooltip;
   private boolean myAfterEndOfLine;
   private boolean myIsFileLevelAnnotation;
   private GutterIconRenderer myGutterIconRenderer;
@@ -94,7 +95,11 @@ public final class Annotation implements Segment {
    * @see AnnotationHolder#newAnnotation
    */
   @ApiStatus.Internal
-  public Annotation(final int startOffset, final int endOffset, @NotNull HighlightSeverity severity, final String message, String tooltip) {
+  public Annotation(int startOffset,
+                    int endOffset,
+                    @NotNull HighlightSeverity severity,
+                    @NlsContexts.DetailedDescription String message,
+                    @NlsContexts.Tooltip String tooltip) {
     assert startOffset <= endOffset : startOffset + ":" + endOffset;
     assert startOffset >= 0 : "Start offset must not be negative: " +startOffset;
     myStartOffset = startOffset;
@@ -301,7 +306,7 @@ public final class Annotation implements Segment {
    *
    * @return the description of the annotation.
    */
-  public String getMessage() {
+  public @NlsContexts.DetailedDescription String getMessage() {
     return myMessage;
   }
 
@@ -310,7 +315,7 @@ public final class Annotation implements Segment {
    *
    * @return the tooltip for the annotation.
    */
-  public String getTooltip() {
+  public @NlsContexts.Tooltip String getTooltip() {
     return myTooltip;
   }
 
@@ -319,7 +324,7 @@ public final class Annotation implements Segment {
    *
    * @param tooltip the tooltip text.
    */
-  public void setTooltip(final String tooltip) {
+  public void setTooltip(@NlsContexts.Tooltip String tooltip) {
     myTooltip = tooltip;
   }
 

@@ -68,7 +68,7 @@ import javax.swing.border.Border;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.geom.RoundRectangle2D;
+import java.awt.geom.Rectangle2D;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.List;
@@ -112,6 +112,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
   private final Project myProject;
 
   private ActionGroup myTopLeftActions = new DefaultActionGroup();
+  private ActionGroup myTopMiddleActions = new DefaultActionGroup();
   private ActionGroup myTopRightActions = new DefaultActionGroup();
 
   private final DefaultActionGroup myViewActions = new DefaultActionGroup();
@@ -124,6 +125,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
 
   private final Set<Object> myRestoreStateRequestors = new HashSet<>();
   private String myTopLeftActionsPlace = ActionPlaces.UNKNOWN;
+  private String myTopMiddleActionsPlace = ActionPlaces.UNKNOWN;
   private String myTopRightActionsPlace = ActionPlaces.UNKNOWN;
   private final IdeFocusManager myFocusManager;
 
@@ -183,6 +185,13 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
   void setTopLeftActions(final @NotNull ActionGroup topActions, @NotNull String place) {
     myTopLeftActions = topActions;
     myTopLeftActionsPlace = place;
+
+    rebuildCommonActions();
+  }
+
+  void setTopMiddleActions(final @NotNull ActionGroup topActions, @NotNull String place) {
+    myTopMiddleActions = topActions;
+    myTopMiddleActionsPlace = place;
 
     rebuildCommonActions();
   }
@@ -405,8 +414,10 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     }
     else if (Content.PROP_DISPLAY_NAME.equals(property)
              || Content.PROP_ICON.equals(property)
+             || Content.PROP_PINNED.equals(property)
              || Content.PROP_ACTIONS.equals(property)
-             || Content.PROP_DESCRIPTION.equals(property)) {
+             || Content.PROP_DESCRIPTION.equals(property)
+             || Content.PROP_TAB_COLOR.equals(property)) {
       cell.updateTabPresentation(content);
       updateTabsUI(false);
     }
@@ -838,8 +849,9 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     TabInfo tab = new TabInfo(grid).setObject(getStateFor(content).getTab()).setText("Tab");
 
     Wrapper leftWrapper = new Wrapper();
+    Wrapper middleWrapper = new Wrapper();
     Wrapper rightWrapper = new Wrapper();
-    myCommonActionsPlaceholder.put(grid, new TopToolbarWrappers(leftWrapper, rightWrapper));
+    myCommonActionsPlaceholder.put(grid, new TopToolbarWrappers(leftWrapper, middleWrapper, rightWrapper));
 
     Wrapper minimizedToolbar = new Wrapper();
     myMinimizedButtonsPlaceholder.put(grid, minimizedToolbar);
@@ -853,7 +865,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     TwoSideComponent right = new TwoSideComponent(searchComponent, minimizedToolbar);
 
 
-    NonOpaquePanel sideComponent = new TwoSideComponent(leftWrapper, new TwoSideComponent(right, rightWrapper));
+    NonOpaquePanel sideComponent = new TwoSideComponent(leftWrapper, new TwoSideComponent(middleWrapper, new TwoSideComponent(right, rightWrapper)));
 
     tab.setSideComponent(sideComponent);
 
@@ -933,6 +945,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     boolean hasToolbarContent = false;
     for (Map.Entry<GridImpl, TopToolbarWrappers> entry : myCommonActionsPlaceholder.entrySet()) {
       Wrapper leftPlaceHolder = entry.getValue().left;
+      Wrapper middlePlaceHolder = entry.getValue().middle;
       Wrapper rightPlaceHolder = entry.getValue().right;
 
       TopToolbarContextActions topToolbarContextActions = myContextActions.get(entry.getKey());
@@ -945,6 +958,14 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
         setActions(leftPlaceHolder, myTopLeftActionsPlace, leftGroupToBuild);
       }
 
+      DefaultActionGroup middleGroupToBuild = new DefaultActionGroup();
+      middleGroupToBuild.addAll(myTopMiddleActions);
+      final AnAction[] middleActions = middleGroupToBuild.getChildren(null);
+
+      if (topToolbarContextActions == null || !Arrays.equals(middleActions, topToolbarContextActions.middle)) {
+        setActions(middlePlaceHolder, myTopMiddleActionsPlace, middleGroupToBuild);
+      }
+
       DefaultActionGroup rightGroupToBuild = new DefaultActionGroup();
       rightGroupToBuild.addAll(myTopRightActions);
       final AnAction[] rightActions = rightGroupToBuild.getChildren(null);
@@ -953,7 +974,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
         setActions(rightPlaceHolder, myTopRightActionsPlace, rightGroupToBuild);
       }
 
-      myContextActions.put(entry.getKey(), new TopToolbarContextActions(leftActions, rightActions));
+      myContextActions.put(entry.getKey(), new TopToolbarContextActions(leftActions, middleActions, rightActions));
 
       if (leftGroupToBuild.getChildrenCount() > 0 || rightGroupToBuild.getChildrenCount() > 0) {
         hasToolbarContent = true;
@@ -1379,7 +1400,6 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
 
   private static class MyDropAreaPainter extends AbstractPainter {
     private Shape myBoundingBox;
-    private final Color myColor = ColorUtil.mix(JBColor.BLUE, JBColor.WHITE, .3);
 
     @Override
     public boolean needsRepaint() {
@@ -1390,10 +1410,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     public void executePaint(Component component, Graphics2D g) {
       if (myBoundingBox == null) return;
       GraphicsUtil.setupAAPainting(g);
-      g.setColor(ColorUtil.toAlpha(myColor, 200));
-      g.setStroke(new BasicStroke(2));
-      g.draw(myBoundingBox);
-      g.setColor(ColorUtil.toAlpha(myColor, 40));
+      g.setColor(JBColor.namedColor("DragAndDrop.areaBackground", 0x3d7dcc, 0x404a57));
       g.fill(myBoundingBox);
     }
 
@@ -1451,7 +1468,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
         r = new RelativeRectangle(cellWrapper).getRectangleOn(component);
         break;
       }
-      myBoundingBox = new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 16, 16);
+      myBoundingBox = new Rectangle2D.Double(r.x, r.y, r.width, r.height);
     }
   }
 
@@ -1701,7 +1718,7 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     });
   }
 
-  private static class TwoSideComponent extends NonOpaquePanel {
+  private static final class TwoSideComponent extends NonOpaquePanel {
     private TwoSideComponent(JComponent left, JComponent right) {
       setLayout(new CommonToolbarLayout(left, right));
       add(left);
@@ -1966,22 +1983,26 @@ public final class RunnerContentUi implements ContentUI, Disposable, CellTransfo
     }
   }
 
-  private static class TopToolbarContextActions {
+  private static final class TopToolbarContextActions {
     public final AnAction[] left;
+    public final AnAction[] middle;
     public final AnAction[] right;
 
-    private TopToolbarContextActions(AnAction[] left, AnAction[] right) {
+    private TopToolbarContextActions(AnAction[] left, AnAction[] middle, AnAction[] right) {
       this.left = left;
+      this.middle = middle;
       this.right = right;
     }
   }
 
-  private static class TopToolbarWrappers {
+  private static final class TopToolbarWrappers {
     public final Wrapper left;
+    public final Wrapper middle;
     public final Wrapper right;
 
-    private TopToolbarWrappers(Wrapper left, Wrapper right) {
+    private TopToolbarWrappers(Wrapper left, Wrapper middle, Wrapper right) {
       this.left = left;
+      this.middle = middle;
       this.right = right;
     }
   }

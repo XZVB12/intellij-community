@@ -1,7 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.uploader.events;
 
-import com.intellij.internal.statistic.connect.StatisticsResult;
+import com.intellij.internal.statistic.eventLog.connection.StatisticsResult;
 import com.intellij.internal.statistic.eventLog.DataCollectorSystemEventLogger;
 import org.apache.log4j.FileAppender;
 import org.apache.log4j.Level;
@@ -60,8 +60,8 @@ public class ExternalEventsLogger implements DataCollectorSystemEventLogger {
     logEvent(new ExternalUploadFinishedEvent(System.currentTimeMillis(), error));
   }
 
-  public void logSendingLogsSucceed(int succeed, int failed, int total) {
-    logEvent(new ExternalUploadSendEvent(System.currentTimeMillis(), succeed, failed, total));
+  public void logSendingLogsSucceed(@NotNull List<String> successfullySentFiles, int failed, int total) {
+    logEvent(new ExternalUploadSendEvent(System.currentTimeMillis(), successfullySentFiles.size(), failed, total, successfullySentFiles));
   }
 
   @Override

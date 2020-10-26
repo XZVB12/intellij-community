@@ -1,23 +1,29 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.plugin.ui;
 
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.util.JDOMExternalizable;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.structuralsearch.MatchOptions;
 import com.intellij.structuralsearch.NamedScriptableDefinition;
+import com.intellij.structuralsearch.SSRBundle;
 import com.intellij.structuralsearch.plugin.replace.ReplaceOptions;
 import org.jdom.Attribute;
 import org.jdom.DataConversionException;
 import org.jdom.Element;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.UUID;
 
-public abstract class Configuration implements JDOMExternalizable, Comparable<Configuration> {
+public abstract class Configuration implements JDOMExternalizable {
   @NonNls public static final String CONTEXT_VAR_NAME = "__context__";
 
   public static final Configuration[] EMPTY_ARRAY = {};
@@ -30,7 +36,7 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
   @NonNls private static final String PROBLEM_DESCRIPTOR_ATTRIBUTE_NAME = "problemDescriptor";
   @NonNls private static final String ORDER_ATTRIBUTE_NAME = "order";
 
-  private String name;
+  private @NotNull @Nls(capitalization = Nls.Capitalization.Sentence) String name;
   private String category;
   private boolean predefined;
   private long created;
@@ -39,8 +45,9 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
   private String suppressId;
   private String problemDescriptor;
   private int order;
+  private @NonNls String refName;
 
-  private transient String myCurrentVariableName = null;
+  private transient String myCurrentVariableName;
 
   public Configuration() {
     name = "";
@@ -48,13 +55,13 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
     created = -1L;
   }
 
-  public Configuration(String name, String category) {
+  public Configuration(@NotNull @Nls String name, @NotNull String category) {
     this.name = name;
     this.category = category;
     created = -1L;
   }
 
-  protected Configuration(Configuration configuration) {
+  protected Configuration(@NotNull Configuration configuration) {
     name = configuration.name;
     category = configuration.category;
     created = -1L; // receives timestamp when added to history
@@ -64,11 +71,13 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
     suppressId = configuration.suppressId;
     problemDescriptor = configuration.problemDescriptor;
     order = configuration.order;
+    refName = configuration.refName;
   }
 
+  @NotNull
   public abstract Configuration copy();
 
-  @NotNull
+  @NotNull @Nls
   public String getName() {
     return name;
   }
@@ -80,6 +89,14 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
     name = value;
   }
 
+  @NotNull @Nls
+  public String getTypeText() {
+    final LanguageFileType type = getFileType();
+    return isPredefined() ? SSRBundle.message("predefined.configuration.type.text", type.getLanguage().getDisplayName())
+                          : SSRBundle.message("predefined.configuration.type.text.user.defined", type.getLanguage().getDisplayName());
+  }
+
+  @NotNull
   public String getCategory() {
     return category;
   }
@@ -108,7 +125,7 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
     this.uuid = uuid;
   }
 
-  public String getDescription() {
+  public @NlsSafe @Nullable String getDescription() {
     return description;
   }
 
@@ -116,7 +133,7 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
     this.description = description;
   }
 
-  public String getSuppressId() {
+  public @NlsSafe @Nullable String getSuppressId() {
     return suppressId;
   }
 
@@ -124,7 +141,7 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
     this.suppressId = suppressId;
   }
 
-  public String getProblemDescriptor() {
+  public @NlsSafe @Nullable String getProblemDescriptor() {
     return this.problemDescriptor;
   }
 
@@ -210,13 +227,13 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
     this.predefined = predefined;
   }
 
+  @NotNull
   public abstract MatchOptions getMatchOptions();
 
-  public ReplaceOptions getReplaceOptions() {
-    return null;
-  }
+  @NotNull
+  public abstract ReplaceOptions getReplaceOptions();
 
-  public abstract NamedScriptableDefinition findVariable(String name);
+  public abstract NamedScriptableDefinition findVariable(@NotNull String name);
 
   public abstract void removeUnusedVariables();
 
@@ -228,12 +245,6 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
     myCurrentVariableName = variableName;
   }
 
-  @Override
-  public int compareTo(Configuration other) {
-    final int result = StringUtil.naturalCompare(getCategory(), other.getCategory());
-    return result != 0 ? result : StringUtil.naturalCompare(getName(), other.getName());
-  }
-
   public boolean equals(Object configuration) {
     if (!(configuration instanceof Configuration)) return false;
     final Configuration other = (Configuration)configuration;
@@ -243,5 +254,23 @@ public abstract class Configuration implements JDOMExternalizable, Comparable<Co
   @Override
   public int hashCode() {
     return 31 * name.hashCode() + (category != null ? category.hashCode() : 0);
+  }
+
+  @NotNull
+  public Icon getIcon() {
+    final LanguageFileType type = getFileType();
+    return (type == null || type.getIcon() == null) ? AllIcons.FileTypes.Any_type : type.getIcon();
+  }
+
+  public abstract LanguageFileType getFileType();
+
+  @NotNull @NonNls
+  public String getRefName() {
+    return refName == null ? name : refName;
+  }
+
+  public void setRefName(String refName) {
+    if (isPredefined())
+      this.refName = refName;
   }
 }

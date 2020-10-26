@@ -37,6 +37,7 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.psi.*;
@@ -48,6 +49,7 @@ import com.intellij.refactoring.RefactoringActionHandler;
 import com.intellij.refactoring.RefactoringBundle;
 import com.intellij.refactoring.extractMethod.InputVariables;
 import com.intellij.refactoring.util.CommonRefactoringUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -89,7 +91,7 @@ public class MethodDuplicatesHandler implements RefactoringActionHandler, Contex
                                    JavaRefactoringBundle.message("replace.method.duplicates.scope.chooser.message"), project, BaseAnalysisActionDialog.standardItems(project, scope, module, element),
                                    AnalysisUIOptions.getInstance(project), false);
     if (dlg.showAndGet()) {
-      AnalysisScope selectedScope = dlg.getScope(AnalysisUIOptions.getInstance(project), scope, project, module);
+      AnalysisScope selectedScope = dlg.getScope(scope);
       ProgressManager.getInstance().run(new Task.Backgroundable(project, JavaRefactoringBundle.message("locate.duplicates.action.name"), true) {
         @Override
         public void run(@NotNull ProgressIndicator indicator) {
@@ -101,7 +103,7 @@ public class MethodDuplicatesHandler implements RefactoringActionHandler, Contex
   }
 
   @Nullable
-  private static String getCannotRefactorMessage(PsiMember member) {
+  private static @NlsContexts.DialogMessage String getCannotRefactorMessage(PsiMember member) {
     if (member == null) {
       return JavaRefactoringBundle.message("locate.caret.inside.a.method");
     }
@@ -120,15 +122,15 @@ public class MethodDuplicatesHandler implements RefactoringActionHandler, Contex
     } else if (member instanceof PsiField) {
       final PsiField field = (PsiField)member;
       if (field.getInitializer() == null) {
-        return "Field " + member.getName() + " doesn't have initializer";
+        return JavaRefactoringBundle.message("dialog.message.field.doesnt.have.initializer", member.getName());
       }
       final PsiClass containingClass = field.getContainingClass();
       if (!field.hasModifierProperty(PsiModifier.FINAL) || !field.hasModifierProperty(PsiModifier.STATIC) ||
           containingClass == null || containingClass.getQualifiedName() == null) {
-        return "Replace Duplicates works with constants only";
+        return JavaRefactoringBundle.message("dialog.message.replace.duplicates.works.with.constants.only");
       }
     } else {
-      return "Caret should be inside method or constant";
+      return JavaRefactoringBundle.message("dialog.message.caret.should.be.inside.method.or.constant");
     }
     return null;
   }
@@ -192,12 +194,7 @@ public class MethodDuplicatesHandler implements RefactoringActionHandler, Contex
             }
           }
           if (!matchList.isEmpty()) {
-            List<Match> matches = duplicates.get(method);
-            if (matches == null) {
-              matches = new ArrayList<>();
-              duplicates.put(method, matches);
-            }
-            matches.addAll(matchList);
+            duplicates.computeIfAbsent(method, __ -> new ArrayList<>()).addAll(matchList);
           }
         }
       }
@@ -260,7 +257,7 @@ public class MethodDuplicatesHandler implements RefactoringActionHandler, Contex
   }
 
   @Nullable
-  public static DuplicatesFinder createDuplicatesFinder(PsiMember member) {
+  private static DuplicatesFinder createDuplicatesFinder(PsiMember member) {
     PsiElement[] pattern;
     ReturnValue matchedReturnValue = null;
     if (member instanceof PsiMethod) {
@@ -302,11 +299,11 @@ public class MethodDuplicatesHandler implements RefactoringActionHandler, Contex
                                 new ArrayList<>());
   }
 
-  static String getStatusMessage(final int duplicatesNo) {
+  private static @NlsContexts.StatusBarText @NotNull String getStatusMessage(final int duplicatesNo) {
     return JavaRefactoringBundle.message("method.duplicates.found.message", duplicatesNo);
   }
 
-  private static void showErrorMessage(String message, Project project, Editor editor) {
+  private static void showErrorMessage(@NlsContexts.DialogMessage String message, Project project, Editor editor) {
     CommonRefactoringUtil.showErrorHint(project, editor, message, getRefactoringName(), HelpID.METHOD_DUPLICATES);
   }
 
@@ -315,7 +312,7 @@ public class MethodDuplicatesHandler implements RefactoringActionHandler, Contex
     throw new UnsupportedOperationException();
   }
 
-  public static String getRefactoringName() {
+  public static @NlsContexts.ProgressTitle String getRefactoringName() {
     return JavaRefactoringBundle.message("replace.method.code.duplicates.title");
   }
 }

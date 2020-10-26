@@ -1,8 +1,8 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.stubs;
 
 import com.intellij.lang.Language;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Attachment;
 import com.intellij.openapi.diagnostic.RuntimeExceptionWithAttachments;
 import com.intellij.openapi.editor.Document;
@@ -16,6 +16,7 @@ import com.intellij.psi.impl.DebugUtil;
 import com.intellij.psi.impl.source.PsiFileWithStubSupport;
 import com.intellij.psi.tree.IStubFileElementType;
 import com.intellij.util.Function;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -28,7 +29,7 @@ import java.util.List;
 public abstract class StubTreeLoader {
 
   public static StubTreeLoader getInstance() {
-    return ServiceManager.getService(StubTreeLoader.class);
+    return ApplicationManager.getApplication().getService(StubTreeLoader.class);
   }
 
   @Nullable
@@ -63,7 +64,7 @@ public abstract class StubTreeLoader {
 
     boolean canBePrebuilt = isPrebuilt(psiFile.getVirtualFile());
 
-    String msg = "PSI and index do not match.\nPlease report the problem to JetBrains with the files attached\n";
+    @NonNls String msg = "PSI and index do not match.\nPlease report the problem to JetBrains with the files attached\n";
 
     if (canBePrebuilt) {
       msg += "This stub can have pre-built origin\n";
@@ -153,7 +154,7 @@ public abstract class StubTreeLoader {
     return attachments.toArray(Attachment.EMPTY_ARRAY);
   }
 
-  public static String getFileViewProviderMismatchDiagnostics(@NotNull FileViewProvider provider) {
+  public static @NonNls String getFileViewProviderMismatchDiagnostics(@NotNull FileViewProvider provider) {
     Function<PsiFile, String> fileClassName = file -> file.getClass().getSimpleName();
     Function<Pair<IStubFileElementType, PsiFile>, String> stubRootToString =
       pair -> "(" + pair.first.toString() + ", " + pair.first.getLanguage() + " -> " + fileClassName.fun(pair.second) + ")";

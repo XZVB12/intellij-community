@@ -5,23 +5,22 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.Forceable;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.ShutDownTracker;
 import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.tree.IStubFileElementType;
 import com.intellij.psi.tree.StubFileElementType;
 import com.intellij.util.indexing.FileBasedIndex;
-import com.intellij.util.io.DataEnumeratorEx;
-import com.intellij.util.io.IOUtil;
-import com.intellij.util.io.InMemoryDataEnumerator;
-import com.intellij.util.io.PersistentStringEnumerator;
+import com.intellij.util.io.*;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.DataOutputStream;
 import java.io.*;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 @ApiStatus.Internal
 public final class SerializationManagerImpl extends SerializationManagerEx implements Disposable {
@@ -53,11 +52,11 @@ public final class SerializationManagerImpl extends SerializationManagerEx imple
     catch (IOException e) {
       nameStorageCrashed();
       LOG.info(e);
-      repairNameStorage(); // need this in order for myNameStorage not to be null
+      repairNameStorage(e); // need this in order for myNameStorage not to be null
       nameStorageCrashed();
     }
     finally {
-      ShutDownTracker.getInstance().registerShutdownTask(this::performShutdown);
+      ShutDownTracker.getInstance().registerShutdownTask(this::performShutdown, this);
     }
 
     StubElementTypeHolderEP.EP_NAME.addChangeListener(this::dropSerializerData, this);
@@ -65,7 +64,21 @@ public final class SerializationManagerImpl extends SerializationManagerEx imple
 
   @NotNull
   private DataEnumeratorEx<String> openNameStorage() throws IOException {
-    return myFile == null ? new InMemoryDataEnumerator<>() : new PersistentStringEnumerator(myFile, true);
+    if (myFile == null) {
+      return new InMemoryDataEnumerator<>();
+    }
+    Boolean lastValue = null;
+    if (myUnmodifiable) {
+      lastValue = PersistentHashMapValueStorage.CreationTimeOptions.READONLY.get();
+      PersistentHashMapValueStorage.CreationTimeOptions.READONLY.set(Boolean.TRUE);
+    }
+    try {
+      return new PersistentStringEnumerator(myFile, true);
+    } finally {
+      if (myUnmodifiable) {
+        PersistentHashMapValueStorage.CreationTimeOptions.READONLY.set(lastValue);
+      }
+    }
   }
 
   @Override
@@ -74,7 +87,7 @@ public final class SerializationManagerImpl extends SerializationManagerEx imple
   }
 
   @Override
-  public void repairNameStorage() {
+  public void repairNameStorage(@NotNull Exception corruptionCause) {
     if (myNameStorageCrashed.getAndSet(false)) {
       try {
         LOG.info("Name storage is repaired");
@@ -116,7 +129,7 @@ public final class SerializationManagerImpl extends SerializationManagerEx imple
   @Override
   public void reinitializeNameStorage() {
     nameStorageCrashed();
-    repairNameStorage();
+    repairNameStorage(new Exception("Indexes are requested to rebuild"));
   }
 
   private void nameStorageCrashed() {
@@ -150,7 +163,7 @@ public final class SerializationManagerImpl extends SerializationManagerEx imple
   }
 
   @Override
-  protected void registerSerializer(String externalId, Computable<ObjectStubSerializer> lazySerializer) {
+  protected void registerSerializer(@NotNull String externalId, Supplier<ObjectStubSerializer<?, Stub>> lazySerializer) {
     try {
       myStubSerializationHelper.assignId(lazySerializer, externalId);
     }
@@ -225,7 +238,15 @@ public final class SerializationManagerImpl extends SerializationManagerEx imple
     //noinspection SynchronizeOnThis
     synchronized (this) {
       IStubElementType.dropRegisteredTypes();
-      myStubSerializationHelper.dropRegisteredSerializers();
+      IStubFileElementType.dropTemplateStubBaseVersion();
+      StubSerializationHelper helper = myStubSerializationHelper;
+      if (helper != null) {
+        helper.dropRegisteredSerializers();
+      }
+      else {
+        // has been corrupted previously
+        nameStorageCrashed();
+      }
       mySerializersLoaded = false;
     }
   }

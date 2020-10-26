@@ -15,12 +15,12 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.runAndLogException
 import com.intellij.openapi.extensions.ExtensionNotApplicableException
 import com.intellij.openapi.extensions.impl.ExtensionsAreaImpl
+import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.ui.DialogEarthquakeShaker
 import com.intellij.openapi.util.IconLoader
-import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.util.SystemInfoRt
 import com.intellij.openapi.util.SystemPropertyBean
-import com.intellij.openapi.util.io.FileUtilRt
 import com.intellij.openapi.util.registry.RegistryKeyBean
 import com.intellij.openapi.wm.WeakFocusStackManager
 import com.intellij.openapi.wm.WindowManager
@@ -47,6 +47,7 @@ import java.util.concurrent.CompletionStage
 import java.util.concurrent.Executor
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicReference
+import java.util.function.BiFunction
 import java.util.function.Function
 import kotlin.system.exitProcess
 
@@ -58,7 +59,8 @@ private fun executeInitAppInEdt(args: List<String>,
                                 pluginDescriptorFuture: CompletableFuture<List<IdeaPluginDescriptorImpl>>) {
   StartupUtil.patchSystem(LOG)
   val app = runActivity("create app") {
-    ApplicationImpl(java.lang.Boolean.getBoolean(PluginManagerCore.IDEA_IS_INTERNAL_PROPERTY), false, Main.isHeadless(), Main.isCommandLine())
+    ApplicationImpl(java.lang.Boolean.getBoolean(PluginManagerCore.IDEA_IS_INTERNAL_PROPERTY), false, Main.isHeadless(),
+                    Main.isCommandLine())
   }
   val registerFuture = registerAppComponents(pluginDescriptorFuture, app)
 
@@ -73,12 +75,19 @@ private fun executeInitAppInEdt(args: List<String>,
       val starter = findStarter(args.first()) ?: IdeStarter()
       if (Main.isHeadless() && !starter.isHeadless) {
         val commandName = starter.commandName
-        val message = "Application cannot start in a headless mode" + when {
-          starter is IdeStarter -> ""
-          commandName != null -> ", for command: $commandName"
-          else -> ", for starter: " + starter.javaClass.name
-        }
-        Main.showMessage("Startup Error", message, true)
+        val message = IdeBundle.message(
+          "application.cannot.start.in.a.headless.mode",
+          when {
+            starter is IdeStarter -> 0
+            commandName != null -> 1
+            else -> 2
+          },
+          commandName,
+          starter.javaClass.name,
+          if (args.isEmpty()) 0 else 1,
+          args.joinToString(" ")
+        )
+        Main.showMessage(IdeBundle.message("main.startup.error"), message, true)
         exitProcess(Main.NO_GRAPHICS)
       }
 
@@ -95,8 +104,8 @@ private fun executeInitAppInEdt(args: List<String>,
 fun registerAppComponents(pluginFuture: CompletableFuture<List<IdeaPluginDescriptorImpl>>,
                           app: ApplicationImpl): CompletableFuture<List<IdeaPluginDescriptor>> {
   return pluginFuture.thenApply {
-    runActivity("app component registration", ActivityCategory.MAIN) {
-      app.registerComponents(it, false)
+    runMainActivity("app component registration") {
+      app.registerComponents(it, null)
     }
     it
   }
@@ -138,7 +147,7 @@ private fun startApp(app: ApplicationImpl,
     }, nonEdtExecutor)
 
   if (!headless) {
-    if (SystemInfo.isMac) {
+    if (SystemInfoRt.isMac) {
       runActivity("mac app init") {
         MacOSApplicationProvider.initApplication()
       }
@@ -187,7 +196,15 @@ private fun startApp(app: ApplicationImpl,
 
       val loadComponentInEdtFuture = CompletableFuture.runAsync(Runnable {
         placeOnEventQueueActivity.end()
-        app.loadComponents(SplashManager.createProgressIndicator())
+
+        app.loadComponents(if (SplashManager.SPLASH_WINDOW == null) {
+          null
+        }
+        else object : EmptyProgressIndicator() {
+          override fun setFraction(fraction: Double) {
+            SplashManager.SPLASH_WINDOW.showProgress(fraction)
+          }
+        })
       }, edtExecutor)
 
       CompletableFuture.allOf(loadComponentInEdtFuture, preloadSyncServiceFuture)
@@ -199,12 +216,6 @@ private fun startApp(app: ApplicationImpl,
       // should be after scheduling all app initialized listeners (because this activity is not important)
       if (!Main.isLightEdit()) {
         NonUrgentExecutor.getInstance().execute {
-          if (starter.commandName == null) {
-            runActivity("project converter provider preloading") {
-              app.extensionArea.getExtensionPoint<Any>("com.intellij.project.converterProvider").extensionList
-            }
-          }
-
           // execute in parallel to component loading - this functionality should be used only by plugin functionality that is used after start-up
           runActivity("system properties setting") {
             SystemPropertyBean.initSystemProperties()
@@ -222,7 +233,7 @@ private fun startApp(app: ApplicationImpl,
       }
     },
       // if `loadComponentInEdtFuture` is completed after `preloadSyncServiceFuture`, then this task will be executed in EDT, so force execution out of EDT
-      nonEdtExecutor)
+                             nonEdtExecutor)
     .thenRun {
       if (starter.requiredModality == ApplicationStarter.NOT_IN_EDT) {
         starter.main(args)
@@ -284,7 +295,7 @@ fun registerRegistryAndInitStore(registerFuture: CompletableFuture<List<IdeaPlug
     }, AppExecutorUtil.getAppExecutorService())
 
     // initSystemProperties or RegistryKeyBean.addKeysFromPlugins maybe not yet performed, but it doesn't affect because not used
-    initConfigurationStore(app, null)
+    initConfigurationStore(app)
 
     future.thenApply {
       @Suppress("UNCHECKED_CAST")
@@ -324,10 +335,10 @@ private fun addActivateAndWindowsCliListeners() {
     ref.get()
   }
 
-  MainRunner.LISTENER = WindowsCommandLineListener { currentDirectory, args ->
+  MainRunner.LISTENER = BiFunction { currentDirectory, args ->
     LOG.info("External Windows command received")
     if (args.isEmpty()) {
-      return@WindowsCommandLineListener 0
+      return@BiFunction 0
     }
 
     val app = ApplicationManager.getApplication()
@@ -338,17 +349,17 @@ private fun addActivateAndWindowsCliListeners() {
 
     val ref = AtomicReference<Future<CliResult>>()
     app.invokeAndWait({
-      val result = CommandLineProcessor.processExternalCommandLine(args.toList(), currentDirectory)
-      ref.set(result.future)
-      result.showErrorIfFailed()
-    }, state)
+                        val result = CommandLineProcessor.processExternalCommandLine(args.toList(), currentDirectory)
+                        ref.set(result.future)
+                        result.showErrorIfFailed()
+                      }, state)
     CliResult.unmap(ref.get(), Main.ACTIVATE_ERROR).exitCode
   }
 
   ApplicationManager.getApplication().messageBus.connect().subscribe(AppLifecycleListener.TOPIC, object : AppLifecycleListener {
     override fun appWillBeClosed(isRestart: Boolean) {
       StartupUtil.addExternalInstanceListener { CliResult.error(Main.ACTIVATE_DISPOSING, IdeBundle.message("activation.shutting.down")) }
-      MainRunner.LISTENER = WindowsCommandLineListener { _, _ -> Main.ACTIVATE_DISPOSING }
+      MainRunner.LISTENER = BiFunction { _, _ -> Main.ACTIVATE_DISPOSING }
     }
   })
 }
@@ -409,12 +420,12 @@ private fun loadSystemFonts() {
 fun findStarter(key: String) = ApplicationStarter.EP_NAME.iterable.find { it == null || it.commandName == key }
 
 @ApiStatus.Internal
-fun initConfigurationStore(app: ApplicationImpl, configPath: String?) {
+fun initConfigurationStore(app: ApplicationImpl) {
   var activity = StartUpMeasurer.startMainActivity("beforeApplicationLoaded")
-  val effectiveConfigPath = FileUtilRt.toSystemIndependentName(configPath ?: PathManager.getConfigPath())
+  val configPath = PathManager.getConfigDir()
   for (listener in ApplicationLoadListener.EP_NAME.iterable) {
     try {
-      (listener ?: break).beforeApplicationLoaded(app, effectiveConfigPath)
+      (listener ?: break).beforeApplicationLoaded(app, configPath)
     }
     catch (e: ProcessCanceledException) {
       throw e
@@ -427,7 +438,7 @@ fun initConfigurationStore(app: ApplicationImpl, configPath: String?) {
   activity = activity.endAndStart("init app store")
 
   // we set it after beforeApplicationLoaded call, because app store can depend on stream provider state
-  app.stateStore.setPath(effectiveConfigPath)
+  app.stateStore.setPath(configPath)
   StartUpMeasurer.setCurrentState(LoadingState.CONFIGURATION_STORE_INITIALIZED)
   activity.end()
 }
@@ -440,7 +451,9 @@ fun initConfigurationStore(app: ApplicationImpl, configPath: String?) {
  */
 @Suppress("SpellCheckingInspection")
 private fun processProgramArguments(args: List<String>): List<String> {
-  if (args.isEmpty()) return emptyList()
+  if (args.isEmpty()) {
+    return emptyList()
+  }
 
   val arguments = mutableListOf<String>()
   for (arg in args) {

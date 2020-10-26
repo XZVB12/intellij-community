@@ -1,7 +1,9 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.beans
 
 import com.intellij.internal.statistic.eventLog.FeatureUsageData
+import org.jetbrains.annotations.ApiStatus
+import org.jetbrains.annotations.NonNls
 import java.util.*
 
 /**
@@ -15,7 +17,8 @@ import java.util.*
  * @see newBooleanMetric
  * @see newCounterMetric
  */
-class MetricEvent @JvmOverloads @StatisticsEventProvider(eventIdIndex = 0, dataIndex = 1) constructor(val eventId: String,
+@ApiStatus.Internal
+class MetricEvent @JvmOverloads @StatisticsEventProvider(eventIdIndex = 0, dataIndex = 1) constructor(@NonNls val eventId: String,
                                                                                                       data: FeatureUsageData? = null) {
   val data: FeatureUsageData = data ?: FeatureUsageData()
 

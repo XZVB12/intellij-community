@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.actions
 
 import com.intellij.codeInsight.breadcrumbs.FileBreadcrumbsCollector
@@ -18,18 +18,24 @@ import com.intellij.openapi.fileEditor.ex.IdeDocumentHistory
 import com.intellij.openapi.fileEditor.impl.IdeDocumentHistoryImpl
 import com.intellij.openapi.fileEditor.impl.IdeDocumentHistoryImpl.RecentPlacesListener
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.util.DocumentUtil
 import com.intellij.util.concurrency.SynchronizedClearableLazy
 import com.intellij.util.containers.ContainerUtil
+import org.jetbrains.annotations.ApiStatus
+import org.jetbrains.annotations.Nls
 import java.util.*
 import java.util.stream.Collectors
 import javax.swing.ScrollPaneConstants
+import kotlin.math.max
+import kotlin.math.min
 
-data class RecentLocationsDataModel(val project: Project, val editorsToRelease: ArrayList<Editor> = arrayListOf()) {
-  val projectConnection = project.messageBus.connect()
+@ApiStatus.Internal
+internal data class RecentLocationsDataModel(val project: Project, val editorsToRelease: ArrayList<Editor> = arrayListOf()) {
+  val projectConnection = project.messageBus.simpleConnect()
 
   init {
     projectConnection.subscribe(RecentPlacesListener.TOPIC, object : RecentPlacesListener {
@@ -50,11 +56,11 @@ data class RecentLocationsDataModel(val project: Project, val editorsToRelease: 
 
   private val changedPlaces: SynchronizedClearableLazy<List<RecentLocationItem>> = calculateItems(project, true)
 
-  private val navigationPlacesBreadcrumbsMap: Map<IdeDocumentHistoryImpl.PlaceInfo, String> by lazy {
+  private val navigationPlacesBreadcrumbsMap: Map<IdeDocumentHistoryImpl.PlaceInfo, @Nls String> by lazy {
     collectBreadcrumbs(project, navigationPlaces.value)
   }
 
-  private val changedPlacedBreadcrumbsMap: Map<IdeDocumentHistoryImpl.PlaceInfo, String> by lazy {
+  private val changedPlacedBreadcrumbsMap: Map<IdeDocumentHistoryImpl.PlaceInfo, @Nls String> by lazy {
     collectBreadcrumbs(project, changedPlaces.value)
   }
 
@@ -62,16 +68,17 @@ data class RecentLocationsDataModel(val project: Project, val editorsToRelease: 
     return if (changed) changedPlaces.value else navigationPlaces.value
   }
 
-  fun getBreadcrumbsMap(changed: Boolean): Map<IdeDocumentHistoryImpl.PlaceInfo, String> {
+  fun getBreadcrumbsMap(changed: Boolean): Map<IdeDocumentHistoryImpl.PlaceInfo, @Nls String> {
     return if (changed) changedPlacedBreadcrumbsMap else navigationPlacesBreadcrumbsMap
   }
 
-  private fun collectBreadcrumbs(project: Project, items: List<RecentLocationItem>): Map<IdeDocumentHistoryImpl.PlaceInfo, String> {
+  private fun collectBreadcrumbs(project: Project, items: List<RecentLocationItem>): Map<IdeDocumentHistoryImpl.PlaceInfo, @Nls String> {
     return items.stream()
       .map(RecentLocationItem::info)
       .collect(Collectors.toMap({ it }, { getBreadcrumbs(project, it) }))
   }
 
+  @Nls
   private fun getBreadcrumbs(project: Project, placeInfo: IdeDocumentHistoryImpl.PlaceInfo): String {
     val rangeMarker = placeInfo.caretPosition
     val fileName = placeInfo.file.name
@@ -86,7 +93,11 @@ data class RecentLocationsDataModel(val project: Project, val editorsToRelease: 
       return fileName
     }
 
-    return crumbs.joinToString(" > ") { it.text }
+    @NlsSafe
+    val separator = " > "
+    @NlsSafe
+    val result = crumbs.joinToString(separator) { it.text }
+    return result
   }
 
   private fun calculateItems(project: Project, changed: Boolean): SynchronizedClearableLazy<List<RecentLocationItem>> {
@@ -259,14 +270,14 @@ data class RecentLocationsDataModel(val project: Project, val editorsToRelease: 
 
     val beforeAfterLinesCount = Registry.intValue("recent.locations.lines.before.and.after", 2)
 
-    val before = Math.min(beforeAfterLinesCount, line)
-    val after = Math.min(beforeAfterLinesCount, lineCount - line)
+    val before = min(beforeAfterLinesCount, line)
+    val after = min(beforeAfterLinesCount, lineCount - line)
 
     val linesBefore = before + beforeAfterLinesCount - after
     val linesAfter = after + beforeAfterLinesCount - before
 
-    val startLine = Math.max(line - linesBefore, 0)
-    val endLine = Math.min(line + linesAfter, lineCount - 1)
+    val startLine = max(line - linesBefore, 0)
+    val endLine = min(line + linesAfter, lineCount - 1)
 
     val startOffset = document.getLineStartOffset(startLine)
     val endOffset = document.getLineEndOffset(endLine)

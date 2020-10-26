@@ -3,6 +3,7 @@ package com.intellij.openapi.ui;
 
 import com.intellij.diagnostic.LoadingState;
 import com.intellij.icons.AllIcons;
+import com.intellij.ide.DataManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CustomShortcutSet;
@@ -13,16 +14,19 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.IconLoader;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.GuiUtils;
 import com.intellij.ui.UIBundle;
 import com.intellij.ui.components.fields.ExtendableTextComponent;
-import com.intellij.openapi.util.NlsContexts;
 import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.accessibility.ScreenReader;
+import com.intellij.util.ui.update.Activatable;
+import com.intellij.util.ui.update.UiNotifyConnector;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -33,6 +37,9 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.lang.ref.WeakReference;
+
+import static com.intellij.openapi.actionSystem.PlatformDataKeys.UI_DISPOSABLE;
 
 public class ComponentWithBrowseButton<Comp extends JComponent> extends JPanel implements Disposable {
   private final Comp myComponent;
@@ -64,6 +71,9 @@ public class ComponentWithBrowseButton<Comp extends JComponent> extends JPanel i
     add(myComponent, BorderLayout.CENTER);
 
     myBrowseButton = new FixedSizeButton(myComponent);
+    if (isBackgroundSet()) {
+      myBrowseButton.setBackground(getBackground());
+    }
     if (browseActionListener != null) {
       myBrowseButton.addActionListener(browseActionListener);
     }
@@ -80,6 +90,7 @@ public class ComponentWithBrowseButton<Comp extends JComponent> extends JPanel i
       myBrowseButton.setFocusable(true);
       myBrowseButton.getAccessibleContext().setAccessibleName("Browse");
     }
+    new LazyDisposable(this);
   }
 
   @NotNull
@@ -93,7 +104,12 @@ public class ComponentWithBrowseButton<Comp extends JComponent> extends JPanel i
   }
 
   @NotNull
-  protected String getIconTooltip() {
+  protected @NlsContexts.Tooltip String getIconTooltip() {
+    return getTooltip();
+  }
+
+  @NotNull
+  public static @NlsContexts.Tooltip String getTooltip() {
     return UIBundle.message("component.with.browse.button.browse.button.tooltip.text") + " (" +
            KeymapUtil.getKeystrokeText(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK)) + ")";
   }
@@ -136,6 +152,14 @@ public class ComponentWithBrowseButton<Comp extends JComponent> extends JPanel i
   public void setButtonIcon(@NotNull Icon icon) {
     myBrowseButton.setIcon(icon);
     myBrowseButton.setDisabledIcon(IconLoader.getDisabledIcon(icon));
+  }
+
+  @Override
+  public void setBackground(Color color) {
+    super.setBackground(color);
+    if (myBrowseButton != null) {
+      myBrowseButton.setBackground(color);
+    }
   }
 
   /**
@@ -272,4 +296,22 @@ public class ComponentWithBrowseButton<Comp extends JComponent> extends JPanel i
     addActionListener(actionListener);
   }
 
+  private static final class LazyDisposable implements Activatable {
+    private final WeakReference<ComponentWithBrowseButton<?>> reference;
+
+    private LazyDisposable(ComponentWithBrowseButton<?> component) {
+      reference = new WeakReference<>(component);
+      new UiNotifyConnector.Once(component, this);
+    }
+
+    @Override
+    public void showNotify() {
+      ComponentWithBrowseButton<?> component = reference.get();
+      if (component == null) return; // component is collected
+      Disposable disposable = ApplicationManager.getApplication() == null ? null :
+                              UI_DISPOSABLE.getData(DataManager.getInstance().getDataContext(component));
+      if (disposable == null) return; // parent disposable not found
+      Disposer.register(disposable, component);
+    }
+  }
 }

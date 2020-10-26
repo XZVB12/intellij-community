@@ -1,16 +1,16 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.actionSystem;
 
-import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.extensions.PluginId;
+import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.SmartFMap;
+import com.intellij.util.SmartList;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Objects;
+import java.util.Collections;
+import java.util.List;
 import java.util.function.Supplier;
 
 /**
@@ -27,13 +27,13 @@ public final class ActionStub extends AnAction implements ActionStubBase {
   private final String myProjectType;
   private final Supplier<Presentation> myTemplatePresentation;
   private final String myId;
-  private final IdeaPluginDescriptor myPlugin;
+  private final PluginDescriptor myPlugin;
   private final String myIconPath;
-  private SmartFMap<String, Supplier<String>> myActionTextOverrides = SmartFMap.emptyMap();
+  private List<Supplier<String>> mySynonyms = Collections.emptyList();
 
   public ActionStub(@NotNull String actionClass,
                     @NotNull String id,
-                    @NotNull IdeaPluginDescriptor plugin,
+                    @NotNull PluginDescriptor plugin,
                     @Nullable String iconPath,
                     @Nullable String projectType,
                     @NotNull Supplier<Presentation> templatePresentation) {
@@ -46,17 +46,19 @@ public final class ActionStub extends AnAction implements ActionStubBase {
     myIconPath = iconPath;
   }
 
-  public void addActionTextOverride(@NotNull String place, @NotNull Supplier<String> text) {
-    myActionTextOverrides = myActionTextOverrides.plus(place, text);
-  }
-
-  public void copyActionTextOverride(@NotNull String fromPlace, @NotNull String toPlace) {
-    myActionTextOverrides = myActionTextOverrides.plus(toPlace, myActionTextOverrides.get(fromPlace));
+  @Override
+  public void addSynonym(@NotNull Supplier<String> text) {
+    if (mySynonyms == Collections.<Supplier<String>>emptyList()) {
+      mySynonyms = new SmartList<>(text);
+    }
+    else {
+      mySynonyms.add(text);
+    }
   }
 
   @NotNull
   @Override
-  public IdeaPluginDescriptor getPlugin() {
+  public PluginDescriptor getPlugin() {
     return myPlugin;
   }
 
@@ -82,11 +84,6 @@ public final class ActionStub extends AnAction implements ActionStubBase {
   }
 
   @Override
-  public PluginId getPluginId() {
-    return myPlugin.getPluginId();
-  }
-
-  @Override
   public String getIconPath() {
     return myIconPath;
   }
@@ -103,8 +100,9 @@ public final class ActionStub extends AnAction implements ActionStubBase {
   public final void initAction(@NotNull AnAction targetAction) {
     copyTemplatePresentation(this.getTemplatePresentation(), targetAction.getTemplatePresentation());
     targetAction.setShortcutSet(getShortcutSet());
-    for (String place : myActionTextOverrides.keySet()) {
-      targetAction.addTextOverride(place, Objects.requireNonNull(myActionTextOverrides.get(place)));
+    copyActionTextOverrides(targetAction);
+    for (Supplier<String> synonym : mySynonyms) {
+      targetAction.addSynonym(synonym);
     }
   }
 

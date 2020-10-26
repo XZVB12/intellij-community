@@ -16,6 +16,9 @@ import javax.swing.*;
 public class EclipseFileType implements FileType {
   public static final FileType INSTANCE = new EclipseFileType();
 
+  private EclipseFileType() {
+  }
+
   @Override
   @NotNull
   @NonNls
@@ -44,11 +47,6 @@ public class EclipseFileType implements FileType {
 
   @Override
   public boolean isBinary() {
-    return false;
-  }
-
-  @Override
-  public boolean isReadOnly() {
     return false;
   }
 

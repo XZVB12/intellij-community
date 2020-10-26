@@ -19,17 +19,14 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileEvent;
 import com.intellij.openapi.vfs.VirtualFileListener;
 import com.intellij.openapi.vfs.VirtualFilePropertyEvent;
-import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.update.MergingUpdateQueue;
 import com.intellij.util.ui.update.Update;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -81,7 +78,8 @@ class ResourceBundleEditorFileListener implements VirtualFileListener {
   }
 
   private class MyVfsEventsProcessor {
-    private final AtomicReference<Set<EventWithType>> myEventQueue = new AtomicReference<>(ContainerUtil.newConcurrentSet());
+    private final AtomicReference<Set<EventWithType>> myEventQueue =
+      new AtomicReference<>(ContainerUtil.newConcurrentSet());
 
     private final MergingUpdateQueue myUpdateQueue =
       new MergingUpdateQueue("rbe.vfs.listener.queue", 200, true, myEditor.getComponent(), myEditor, myEditor.getComponent(), false) {
@@ -236,7 +234,7 @@ class ResourceBundleEditorFileListener implements VirtualFileListener {
     CONTENT_CHANGED, PROPERTY_CHANGED
   }
 
-  private static class EventWithType {
+  private static final class EventWithType {
     @NotNull
     private final EventType myType;
     @NotNull

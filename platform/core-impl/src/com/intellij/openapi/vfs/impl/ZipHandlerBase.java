@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vfs.impl;
 
 import com.intellij.openapi.diagnostic.Logger;
@@ -22,8 +8,10 @@ import com.intellij.openapi.util.io.FileTooBigException;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.SystemProperties;
 import com.intellij.util.io.ResourceHandle;
 import com.intellij.util.text.ByteArrayCharSequence;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,6 +25,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public abstract class ZipHandlerBase extends ArchiveHandler {
+  @ApiStatus.Internal
+  public static final boolean USE_CRC_INSTEAD_OF_TIMESTAMP = SystemProperties.is("zip.handler.uses.crc.instead.of.timestamp");
+
   public ZipHandlerBase(@NotNull String path) {
     super(path);
   }
@@ -62,12 +53,6 @@ public abstract class ZipHandlerBase extends ArchiveHandler {
     return map;
   }
 
-  @Override
-  public void dispose() {
-    super.dispose();
-    clearCaches();
-  }
-
   @NotNull
   private EntryInfo getOrCreate(@NotNull ZipEntry entry, @NotNull Map<String, EntryInfo> map, @NotNull ZipFile zip) {
     boolean isDirectory = entry.isDirectory();
@@ -76,19 +61,26 @@ public abstract class ZipHandlerBase extends ArchiveHandler {
       entryName = entryName.substring(0, entryName.length() - 1);
       isDirectory = true;
     }
-    if (StringUtil.startsWithChar(entryName, '/')) {
-      entryName = StringUtil.trimStart(entryName, "/");
+    if (StringUtil.startsWithChar(entryName, '/') || StringUtil.startsWithChar(entryName, '\\')) {
+      entryName = entryName.substring(1);
     }
 
     EntryInfo info = map.get(entryName);
-    if (info != null) return info;
+    if (info != null) {
+      if (!isDirectory) {
+        Logger.getInstance(ZipHandlerBase.class).info(
+          "Duplicated entry: " + getFile() + "!/" + entryName + ' ' + info.length + '/' + entry.getSize());
+      }
+      return info;
+    }
 
     Trinity<String, String, String> path = splitPathAndFix(entryName);
     EntryInfo parentInfo = getOrCreate(path.first, map, zip);
     if (".".equals(path.second)) {
       return parentInfo;
     }
-    info = store(map, parentInfo, path.second, isDirectory, entry.getSize(), getEntryFileStamp(), path.third);
+    long fileStamp = USE_CRC_INSTEAD_OF_TIMESTAMP ? entry.getCrc() : getEntryFileStamp();
+    info = store(map, parentInfo, path.second, isDirectory, entry.getSize(), fileStamp, path.third);
     return info;
   }
 
@@ -117,6 +109,9 @@ public abstract class ZipHandlerBase extends ArchiveHandler {
       }
 
       Trinity<String, String, String> path = splitPathAndFix(entryName);
+      if (entryName.equals(path.first)) {
+        throw new IllegalArgumentException("invalid entry name: '"+entryName+"' in "+zip.getName()+"; after split: "+path);
+      }
       EntryInfo parentInfo = getOrCreate(path.first, map, zip);
       entryName = path.third;
       info = store(map, parentInfo, path.second, true, DEFAULT_LENGTH, DEFAULT_TIMESTAMP, entryName);
@@ -128,6 +123,18 @@ public abstract class ZipHandlerBase extends ArchiveHandler {
     }
 
     return info;
+  }
+
+  public long getEntryCrc(@NotNull String relativePath) throws IOException {
+    try (ResourceHandle<ZipFile> zipRef = acquireZipHandle()) {
+      ZipFile zip = zipRef.get();
+      ZipEntry entry = zip.getEntry(relativePath);
+      if (entry != null) {
+        return entry.getCrc();
+      }
+    }
+
+    throw new FileNotFoundException(getFile() + "!/" + relativePath);
   }
 
   @Override
@@ -187,7 +194,7 @@ public abstract class ZipHandlerBase extends ArchiveHandler {
   }
 
   protected abstract long getEntryFileStamp();
-  
+
   @NotNull
   protected abstract ResourceHandle<ZipFile> acquireZipHandle() throws IOException;
 

@@ -6,7 +6,9 @@ import com.intellij.openapi.util.io.IoTestUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.Compressor;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.javac.JpsJavacFileManager;
@@ -59,32 +61,64 @@ public class JavaCompilerBasicTest extends BaseCompilerTestCase {
     }
     final VirtualFile srcFile = createFile("src/A.java", "import ppp.B; public class A { B b; }");
 
-    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<JavaFileObject>() {
+    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<>() {
       @Override
       public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
       }
     }, Locale.US, null);
-    final JpsJavacFileManager fileManager = new JpsJavacFileManager(new DummyContext(stdFileManager), true, Collections.emptyList());
 
-    fileManager.setLocation(StandardLocation.CLASS_PATH, Collections.singleton(jarFile));
-    fileManager.setLocation(StandardLocation.SOURCE_PATH, Collections.emptyList());
+    try (final JpsJavacFileManager fileManager = new JpsJavacFileManager(new DummyContext(stdFileManager), true, Collections.emptyList())) {
+      fileManager.setLocation(StandardLocation.CLASS_PATH, Collections.singleton(jarFile));
+      fileManager.setLocation(StandardLocation.SOURCE_PATH, Collections.emptyList());
 
-    final File src = new File(srcFile.getPath());
-    final Iterable<? extends JavaFileObject> sources = fileManager.getJavaFileObjectsFromFiles(Collections.singleton(src));
-    final Iterator<? extends JavaFileObject> it = sources.iterator();
-    assertTrue(it.hasNext());
-    final JavaFileObject srcFileObject = it.next();
-    assertFalse(it.hasNext());
-    assertEquals(JavaFileObject.Kind.SOURCE, srcFileObject.getKind());
-    assertEquals(src.toURI().getPath(), srcFileObject.toUri().getPath());
+      final File src = new File(srcFile.getPath());
+      final Iterable<? extends JavaFileObject> sources = fileManager.getJavaFileObjectsFromFiles(Collections.singleton(src));
+      final Iterator<? extends JavaFileObject> it = sources.iterator();
+      assertTrue(it.hasNext());
+      final JavaFileObject srcFileObject = it.next();
+      assertFalse(it.hasNext());
+      assertEquals(JavaFileObject.Kind.SOURCE, srcFileObject.getKind());
+      assertEquals(src.toURI().getPath(), srcFileObject.toUri().getPath());
 
-    final Iterable<JavaFileObject> libClasses = fileManager.list(StandardLocation.CLASS_PATH, "ppp", Collections.singleton(JavaFileObject.Kind.CLASS), false);
-    final Iterator<JavaFileObject> clsIterator = libClasses.iterator();
-    assertTrue(clsIterator.hasNext());
-    final JavaFileObject aClass = clsIterator.next();
-    assertEquals(JavaFileObject.Kind.CLASS, aClass.getKind());
-    assertEquals(jarFile.toURI().getPath() + "!/ppp/B.class", aClass.toUri().getPath());
-    assertFalse(clsIterator.hasNext());
+      final Iterable<JavaFileObject> libClasses = fileManager.list(StandardLocation.CLASS_PATH, "ppp", Collections.singleton(JavaFileObject.Kind.CLASS), false);
+      final Iterator<JavaFileObject> clsIterator = libClasses.iterator();
+      assertTrue(clsIterator.hasNext());
+      final JavaFileObject aClass = clsIterator.next();
+      assertEquals(JavaFileObject.Kind.CLASS, aClass.getKind());
+      assertEquals(jarFile.toURI().getPath() + "!/ppp/B.class", aClass.toUri().getPath());
+      assertFalse(clsIterator.hasNext());
+    }
+  }
+
+  public void testFilterSourcesFromOutput() throws IOException {
+    final VirtualFile javaFile = createFile("out/ppp/B.java", "package ppp; public class B {}");
+    final VirtualFile clsFile = createFile("out/ppp/B.class", "package ppp; public class B {}");
+    final File outputRoot = new File(javaFile.getParent().getParent().getPath());
+
+    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<>() {
+      @Override
+      public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
+      }
+    }, Locale.US, null);
+
+    try (final JpsJavacFileManager fileManager = new JpsJavacFileManager(new DummyContext(stdFileManager), true, Collections.emptyList())) {
+      fileManager.setLocation(StandardLocation.CLASS_OUTPUT, Collections.singleton(outputRoot));
+
+      final Iterable<JavaFileObject> files = fileManager.list(StandardLocation.CLASS_OUTPUT, "ppp", ContainerUtil.set(JavaFileObject.Kind.CLASS, JavaFileObject.Kind.OTHER), false);
+      final Iterator<JavaFileObject> resultIterator = files.iterator();
+      assertTrue(resultIterator.hasNext());
+      final JavaFileObject item = resultIterator.next();
+      assertEquals(JavaFileObject.Kind.CLASS, item.getKind());
+      assertEquals(new File(clsFile.getPath()), new File(item.toUri().getPath()));
+      if (resultIterator.hasNext()) {
+        StringBuilder msg = new StringBuilder();
+        msg.append("These files should not be included in result:");
+        while (resultIterator.hasNext()) {
+          msg.append("\n").append(resultIterator.next().toUri().getPath());
+        }
+        fail(msg.toString());
+      }
+    }
   }
 
   public void testFileObjectComparison() throws IOException {
@@ -96,7 +130,7 @@ public class JavaCompilerBasicTest extends BaseCompilerTestCase {
       jar.addFile("arch/B.java", new File(srcBFile.getPath()));
     }
 
-    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<JavaFileObject>() {
+    final StandardJavaFileManager stdFileManager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(new DiagnosticListener<>() {
       @Override
       public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
       }
@@ -200,7 +234,7 @@ public class JavaCompilerBasicTest extends BaseCompilerTestCase {
     }
 
     @Override
-    public void reportMessage(Diagnostic.Kind kind, String message) {
+    public void reportMessage(Diagnostic.Kind kind, @Nls String message) {
     }
   }
 }

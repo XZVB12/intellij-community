@@ -4,6 +4,7 @@ package com.intellij.execution;
 import com.intellij.execution.configurations.*;
 import com.intellij.execution.runners.ProgramRunner;
 import com.intellij.openapi.util.Factory;
+import com.intellij.openapi.util.NlsSafe;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -156,7 +157,7 @@ public interface RunnerAndConfigurationSettings {
    *
    * @param name the name of the configuration
    */
-  void setName(String name);
+  void setName(@NlsSafe String name);
 
   /**
    * Returns the name of the configuration.
@@ -164,7 +165,7 @@ public interface RunnerAndConfigurationSettings {
    * @return the name of the configuration.
    */
   @NotNull
-  String getName();
+  @NlsSafe String getName();
 
   @NotNull
   String getUniqueID();
@@ -282,4 +283,6 @@ public interface RunnerAndConfigurationSettings {
    * @return the folder name, or null if the configuration is displayed on the top level.
    */
   @Nullable String getFolderName();
+
+  @NlsSafe String toString();
 }

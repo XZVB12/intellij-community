@@ -3,10 +3,7 @@ package com.intellij.openapi.keymap.impl.ui;
 
 import com.intellij.diagnostic.VMOptions;
 import com.intellij.icons.AllIcons;
-import com.intellij.ide.CommonActionsManager;
-import com.intellij.ide.DataManager;
-import com.intellij.ide.IdeBundle;
-import com.intellij.ide.TreeExpander;
+import com.intellij.ide.*;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.QuickList;
@@ -28,6 +25,8 @@ import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.ListPopup;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.util.text.HtmlBuilder;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.IdeFrame;
@@ -44,6 +43,7 @@ import com.intellij.ui.mac.touchbar.Utils;
 import com.intellij.util.Alarm;
 import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.components.BorderLayoutPanel;
 import com.intellij.util.ui.tree.TreeUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
@@ -67,7 +67,7 @@ import java.util.Map;
 import static com.intellij.openapi.actionSystem.impl.ActionToolbarImpl.updateAllToolbarsImmediately;
 
 public class KeymapPanel extends JPanel implements SearchableConfigurable, Configurable.NoScroll, KeymapListener, Disposable {
-  private JCheckBox preferKeyPositionOverCharOption;
+  private JCheckBox nationalKeyboardsSupport;
 
   private final KeymapSelector myKeymapSelector = new KeymapSelector(this::currentKeymapChanged);
   private final KeymapSchemeManager myManager = myKeymapSelector.getManager();
@@ -95,21 +95,23 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
     keymapPanel.add(createKeymapSettingsPanel(), BorderLayout.CENTER);
 
     IdeFrame ideFrame = IdeFocusManager.getGlobalInstance().getLastFocusedFrame();
-    if (ideFrame != null && KeyboardSettingsExternalizable.isSupportedKeyboardLayout(ideFrame.getComponent())) {
-      preferKeyPositionOverCharOption = new JCheckBox(new AbstractAction(KeyMapBundle.message("prefer.key.position")) {
-        @Override
-        public void actionPerformed(ActionEvent e) {
-          KeyboardSettingsExternalizable.getInstance().setPreferKeyPositionOverCharOption(preferKeyPositionOverCharOption.isSelected());
-          VMOptions.writeOption(KeyboardSettingsExternalizable.VMOption, "=",
-                                Boolean.toString(!KeyboardSettingsExternalizable.getInstance().isPreferKeyPositionOverCharOption()));
-          ApplicationManager.getApplication().invokeLater(
-            () -> ApplicationManager.getApplication().restart(),
-            ModalityState.NON_MODAL
-          );
-        }
-      });
-      preferKeyPositionOverCharOption.setBorder(JBUI.Borders.empty());
-      keymapPanel.add(preferKeyPositionOverCharOption, BorderLayout.SOUTH);
+    if (ideFrame != null && NationalKeyboardSupport.isSupportedKeyboardLayout(ideFrame.getComponent())) {
+      nationalKeyboardsSupport = new JCheckBox(
+        new AbstractAction(KeyMapBundle.message(NationalKeyboardSupport.getKeymapBundleKey())) {
+          @Override
+          public void actionPerformed(ActionEvent e) {
+            NationalKeyboardSupport.getInstance().setEnabled(nationalKeyboardsSupport.isSelected());
+            VMOptions.writeOption(NationalKeyboardSupport.getVMOption(), "=",
+                                  Boolean.toString(NationalKeyboardSupport.getInstance().getEnabled()));
+            ApplicationManager.getApplication().invokeLater(
+              () -> ApplicationManager.getApplication().restart(),
+              ModalityState.NON_MODAL
+            );
+          }
+        });
+      nationalKeyboardsSupport.setSelected(NationalKeyboardSupport.getInstance().getEnabled());
+      nationalKeyboardsSupport.setBorder(JBUI.Borders.empty());
+      keymapPanel.add(nationalKeyboardsSupport, BorderLayout.SOUTH);
     }
 
     add(keymapPanel, BorderLayout.CENTER);
@@ -131,8 +133,6 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
 
     mySystemShortcutConflictsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 5));
     add(mySystemShortcutConflictsPanel, BorderLayout.SOUTH);
-
-    KeymapExtension.EXTENSION_POINT_NAME.addChangeListener(this::currentKeymapChanged, this);
   }
 
   private void fillConflictsPanel(@NotNull Keymap keymap) {
@@ -142,7 +142,7 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
     if (allConflicts.isEmpty())
       return;
 
-    String htmlBody = "";
+    HtmlBuilder links = new HtmlBuilder();
     final Map<String, Runnable> href2linkAction = new HashMap<>();
     int count = 0;
     boolean empty = true;
@@ -156,8 +156,8 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
       final AnAction act = ActionManager.getInstance().getAction(actId);
       final String actText = act == null ? actId : act.getTemplateText();
       if (!empty)
-        htmlBody += ", ";
-      htmlBody += "<a href='" + actId + "'>" + actText + "</a>";
+        links.append(", ");
+      links.appendLink(actId, actText);
 
       empty = false;
       ++count;
@@ -165,21 +165,27 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
         break;
     }
 
+    String shortcutsMessage;
     if (count > 2 && allConflicts.size() > count) {
-      final @NotNull String text = String.format("%d more", allConflicts.size() - count);
-      htmlBody += " and <a href='" + text + "'>" + text + "</a>";
+      String actionId = "show.more";
+      HtmlChunk.Element moreLink = HtmlChunk.link(actionId, IdeBundle.message("more.shortcuts.link.text.with.count", allConflicts.size() - count));
 
-      href2linkAction.put(text, ()->{
+      href2linkAction.put(actionId, ()->{
         myShowOnlyConflicts = true;
         myActionsTree.setBaseFilter(systemShortcuts.createKeymapConflictsActionFilter());
         myActionsTree.filter(null, myQuickLists);
         TreeUtil.expandAll(myActionsTree.getTree());
       });
+      shortcutsMessage = IdeBundle.message("macos.shortcut.conflict.many", links, moreLink);
+    } else {
+      shortcutsMessage = IdeBundle.message("macos.shortcut.conflict.few", links);
     }
 
-    htmlBody += " shortcuts conflict with macOS system shortcuts.<br>Modify shortcuts or change macOS system settings.</p></html>";
+    HtmlBuilder builder = new HtmlBuilder();
+    builder.appendRaw(shortcutsMessage)
+      .br().append(IdeBundle.message("assign.custom.shortcuts.or.change.the.macos.system.settings"));
 
-    JBLabel jbLabel = new JBLabel(createWarningHtmlText(htmlBody)) {
+    JBLabel jbLabel = new JBLabel(createWarningHtmlText(builder.toString())) {
       @NotNull
       @Override
       protected HyperlinkListener createHyperlinkListener() {
@@ -198,24 +204,26 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
     };
     jbLabel.setCopyable(true);
     jbLabel.setAllowAutoWrapping(true);
-    jbLabel.setIconWithAlignment(AllIcons.General.Warning, JLabel.LEFT, JLabel.TOP);
+    jbLabel.setIconWithAlignment(AllIcons.General.Warning, SwingConstants.LEFT, SwingConstants.TOP);
     mySystemShortcutConflictsPanel.add(jbLabel);
 
     validate();
     repaint();
   }
 
-  private static String createWarningHtmlText(@Nullable String htmlBody) {
+  private static @Nls String createWarningHtmlText(@Nullable @Nls String htmlBody) {
     if (htmlBody == null)
       return null;
 
-    final String css = "<head><style type=\"text/css\">\n" +
-                 "a, a:link {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkColor()) + ";}\n" +
-                 "a:visited {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkVisitedColor()) + ";}\n" +
-                 "a:hover {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkHoverColor()) + ";}\n" +
-                 "a:active {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkPressedColor()) + ";}\n" +
-                 "</style>\n</head>";
-    return String.format("<html>" + css + "<body><div>%s</div></body></html>", htmlBody);
+    return new HtmlBuilder()
+      .append(HtmlChunk.head().child(HtmlChunk.styleTag(
+        "a, a:link {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkColor()) + ";}\n" +
+        "a:visited {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkVisitedColor()) + ";}\n" +
+        "a:hover {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkHoverColor()) + ";}\n" +
+        "a:active {color:#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.linkPressedColor()) + ";}\n")))
+      .append(HtmlChunk.body().child(HtmlChunk.div().addRaw(htmlBody)))
+      .wrapWith("html")
+      .toString();
   }
 
   @Override
@@ -318,7 +326,6 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
   }
 
   private JPanel createToolbarPanel() {
-    final JPanel panel = new JPanel(new GridBagLayout());
     DefaultActionGroup group = new DefaultActionGroup();
     final JComponent toolbar = ActionManager.getInstance().createActionToolbar("KeymapEdit", group, true).getComponent();
     final CommonActionsManager commonActionsManager = CommonActionsManager.getInstance();
@@ -326,7 +333,7 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
     group.add(commonActionsManager.createExpandAllAction(treeExpander, myActionsTree.getTree()));
     group.add(commonActionsManager.createCollapseAllAction(treeExpander, myActionsTree.getTree()));
 
-    group.add(new AnAction(IdeBundle.message("action.text.edit.shortcut"), IdeBundle.message("action.text.edit.shortcut"), AllIcons.Actions.Edit) {
+    group.add(new AnAction(KeyMapBundle.message("edit.shortcut.action.text"), KeyMapBundle.message("edit.shortcut.action.description"), AllIcons.Actions.Edit) {
       {
         registerCustomShortcutSet(CommonShortcuts.ENTER, myActionsTree.getTree());
       }
@@ -343,13 +350,12 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
       }
     });
 
-    myShowOnlyConflictsButton =
-      new ToggleActionButton(KeyMapBundle.messagePointer("action.AnActionButton.text.show.conflicts.with.system.shortcuts"),
-                             AllIcons.General.ShowWarning) {
+    myShowOnlyConflictsButton = new ToggleActionButton(KeyMapBundle.messagePointer("keymap.show.system.conflicts"), AllIcons.General.ShowWarning) {
       @Override
       public boolean isSelected(AnActionEvent e) {
         return myShowOnlyConflicts;
       }
+
       @Override
       public void setSelected(AnActionEvent e, boolean state) {
         myShowOnlyConflicts = state;
@@ -358,14 +364,14 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
         final JTree tree = myActionsTree.getTree();
         if (myShowOnlyConflicts) {
           TreeUtil.expandAll(tree);
-        } else {
+        }
+        else {
           TreeUtil.collapseAll(tree, 0);
         }
       }
     };
     group.add(myShowOnlyConflictsButton);
 
-    panel.add(toolbar, new GridBagConstraints(0, 0, 1, 1, 1, 0, GridBagConstraints.WEST, GridBagConstraints.NONE, JBUI.insetsTop(8), 0, 0));
     group = new DefaultActionGroup();
     ActionToolbar actionToolbar = ActionManager.getInstance().createActionToolbar("Keymap", group, true);
     actionToolbar.setReservePlaceAutoPopupIcon(false);
@@ -395,11 +401,8 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
     };
     myFilterComponent.reset();
 
-    panel.add(myFilterComponent, new GridBagConstraints(1, 0, 1, 1, 0, 0, GridBagConstraints.EAST, GridBagConstraints.NONE,
-                                                        JBUI.insetsTop(8), 0, 0));
-
     group.add(new DumbAwareAction(KeyMapBundle.message("filter.shortcut.action.text"),
-                                  KeyMapBundle.message("filter.shortcut.action.text"),
+                                  KeyMapBundle.message("filter.shortcut.action.description"),
                                   AllIcons.Actions.ShortcutFilter) {
       @Override
       public void actionPerformed(@NotNull AnActionEvent e) {
@@ -410,7 +413,8 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
     });
 
     group.add(new DumbAwareAction(KeyMapBundle.message("filter.clear.action.text"),
-                                  KeyMapBundle.message("filter.clear.action.text"), AllIcons.Actions.GC) {
+                                  KeyMapBundle.message("filter.clear.action.description"),
+                                  AllIcons.Actions.GC) {
       @Override
       public void update(@NotNull AnActionEvent event) {
         boolean enabled = null != myFilteringPanel.getShortcut();
@@ -429,33 +433,14 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
       }
     });
 
-    panel.add(searchToolbar, new GridBagConstraints(2, 0, 1, 1, 0, 0, GridBagConstraints.EAST, GridBagConstraints.NONE, JBUI.insetsTop(8), 0, 0));
+    JPanel panel = new JPanel(new GridLayout(1, 2));
+    panel.add(toolbar);
+    panel.add(new BorderLayoutPanel().addToCenter(myFilterComponent).addToRight(searchToolbar));
     return panel;
   }
 
-  @NotNull
-  public static TreeExpander createTreeExpander(ActionsTree actionsTree) {
-    return new TreeExpander() {
-      @Override
-      public void expandAll() {
-        TreeUtil.expandAll(actionsTree.getTree());
-      }
-
-      @Override
-      public boolean canExpand() {
-        return true;
-      }
-
-      @Override
-      public void collapseAll() {
-        TreeUtil.collapseAll(actionsTree.getTree(), 0);
-      }
-
-      @Override
-      public boolean canCollapse() {
-        return true;
-      }
-    };
+  public static @NotNull TreeExpander createTreeExpander(@NotNull ActionsTree actionsTree) {
+    return new DefaultTreeExpander(actionsTree::getTree);
   }
 
   private void filterTreeByShortcut(Shortcut shortcut) {
@@ -575,8 +560,8 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
 
   @Override
   public void reset() {
-    if (preferKeyPositionOverCharOption != null) {
-      preferKeyPositionOverCharOption.setSelected(KeyboardSettingsExternalizable.getInstance().isPreferKeyPositionOverCharOption());
+    if (nationalKeyboardsSupport != null) {
+      nationalKeyboardsSupport.setSelected(NationalKeyboardSupport.getInstance().getEnabled());
     }
     myManager.reset();
   }
@@ -613,6 +598,7 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
 
   @Override
   public JComponent createComponent() {
+    KeymapExtension.EXTENSION_POINT_NAME.addChangeListener(this::currentKeymapChanged, this);
     myKeymapSelector.attachKeymapListener(this);
     ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(CHANGE_TOPIC, this);
     return this;
@@ -774,7 +760,7 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
 
     JCheckBox getCheckbox() { return myCheckbox; }
 
-    boolean isModified() { return myCheckbox == null ? false : myShowFnInitial != myCheckbox.isSelected(); }
+    boolean isModified() { return myCheckbox != null && myShowFnInitial != myCheckbox.isSelected(); }
 
     void applyChanges() {
       if (!TouchBarsManager.isTouchBarAvailable() || myCheckbox == null || !isModified())
@@ -868,9 +854,10 @@ public class KeymapPanel extends JPanel implements SearchableConfigurable, Confi
       if (manager != null) manager.apply();
     }
   }
+
   private static @Nullable KeyboardShortcut findKeyboardShortcut(@NotNull Keymap keymap, @NotNull KeyStroke ks, @NotNull String actionId) {
-    final Shortcut[] actionShortcuts = keymap.getShortcuts(actionId);
-    if (actionShortcuts == null || actionShortcuts.length == 0)
+    Shortcut[] actionShortcuts = keymap.getShortcuts(actionId);
+    if (actionShortcuts.length == 0)
       return null;
 
     for (Shortcut sc: actionShortcuts) {

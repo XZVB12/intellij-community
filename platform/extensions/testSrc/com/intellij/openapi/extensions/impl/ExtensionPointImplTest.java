@@ -143,15 +143,10 @@ public class ExtensionPointImplTest {
   @Test
   public void testIncompatibleAdapter() {
     ExtensionPointImpl<Integer> extensionPoint = buildExtensionPoint(Integer.class);
-
     extensionPoint.addExtensionAdapter(newStringAdapter());
-
-    try {
-      assertThat(extensionPoint.getExtensionList()).isEmpty();
-      fail("must throw");
-    }
-    catch (AssertionError ignored) {
-    }
+    assertThatThrownBy(() -> {
+      extensionPoint.getExtensionList();
+    }).hasMessageContaining("Extension class java.lang.String does not implement class java.lang.Integer");
   }
 
   @Test
@@ -290,14 +285,17 @@ public class ExtensionPointImplTest {
 
     assertThat(extensionPoint.getExtensionList()).containsExactly(4, 2);
 
-    assertThat(ExtensionProcessingHelper.getByGroupingKey(extensionPoint, "foo", it -> "foo")).isEqualTo(extensionPoint.getExtensionList());
-    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 2, Function.identity(), Function.identity())).isEqualTo(2);
-    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 2, Function.identity(), (Integer it) -> it * 2)).isEqualTo(4);
+    Function<Integer, String> f = it -> "foo";
+    assertThat(ExtensionProcessingHelper.getByGroupingKey(extensionPoint, f.getClass(), "foo", f)).isEqualTo(extensionPoint.getExtensionList());
+    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 2, ExtensionPointImplTest.class, Function.identity(), Function.identity())).isEqualTo(2);
+    Function<Integer, Integer> f2 = (Integer it) -> it * 2;
+    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 2, f2.getClass(), Function.identity(), f2)).isEqualTo(4);
 
-    Function<@NotNull Integer, @Nullable Integer> filteringKeyMapper = it -> it < 3 ? it : null;
-    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 2, filteringKeyMapper, Function.identity())).isEqualTo(2);
-    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 4, filteringKeyMapper, Function.identity())).isNull();
-    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 4, Function.identity(), (Integer it) -> (Integer)null)).isNull();
+    Function<Integer, Integer> filteringKeyMapper = it -> it < 3 ? it : null;
+    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 2, filteringKeyMapper.getClass(), filteringKeyMapper, Function.identity())).isEqualTo(2);
+    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 4, filteringKeyMapper.getClass(), filteringKeyMapper, Function.identity())).isNull();
+    Function<@NotNull Integer, @Nullable Integer> f3 = (Integer it) -> (Integer)null;
+    assertThat(ExtensionProcessingHelper.getByKey(extensionPoint, 4, f3.getClass(), Function.identity(), f3)).isNull();
   }
 
   @Test
@@ -324,7 +322,8 @@ public class ExtensionPointImplTest {
   }
 
   private static @NotNull <T> ExtensionPointImpl<T> buildExtensionPoint(@NotNull Class<T> aClass) {
-    InterfaceExtensionPoint<T> point = new InterfaceExtensionPoint<>(ExtensionsImplTest.EXTENSION_POINT_NAME_1, aClass, new DefaultPluginDescriptor("test"));
+    InterfaceExtensionPoint<T> point = new InterfaceExtensionPoint<>(ExtensionsImplTest.EXTENSION_POINT_NAME_1, aClass.getName(),
+                                                                     new DefaultPluginDescriptor("test"), aClass, false);
     point.setComponentManager(new MyComponentManager());
     return point;
   }

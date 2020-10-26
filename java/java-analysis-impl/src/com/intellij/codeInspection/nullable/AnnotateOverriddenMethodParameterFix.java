@@ -23,7 +23,10 @@ import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.java.analysis.JavaAnalysisBundle;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiInvalidElementAccessException;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiParameter;
 import com.intellij.psi.util.ClassUtil;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ArrayUtilRt;
@@ -34,9 +37,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-/**
- * @author cdr
- */
 public class AnnotateOverriddenMethodParameterFix implements LocalQuickFix {
   private final String myAnnotation;
   private final String[] myAnnosToRemove;
@@ -76,7 +76,7 @@ public class AnnotateOverriddenMethodParameterFix implements LocalQuickFix {
       assert psiParam != null : toAnnotate;
       try {
         if (AnnotationUtil.isAnnotatingApplicable(psiParam, myAnnotation)) {
-          AddAnnotationPsiFix fix = new AddAnnotationPsiFix(myAnnotation, psiParam, PsiNameValuePair.EMPTY_ARRAY, myAnnosToRemove);
+          AddAnnotationPsiFix fix = new AddAnnotationPsiFix(myAnnotation, psiParam, myAnnosToRemove);
           PsiFile containingFile = psiParam.getContainingFile();
           if (psiParam.isValid() && fix.isAvailable(project, containingFile, psiParam, psiParam)) {
             fix.invoke(project, containingFile, psiParam, psiParam);

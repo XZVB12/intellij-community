@@ -14,12 +14,13 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater
 import kotlin.collections.ArrayList
 import kotlin.collections.LinkedHashMap
 
-private val LOG = logger<BaseState>()
+internal val LOG = logger<BaseState>()
 
 private val factory: StatePropertyFactory = ServiceLoader.load(StatePropertyFactory::class.java, BaseState::class.java.classLoader).first()
 
 abstract class BaseState : SerializationFilter, ModificationTracker {
   companion object {
+    @JvmStatic
     // should be part of class and not file level to access private field of class
     private val MOD_COUNT_UPDATER = AtomicLongFieldUpdater.newUpdater(BaseState::class.java, "ownModificationCount")
   }
@@ -130,6 +131,11 @@ abstract class BaseState : SerializationFilter, ModificationTracker {
   @ApiStatus.Internal
   fun intIncrementModificationCount() {
     MOD_COUNT_UPDATER.incrementAndGet(this)
+  }
+
+  @ApiStatus.Internal
+  fun addModificationCount(delta: Long) {
+    MOD_COUNT_UPDATER.addAndGet(this, delta)
   }
 
   override fun accepts(accessor: Accessor, bean: Any): Boolean {

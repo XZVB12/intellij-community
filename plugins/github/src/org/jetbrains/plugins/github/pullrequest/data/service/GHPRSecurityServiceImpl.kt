@@ -6,14 +6,15 @@ import org.jetbrains.plugins.github.api.data.GHRepositoryPermissionLevel
 import org.jetbrains.plugins.github.api.data.GHUser
 import org.jetbrains.plugins.github.api.data.GithubUser
 import org.jetbrains.plugins.github.api.data.pullrequest.GHTeam
+import org.jetbrains.plugins.github.authentication.accounts.GithubAccount
 import org.jetbrains.plugins.github.util.GithubSharedProjectSettings
 
 class GHPRSecurityServiceImpl(private val sharedProjectSettings: GithubSharedProjectSettings,
+                              override val account: GithubAccount,
                               override val currentUser: GHUser,
                               private val currentUserTeams: List<GHTeam>,
                               private val repo: GHRepositoryPermission) : GHPRSecurityService {
   override fun isCurrentUser(user: GithubUser) = user.nodeId == currentUser.id
-  override fun currentUserCanEditPullRequestsMetadata() = currentUserHasPermissionLevel(GHRepositoryPermissionLevel.TRIAGE)
 
   override fun currentUserHasPermissionLevel(level: GHRepositoryPermissionLevel) =
     (repo.viewerPermission?.ordinal ?: -1) >= level.ordinal

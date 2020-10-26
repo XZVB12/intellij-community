@@ -7,8 +7,8 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.ClassLoaderUtil;
 import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.openapi.util.io.FileUtilRt;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.lang.UrlClassLoader;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -26,12 +26,12 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 public final class BootstrapClassLoaderUtil {
-  public static final String CLASSPATH_ORDER_FILE = "classpath-order.txt";
+  public static final @NonNls String CLASSPATH_ORDER_FILE = "classpath-order.txt";
 
   private static final String PROPERTY_IGNORE_CLASSPATH = "ignore.classpath";
   private static final String PROPERTY_ALLOW_BOOTSTRAP_RESOURCES = "idea.allow.bootstrap.resources";
   private static final String PROPERTY_ADDITIONAL_CLASSPATH = "idea.additional.classpath";
-  private static final String MARKETPLACE_PLUGIN_DIR = "marketplace";
+  private static final @NonNls String MARKETPLACE_PLUGIN_DIR = "marketplace";
 
   private BootstrapClassLoaderUtil() { }
 
@@ -85,7 +85,7 @@ public final class BootstrapClassLoaderUtil {
         // at this point logging is not initialized yet, so reporting the error directly
         String path = new File(PathManager.getPluginsPath(), MARKETPLACE_PLUGIN_DIR).getAbsolutePath();
         String message = "As a workaround, you may uninstall or update JetBrains Marketplace Support plugin at " + path;
-        Main.showMessage("JetBrains Marketplace boot failure", new Exception(message, e));
+        Main.showMessage(BootstrapBundle.message("bootstrap.error.title.jetbrains.marketplace.boot.failure"), new Exception(message, e));
       }
     }
 
@@ -208,19 +208,28 @@ public final class BootstrapClassLoaderUtil {
     @SuppressWarnings("IOResourceOpenedButNotSafelyClosed") InputStream resource = BootstrapClassLoaderUtil.class.getResourceAsStream(CLASSPATH_ORDER_FILE);
     if (resource != null) {
       try (BufferedReader stream = new BufferedReader(new InputStreamReader(resource, StandardCharsets.UTF_8))) {
-        return FileUtilRt.loadLines(stream);
+        List<String> lines = new ArrayList<>();
+        String line;
+        while ((line = stream.readLine()) != null) {
+          lines.add(line);
+        }
+        return lines;
       }
-      catch (Exception ignored) { }  // skip, we can load the app
+      catch (Exception ignored) {
+        // skip, we can load the app
+      }
     }
     return Collections.emptyList();
   }
 
   private static void addLibraries(Collection<URL> classPath, File fromDir, URL selfRootUrl) throws MalformedURLException {
     File[] files = fromDir.listFiles();
-    if (files == null) return;
+    if (files == null) {
+      return;
+    }
 
     for (File file : files) {
-      if (FileUtilRt.isJarOrZip(file)) {
+      if (FileUtilRt.isJarOrZip(file, true)) {
         URL url = file.toURI().toURL();
         if (!selfRootUrl.equals(url)) {
           classPath.add(url);
@@ -268,7 +277,7 @@ public final class BootstrapClassLoaderUtil {
     return classpath;
   }
 
-  private static class TransformingLoader extends UrlClassLoader {
+  private static final class TransformingLoader extends UrlClassLoader {
     private final List<BytecodeTransformer> myTransformers;
 
     TransformingLoader(Builder builder, List<BytecodeTransformer> transformers) {
@@ -307,7 +316,7 @@ public final class BootstrapClassLoaderUtil {
       myMinor = minor;
     }
 
-    public boolean isAtLeast(@NotNull SimpleVersion ver) {
+    public boolean isAtLeast(@NotNull Comparable<SimpleVersion> ver) {
       return ver.compareTo(this) <= 0;
     }
 
@@ -323,29 +332,30 @@ public final class BootstrapClassLoaderUtil {
       }
       return true; // assume compatible of nothing is specified
     }
-    
+
     @Override
     public int compareTo(@NotNull SimpleVersion ver) {
       return myMajor != ver.myMajor? Integer.compare(myMajor, ver.myMajor) : Integer.compare(myMinor, ver.myMinor);
     }
 
-    @Nullable
-    public static SimpleVersion parse(@Nullable String text) {
-      if (!StringUtil.isEmpty(text)) {
-        try {
-          text = text.trim();
-          int dash = text.lastIndexOf('-');
-          if (dash >= 0) {
-            text = text.substring(dash + 1); // strip product code
-          }
-          int dot = text.indexOf('.');
-          if (dot >= 0) {
-            return new SimpleVersion(Integer.parseInt(text.substring(0, dot)), parseMinor(text.substring(dot + 1)));
-          }
-          return new SimpleVersion(Integer.parseInt(text), 0);
+    public static @Nullable SimpleVersion parse(@Nullable String text) {
+      if (text == null || text.isEmpty()) {
+        return null;
+      }
+
+      try {
+        text = text.trim();
+        int dash = text.lastIndexOf('-');
+        if (dash >= 0) {
+          text = text.substring(dash + 1); // strip product code
         }
-        catch (NumberFormatException ignored) {
+        int dot = text.indexOf('.');
+        if (dot >= 0) {
+          return new SimpleVersion(Integer.parseInt(text.substring(0, dot)), parseMinor(text.substring(dot + 1)));
         }
+        return new SimpleVersion(Integer.parseInt(text), 0);
+      }
+      catch (NumberFormatException ignored) {
       }
       return null;
     }
@@ -358,7 +368,7 @@ public final class BootstrapClassLoaderUtil {
         final int dot = text.indexOf('.');
         return Integer.parseInt(dot >= 0 ? text.substring(0, dot) : text);
       }
-      catch (NumberFormatException e) {
+      catch (NumberFormatException ignored) {
       }
       return 0;
     }

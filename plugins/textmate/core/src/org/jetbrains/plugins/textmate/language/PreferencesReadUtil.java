@@ -1,7 +1,5 @@
 package org.jetbrains.plugins.textmate.language;
 
-import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.util.containers.Interner;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
@@ -22,7 +20,7 @@ public final class PreferencesReadUtil {
    * or scopeName is null or empty
    */
   @Nullable
-  public static Pair<String, Plist> retrieveSettingsPlist(Plist rootPlist) {
+  public static Map.Entry<String, Plist> retrieveSettingsPlist(Plist rootPlist) {
     String scopeName = null;
     Plist settingsValuePlist = null;
     final PListValue value = rootPlist.getPlistValue(Constants.SCOPE_KEY);
@@ -33,7 +31,7 @@ public final class PreferencesReadUtil {
         settingsValuePlist = settingsValue.getPlist();
       }
     }
-    return settingsValuePlist != null ? Pair.create(scopeName, settingsValuePlist) : null;
+    return settingsValuePlist != null ? new AbstractMap.SimpleImmutableEntry<>(scopeName, settingsValuePlist) : null;
   }
 
   @Nullable
@@ -69,7 +67,7 @@ public final class PreferencesReadUtil {
     String key = plist.getPlistValue(Constants.TAB_TRIGGER_KEY, "").getString();
     String content = plist.getPlistValue(Constants.StringKey.CONTENT.value, "").getString();
     String scope = plist.getPlistValue(Constants.SCOPE_KEY, "").getString();
-    String description = plist.getPlistValue(Constants.DESCRIPTION_KEY, "").getString();
+    String description = plist.getPlistValue(Constants.DESCRIPTION_KEY, "").getString(); //NON-NLS
     String uuid = plist.getPlistValue(Constants.UUID_KEY, "").getString();
     if (!key.isEmpty() && !content.isEmpty()) {
       if (name.isEmpty()) name = key;
@@ -101,7 +99,7 @@ public final class PreferencesReadUtil {
 
   @Nullable
   public static TextMateSnippet loadSnippet(@NotNull File snippetFile, @NotNull Plist plist, @NotNull Interner<CharSequence> interner) {
-    return FileUtilRt.extensionEquals(snippetFile.getName(), Constants.SUBLIME_SNIPPET_EXTENSION)
+    return snippetFile.getName().endsWith("." + Constants.SUBLIME_SNIPPET_EXTENSION)
            ? null //not supported yet
            : loadTextMateSnippet(plist, snippetFile.getAbsolutePath(), interner);
   }

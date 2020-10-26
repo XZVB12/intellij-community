@@ -1,6 +1,8 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.siyeh.ig.redundancy;
 
+import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.codeInsight.daemon.impl.analysis.HighlightUtil;
 import com.intellij.codeInspection.CleanupLocalInspectionTool;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ui.SingleCheckboxOptionsPanel;
@@ -11,12 +13,14 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiLiteralExpression;
 import com.intellij.psi.PsiType;
 import com.intellij.psi.util.PsiLiteralUtil;
+import com.intellij.psi.util.PsiUtil;
 import com.siyeh.InspectionGadgetsBundle;
 import com.siyeh.ig.BaseInspection;
 import com.siyeh.ig.BaseInspectionVisitor;
 import com.siyeh.ig.InspectionGadgetsFix;
 import com.siyeh.ig.PsiReplacementUtil;
 import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -45,10 +49,17 @@ public class UnnecessaryStringEscapeInspection extends BaseInspection implements
   @Nullable
   @Override
   protected InspectionGadgetsFix buildFix(Object... infos) {
-    return new UnnecessaryStringEscapeFix();
+    final String expressionText = (String)infos[0];
+    return new UnnecessaryStringEscapeFix(expressionText);
   }
 
   private static class UnnecessaryStringEscapeFix extends InspectionGadgetsFix {
+
+    private final String myText;
+
+    UnnecessaryStringEscapeFix(String text) {
+      myText = text;
+    }
 
     @Nls(capitalization = Nls.Capitalization.Sentence)
     @NotNull
@@ -69,6 +80,9 @@ public class UnnecessaryStringEscapeInspection extends BaseInspection implements
         return;
       }
       final String text = literalExpression.getText();
+      if (!myText.equals(text)) {
+        return;
+      }
       if (type.equalsToText(CommonClassNames.JAVA_LANG_STRING)) {
         final StringBuilder newExpression = new StringBuilder();
         if (literalExpression.isTextBlock()) {
@@ -77,9 +91,10 @@ public class UnnecessaryStringEscapeInspection extends BaseInspection implements
           while (start >= 0) {
             newExpression.append(text, offset, start);
             offset = start + 2;
-            final String escape = text.substring(start, offset);
+            @NonNls final String escape = text.substring(start, offset);
             if ("\\n".equals(escape)) {
               final int indent = PsiLiteralUtil.getTextBlockIndent(literalExpression);
+              if (indent < 0) return;
               newExpression.append('\n').append(StringUtil.repeatSymbol(' ', indent));
             }
             else {
@@ -90,14 +105,18 @@ public class UnnecessaryStringEscapeInspection extends BaseInspection implements
           newExpression.append(text.substring(offset));
         }
         else {
-          int index = text.indexOf("\\'");
-          int offset = 0;
-          while (index > 0) {
-            newExpression.append(text, offset, index);
-            offset = index + 1;
-            index = text.indexOf("\\'", offset);
+          boolean escaped = false;
+          final int length = text.length();
+          for (int i = 0; i < length; i++) {
+            final char c = text.charAt(i);
+            if (escaped) {
+              if (c != '\'') newExpression.append('\\');
+              newExpression.append(c);
+              escaped = false;
+            }
+            else if (c == '\\') escaped = true;
+            else newExpression.append(c);
           }
-          newExpression.append(text.substring(offset));
         }
         PsiReplacementUtil.replaceExpression(literalExpression, newExpression.toString());
       }
@@ -153,12 +172,17 @@ public class UnnecessaryStringEscapeInspection extends BaseInspection implements
       if (type == null) {
         return;
       }
+      final HighlightInfo
+        parsingError = HighlightUtil.checkLiteralExpressionParsingError(expression, PsiUtil.getLanguageLevel(expression), null);
+      if (parsingError != null) {
+        return;
+      }
       if (type.equalsToText(CommonClassNames.JAVA_LANG_STRING)) {
         if (expression.isTextBlock()) {
           final String text = expression.getText();
           int start = findUnnecessarilyEscapedChars(text, 4);
           while (start >= 0) {
-            registerErrorAtOffset(expression, start, 2);
+            registerErrorAtOffset(expression, start, 2, text);
             start = findUnnecessarilyEscapedChars(text, start + 2);
           }
         }
@@ -170,15 +194,16 @@ public class UnnecessaryStringEscapeInspection extends BaseInspection implements
             final char c = text.charAt(i);
             if (slash) {
               slash = false;
-              if (c == '\'') registerErrorAtOffset(expression, i - 1, 2);
+              if (c == '\'') registerErrorAtOffset(expression, i - 1, 2, text);
             }
             else if (c == '\\') slash = true;
           }
         }
       }
       else if (reportChars && PsiType.CHAR.equals(type)) {
-        if ("'\\\"'".equals(expression.getText())) {
-          registerErrorAtOffset(expression, 1, 2);
+        final String text = expression.getText();
+        if ("'\\\"'".equals(text)) {
+          registerErrorAtOffset(expression, 1, 2, text);
         }
       }
     }

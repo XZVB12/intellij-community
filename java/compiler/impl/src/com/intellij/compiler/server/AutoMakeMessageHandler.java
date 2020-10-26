@@ -119,10 +119,11 @@ class AutoMakeMessageHandler extends DefaultMessageHandler {
         final String url = sourceFilePath != null ? VirtualFileManager.constructUrl(LocalFileSystem.PROTOCOL, FileUtil.toSystemIndependentName(sourceFilePath)) : null;
         final long line = message.hasLine() ? message.getLine() : -1;
         final long column = message.hasColumn() ? message.getColumn() : -1;
+        //noinspection HardCodedStringLiteral
         final CompilerMessage msg = myContext.createAndAddMessage(category, message.getText(), url, (int)line, (int)column, null);
         if (category == CompilerMessageCategory.ERROR || kind == CmdlineRemoteProto.Message.BuilderMessage.CompileMessage.Kind.JPS_INFO) {
           if (category == CompilerMessageCategory.ERROR) {
-            ReadAction.run(() -> informWolf(myProject, message));
+            ReadAction.run(() -> informWolf(message));
           }
           if (msg != null) {
             ProblemsView.getInstance(myProject).addMessage(msg, sessionId);
@@ -141,7 +142,7 @@ class AutoMakeMessageHandler extends DefaultMessageHandler {
     if (descr == null) {
       descr = failure.hasStacktrace()? failure.getStacktrace() : "";
     }
-    final String msg = "Auto build failure: " + descr;
+    final String msg = JavaCompilerBundle.message("notification.compiler.auto.build.failure", descr);
     CompilerManager.NOTIFICATION_GROUP.createNotification(msg, MessageType.INFO);
     ProblemsView.getInstance(myProject).addMessage(new CompilerMessageImpl(myProject, CompilerMessageCategory.ERROR, msg), sessionId);
   }
@@ -157,7 +158,7 @@ class AutoMakeMessageHandler extends DefaultMessageHandler {
         //statusMessage = "All files are up-to-date";
         break;
       case ERRORS:
-        statusMessage = "Auto build completed with errors";
+        statusMessage = JavaCompilerBundle.message("notification.compiler.auto.build.completed.with.errors");
         break;
       case CANCELED:
         //statusMessage = "Auto make has been canceled";
@@ -186,9 +187,9 @@ class AutoMakeMessageHandler extends DefaultMessageHandler {
     }
   }
 
-  private void informWolf(Project project, CmdlineRemoteProto.Message.BuilderMessage.CompileMessage message) {
+  private void informWolf(CmdlineRemoteProto.Message.BuilderMessage.@NotNull CompileMessage message) {
     final String srcPath = message.getSourceFilePath();
-    if (srcPath != null && !project.isDisposed()) {
+    if (srcPath != null && !myProject.isDisposed()) {
       final VirtualFile vFile = LocalFileSystem.getInstance().findFileByPath(srcPath);
       if (vFile != null) {
         final int line = (int)message.getLine();

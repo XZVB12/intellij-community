@@ -1,8 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.io.zip;
 
 import com.intellij.openapi.util.io.FileUtil;
@@ -11,6 +7,8 @@ import com.intellij.util.ArrayUtilRt;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 import java.util.zip.ZipEntry;
@@ -436,9 +434,27 @@ public class JBZipEntry implements Cloneable {
     }
   }
 
+  public void setDataFromStream(@NotNull InputStream stream) throws IOException {
+    myFile.getOutputStream().putNextEntryContent(this, stream);
+  }
+
   void doSetDataFromFile(File file) throws IOException {
     try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
-      myFile.getOutputStream().putNextEntryContent(this, file.length(), input);
+      myFile.getOutputStream().putNextEntryContent(this, input);
+      assert getSize() == file.length();
+    }
+  }
+
+  public void setDataFromPath(@NotNull Path file) throws IOException {
+    long size = Files.size(file);
+    if (size < FileUtilRt.LARGE_FOR_CONTENT_LOADING) {
+      //for small files its faster to load their whole content into memory so we can write it to zip sequentially
+      setData(Files.readAllBytes(file));
+    }
+    else {
+      try(InputStream input = new BufferedInputStream(Files.newInputStream(file))) {
+        myFile.getOutputStream().putNextEntryContent(this, input);
+      }
     }
   }
 

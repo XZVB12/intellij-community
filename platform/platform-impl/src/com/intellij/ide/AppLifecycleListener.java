@@ -14,7 +14,8 @@ import java.util.List;
  * Listener for application lifecycle events.
  */
 public interface AppLifecycleListener {
-  Topic<AppLifecycleListener> TOPIC = new Topic<>(AppLifecycleListener.class, Topic.BroadcastDirection.NONE);
+  @Topic.AppLevel
+  Topic<AppLifecycleListener> TOPIC = new Topic<>(AppLifecycleListener.class, Topic.BroadcastDirection.TO_DIRECT_CHILDREN);
 
   /** @deprecated use {@link #appFrameCreated(List)} */
   @Deprecated
@@ -37,6 +38,12 @@ public interface AppLifecycleListener {
    * Called after an application frame is shown.
    */
   default void appStarting(@Nullable Project projectFromCommandLine) { }
+
+  /**
+   * Called after all application startup tasks, including opening projects, are processed (i.e. either completed or running in background).
+   */
+  @ApiStatus.Internal
+  default void appStarted() { }
 
   /**
    * Called when a project frame is closed.

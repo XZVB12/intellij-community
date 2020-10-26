@@ -1,15 +1,15 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui.scale;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.AtomicNotNullLazyValue;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.ui.JreHiDpiUtil;
 import com.intellij.util.LazyInitializer.MutableNotNullValue;
 import com.intellij.util.LazyInitializer.NullableValue;
 import com.intellij.util.SystemProperties;
-import com.intellij.util.ui.DetectRetinaKit;
 import com.intellij.util.ui.JBScalableIcon;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
@@ -49,7 +49,7 @@ public final class JBUIScale {
   private static final AtomicNotNullLazyValue<Pair<String, Integer>> systemFontData = AtomicNotNullLazyValue.createValue(() -> {
     // with JB Linux JDK the label font comes properly scaled based on Xft.dpi settings.
     Font font = UIManager.getFont("Label.font");
-    if (SystemInfo.isMacOSElCapitan) {
+    if (SystemInfoRt.isMac) {
       // text family should be used for relatively small sizes (<20pt), don't change to Display
       // see more about SF https://medium.com/@mach/the-secret-of-san-francisco-fonts-4b5295d9a745#.2ndr50z2v
       font = new Font(".SF NS Text", font.getStyle(), font.getSize());
@@ -61,7 +61,7 @@ public final class JBUIScale {
       log.info(String.format("Label font: %s, %d", font.getFontName(), font.getSize()));
     }
 
-    if (SystemInfo.isLinux) {
+    if (SystemInfoRt.isLinux) {
       Object value = Toolkit.getDefaultToolkit().getDesktopProperty("gnome.Xft/DPI");
       if (isScaleVerbose) {
         log.info(String.format("gnome.Xft/DPI: %s", value));
@@ -87,8 +87,7 @@ public final class JBUIScale {
         }
       }
     }
-    else if (SystemInfo.isWindows) {
-      @SuppressWarnings("SpellCheckingInspection")
+    else if (SystemInfoRt.isWindows) {
       Font winFont = (Font)Toolkit.getDefaultToolkit().getDesktopProperty("win.messagebox.font");
       if (winFont != null) {
         font = winFont; // comes scaled
@@ -105,7 +104,7 @@ public final class JBUIScale {
   });
 
   @ApiStatus.Internal
-  public static final NullableValue<Float> DEBUG_USER_SCALE_FACTOR = new NullableValue<Float>() {
+  public static final NullableValue<Float> DEBUG_USER_SCALE_FACTOR = new NullableValue<>() {
     @Nullable
     @Override
     public Float initialize() {
@@ -238,7 +237,7 @@ public final class JBUIScale {
     }
 
     // Ignore the correction when UIUtil.DEF_SYSTEM_FONT_SIZE is overridden, see UIUtil.initSystemFontData.
-    if (SystemInfo.isLinux && scale == 1.25f && DEF_SYSTEM_FONT_SIZE == 12) {
+    if (SystemInfoRt.isLinux && scale == 1.25f && DEF_SYSTEM_FONT_SIZE == 12) {
       // Default UI font size for Unity and Gnome is 15. Scaling factor 1.25f works badly on Linux
       scale = 1f;
     }
@@ -272,13 +271,8 @@ public final class JBUIScale {
    * In the IDE-managed HiDPI mode defaults to {@link #sysScale()}
    */
   public static float sysScale(@Nullable GraphicsConfiguration gc) {
-    if (JreHiDpiUtil.isJreHiDPIEnabled() && gc != null) {
-      if (gc.getDevice().getType() != GraphicsDevice.TYPE_PRINTER) {
-        if (SystemInfo.isMac && JreHiDpiUtil.isJreHiDPI_earlierVersion()) {
-          return DetectRetinaKit.isOracleMacRetinaDevice(gc.getDevice()) ? 2f : 1f;
-        }
-        return (float)gc.getDefaultTransform().getScaleX();
-      }
+    if (JreHiDpiUtil.isJreHiDPIEnabled() && gc != null && gc.getDevice().getType() != GraphicsDevice.TYPE_PRINTER) {
+      return (float)gc.getDefaultTransform().getScaleX();
     }
     return sysScale();
   }

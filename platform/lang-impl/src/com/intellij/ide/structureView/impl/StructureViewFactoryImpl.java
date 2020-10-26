@@ -24,10 +24,7 @@ import org.jetbrains.annotations.TestOnly;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-@State(name = "StructureViewFactory", storages = {
-  @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE),
-  @Storage(value = StoragePathMacros.WORKSPACE_FILE, deprecated = true)
-})
+@State(name = "StructureViewFactory", storages = @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE))
 public final class StructureViewFactoryImpl extends StructureViewFactoryEx implements PersistentStateComponent<StructureViewFactoryImpl.State> {
   private static final ExtensionPointName<StructureViewExtension> EXTENSION_POINT_NAME = new ExtensionPointName<>("com.intellij.lang.structureViewExtension");
 
@@ -84,13 +81,13 @@ public final class StructureViewFactoryImpl extends StructureViewFactoryEx imple
       return result;
     }
 
-    ExtensionPointImpl<StructureViewExtension> point = (ExtensionPointImpl<StructureViewExtension>)EXTENSION_POINT_NAME.getPoint(null);
+    ExtensionPointImpl<StructureViewExtension> point = (ExtensionPointImpl<StructureViewExtension>)EXTENSION_POINT_NAME.getPoint();
     Set<Class<? extends PsiElement>> visitedTypes = new HashSet<>();
     result = new ArrayList<>();
     for (StructureViewExtension extension : point.getExtensionList()) {
       Class<? extends PsiElement> registeredType = extension.getType();
       if (ReflectionUtil.isAssignable(registeredType, type) && visitedTypes.add(registeredType)) {
-        result.addAll(ExtensionProcessingHelper.getByGroupingKey(point, registeredType, StructureViewExtension::getType));
+        result.addAll(ExtensionProcessingHelper.getByGroupingKey(point, StructureViewExtension.class, registeredType, StructureViewExtension::getType));
       }
     }
 

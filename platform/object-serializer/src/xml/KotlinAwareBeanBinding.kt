@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.serialization.xml
 
 import com.intellij.openapi.components.BaseState
@@ -6,9 +6,10 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.serialization.BaseBeanBinding
 import com.intellij.serialization.PropertyAccessor
 import com.intellij.util.ObjectUtils
-import com.intellij.util.containers.IntArrayList
 import com.intellij.util.xmlb.BeanBinding
 import com.intellij.util.xmlb.SerializationFilter
+import it.unimi.dsi.fastutil.ints.IntArrayList
+import it.unimi.dsi.fastutil.ints.IntList
 import org.jdom.Element
 
 internal class KotlinAwareBeanBinding(beanClass: Class<*>) : BeanBinding(beanClass) {
@@ -42,7 +43,7 @@ internal class KotlinAwareBeanBinding(beanClass: Class<*>) : BeanBinding(beanCla
   fun serializeBaseStateInto(o: BaseState, _element: Element?, filter: SerializationFilter?, excludedPropertyNames: Collection<String>? = null): Element? {
     var element = _element
     // order of bindings must be used, not order of properties
-    var bindingIndices: IntArrayList? = null
+    var bindingIndices: IntList? = null
     for (property in o.__getProperties()) {
       val propertyName = property.name!!
 
@@ -64,8 +65,8 @@ internal class KotlinAwareBeanBinding(beanClass: Class<*>) : BeanBinding(beanCla
 
     if (bindingIndices != null) {
       bindingIndices.sort()
-      for (i in 0 until bindingIndices.size()) {
-        element = serializePropertyInto(myBindings[bindingIndices.getQuick(i)], o, element, filter, false)
+      for (i in 0 until bindingIndices.size) {
+        element = serializePropertyInto(myBindings[bindingIndices.getInt(i)], o, element, filter, false)
       }
     }
     return element

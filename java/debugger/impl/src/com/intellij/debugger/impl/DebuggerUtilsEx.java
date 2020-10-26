@@ -25,13 +25,13 @@ import com.intellij.execution.filters.TextConsoleBuilderFactory;
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.RunnerLayoutUi;
 import com.intellij.execution.ui.layout.impl.RunnerContentUi;
+import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileTypes.FileType;
-import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
@@ -346,7 +346,7 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
     consoleView.allowHeavyFilters();
     final ThreadDumpPanel panel = new ThreadDumpPanel(project, consoleView, toolbarActions, threads);
 
-    String id = "Dump " + DateFormatUtil.formatTimeWithSeconds(System.currentTimeMillis());
+    String id = JavaDebuggerBundle.message("thread.dump.name", DateFormatUtil.formatTimeWithSeconds(System.currentTimeMillis()));
     final Content content = ui.createContent(id + " " + myThreadDumpsCount, panel, id, null, null);
     content.putUserData(RunnerContentUi.LIGHTWEIGHT_CONTENT_MARKER, Boolean.TRUE);
     content.setCloseable(true);
@@ -522,6 +522,10 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
 
   public static String methodName(final Method m) {
     return methodName(signatureToName(m.declaringType().signature()), m.name(), m.signature());
+  }
+
+  public static boolean methodMatches(@NotNull Method m, @NotNull String name, @NotNull String signature) {
+    return name.equals(m.name()) && signature.equals(m.signature());
   }
 
   public static String methodName(final String className, final String methodName, final String signature) {
@@ -751,7 +755,7 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
   public static String prepareValueText(String text, Project project) {
     text = StringUtil.unquoteString(text);
     text = StringUtil.unescapeStringCharacters(text);
-    int tabSize = CodeStyle.getSettings(project).getTabSize(StdFileTypes.JAVA);
+    int tabSize = CodeStyle.getSettings(project).getTabSize(JavaFileType.INSTANCE);
     if (tabSize < 0) {
       tabSize = 0;
     }
@@ -1055,7 +1059,7 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
           if (res) {
             return true;
           }
-          PsiClass aClass = PositionManagerImpl.findClass(process.getProject(), className, process.getSearchScope());
+          PsiClass aClass = PositionManagerImpl.findClass(process.getProject(), className, process.getSearchScope(), true);
           return aClass != null && aClass.isInheritor(containingClass, true);
         }
       }

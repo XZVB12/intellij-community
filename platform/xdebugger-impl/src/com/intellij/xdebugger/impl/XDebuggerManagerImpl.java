@@ -19,6 +19,10 @@ import com.intellij.ide.plugins.DynamicPluginListener;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.idea.ActionsBundle;
 import com.intellij.notification.NotificationGroup;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ActionPlaces;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.State;
@@ -27,14 +31,12 @@ import com.intellij.openapi.components.StoragePathMacros;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
-import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.event.*;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import com.intellij.openapi.editor.impl.EditorImpl;
 import com.intellij.openapi.editor.markup.GutterIconRenderer;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
-import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileEditor.FileDocumentManagerListener;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.FileEditorManagerListener;
@@ -75,7 +77,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 @State(name = "XDebuggerManager", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
-public class XDebuggerManagerImpl extends XDebuggerManager implements PersistentStateComponent<XDebuggerState> {
+public final class XDebuggerManagerImpl extends XDebuggerManager implements PersistentStateComponent<XDebuggerState>, Disposable {
   public static final NotificationGroup NOTIFICATION_GROUP =
     NotificationGroup.toolWindowGroup("Debugger messages", ToolWindowId.DEBUG, false);
 
@@ -92,10 +94,10 @@ public class XDebuggerManagerImpl extends XDebuggerManager implements Persistent
   public XDebuggerManagerImpl(@NotNull Project project) {
     myProject = project;
 
-    MessageBusConnection messageBusConnection = project.getMessageBus().connect();
+    MessageBusConnection messageBusConnection = project.getMessageBus().connect(this);
 
-    myBreakpointManager = new XBreakpointManagerImpl(project, this);
-    myWatchesManager = new XDebuggerWatchesManager();
+    myBreakpointManager = new XBreakpointManagerImpl(project, this, messageBusConnection);
+    myWatchesManager = new XDebuggerWatchesManager(project);
     myPinToTopManager = new XDebuggerPinToTopManager();
     myExecutionPointHighlighter = new ExecutionPointHighlighter(project);
 
@@ -175,8 +177,12 @@ public class XDebuggerManagerImpl extends XDebuggerManager implements Persistent
 
     DebuggerEditorListener listener = new DebuggerEditorListener();
     EditorEventMulticaster eventMulticaster = EditorFactory.getInstance().getEventMulticaster();
-    eventMulticaster.addEditorMouseMotionListener(listener, myProject);
-    eventMulticaster.addEditorMouseListener(listener, myProject);
+    eventMulticaster.addEditorMouseMotionListener(listener, this);
+    eventMulticaster.addEditorMouseListener(listener, this);
+  }
+
+  @Override
+  public void dispose() {
   }
 
   @Override
@@ -420,11 +426,10 @@ public class XDebuggerManagerImpl extends XDebuggerManager implements Persistent
         return;
       }
 
-      TextAttributes attributes = EditorColorsManager.getInstance().getGlobalScheme().getAttributes(DebuggerColors.NOT_TOP_FRAME_ATTRIBUTES);
       Editor editor = e.getEditor();
-      myCurrentHighlighter = editor.getMarkupModel().addLineHighlighter(lineNumber,
-                                                                        DebuggerColors.EXECUTION_LINE_HIGHLIGHTERLAYER,
-                                                                        attributes);
+      myCurrentHighlighter = editor.getMarkupModel().addLineHighlighter(DebuggerColors.NOT_TOP_FRAME_ATTRIBUTES,
+                                                                        lineNumber,
+                                                                        DebuggerColors.EXECUTION_LINE_HIGHLIGHTERLAYER);
 
       HintHint hint = new HintHint(e.getMouseEvent()).setAwtTooltip(true).setPreferredPosition(Balloon.Position.above);
       String text = UIUtil.removeMnemonic(ActionsBundle.actionText(XDebuggerActions.RUN_TO_CURSOR));
@@ -464,8 +469,14 @@ public class XDebuggerManagerImpl extends XDebuggerManager implements Persistent
         int lineNumber = getLineNumber(e);
         XDebugSessionImpl session = getCurrentSession();
         if (session != null && lineNumber >= 0) {
-          session.runToPosition(XSourcePositionImpl.create(((EditorEx)e.getEditor()).getVirtualFile(), lineNumber), false);
-          e.consume();
+          XSourcePositionImpl position = XSourcePositionImpl.create(((EditorEx)e.getEditor()).getVirtualFile(), lineNumber);
+          if (position != null) {
+            ActionManagerEx am = ActionManagerEx.getInstanceEx();
+            am.fireBeforeActionPerformed(IdeActions.ACTION_RUN_TO_CURSOR, e.getMouseEvent(), ActionPlaces.EDITOR_GUTTER);
+            session.runToPosition(position, false);
+            am.fireAfterActionPerformed(IdeActions.ACTION_RUN_TO_CURSOR, e.getMouseEvent(), ActionPlaces.EDITOR_GUTTER);
+            e.consume();
+          }
         }
       }
     }

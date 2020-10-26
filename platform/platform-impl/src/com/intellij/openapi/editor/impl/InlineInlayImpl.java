@@ -13,18 +13,21 @@ import org.jetbrains.annotations.NotNull;
 import java.awt.*;
 import java.util.List;
 
-class InlineInlayImpl<R extends EditorCustomElementRenderer> extends InlayImpl<R, InlineInlayImpl> {
+final class InlineInlayImpl<R extends EditorCustomElementRenderer> extends InlayImpl<R, InlineInlayImpl<?>> {
   private static final Key<Integer> ORDER_BEFORE_DISPOSAL = Key.create("inlay.order.before.disposal");
+  final int myPriority;
 
   InlineInlayImpl(@NotNull EditorImpl editor,
                   int offset,
                   boolean relatesToPrecedingText,
+                  int priority,
                   @NotNull R renderer) {
     super(editor, offset, relatesToPrecedingText, renderer);
+    myPriority = priority;
   }
 
   @Override
-  RangeMarkerTree<InlineInlayImpl> getTree() {
+  RangeMarkerTree<InlineInlayImpl<?>> getTree() {
     return myEditor.getInlayModel().myInlineElementsTree;
   }
 
@@ -56,7 +59,7 @@ class InlineInlayImpl<R extends EditorCustomElementRenderer> extends InlayImpl<R
   public void dispose() {
     if (isValid()) {
       int offset = getOffset();
-      List<Inlay> inlays = myEditor.getInlayModel().getInlineElementsInRange(offset, offset);
+      List<Inlay<?>> inlays = myEditor.getInlayModel().getInlineElementsInRange(offset, offset);
       putUserData(ORDER_BEFORE_DISPOSAL, inlays.indexOf(this));
     }
     super.dispose();
@@ -82,7 +85,7 @@ class InlineInlayImpl<R extends EditorCustomElementRenderer> extends InlayImpl<R
   public VisualPosition getVisualPosition() {
     int offset = getOffset();
     VisualPosition pos = myEditor.offsetToVisualPosition(offset);
-    List<Inlay> inlays = myEditor.getInlayModel().getInlineElementsInRange(offset, offset);
+    List<Inlay<?>> inlays = myEditor.getInlayModel().getInlineElementsInRange(offset, offset);
     int order = inlays.indexOf(this);
     return new VisualPosition(pos.line, pos.column + order, true);
   }
@@ -105,6 +108,6 @@ class InlineInlayImpl<R extends EditorCustomElementRenderer> extends InlayImpl<R
 
   @Override
   public String toString() {
-    return "[Inline inlay, offset=" + getOffset() + ", width=" + myWidthInPixels + ", renderer=" + myRenderer + "]";
+    return "[Inline inlay, offset=" + getOffset() + ", width=" + myWidthInPixels + ", renderer=" + myRenderer + "]" + (isValid() ? "" : "(invalid)");
   }
 }

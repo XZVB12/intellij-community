@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.projectRoots.ui;
 
 import com.intellij.icons.AllIcons;
@@ -278,13 +278,13 @@ public class PathEditor {
   protected static class PathCellRenderer extends ColoredListCellRenderer<VirtualFile> {
     @Override
     protected void customizeCellRenderer(@NotNull JList<? extends VirtualFile> list, VirtualFile file, int index, boolean selected, boolean focused) {
-      String text = file != null ? file.getPresentableUrl() : "UNKNOWN OBJECT";
-      append(text, file != null && file.isValid() ? SimpleTextAttributes.REGULAR_ATTRIBUTES : SimpleTextAttributes.ERROR_ATTRIBUTES);
+      LOG.assertTrue(file != null);
+      String text = file.getPresentableUrl();
+      append(text, file.isValid() ? SimpleTextAttributes.REGULAR_ATTRIBUTES : SimpleTextAttributes.ERROR_ATTRIBUTES);
       setIcon(getItemIcon(file));
     }
 
-    protected Icon getItemIcon(VirtualFile file) {
-      if (file == null) return AllIcons.Nodes.EmptyNode;
+    protected Icon getItemIcon(@NotNull VirtualFile file) {
       if (!file.isValid()) return AllIcons.Nodes.PpInvalid;
       if (file.getFileSystem() instanceof HttpFileSystem) return PlatformIcons.WEB_ICON;
       if (file.getFileSystem() instanceof ArchiveFileSystem) return PlatformIcons.JAR_ICON;

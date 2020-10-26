@@ -1,6 +1,7 @@
 // Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection.dataFlow.types;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiField;
@@ -81,7 +82,7 @@ public abstract class DfConstantType<T> implements DfType {
    * @param value constant value
    * @return human readable representation of the value
    */
-  public static String renderValue(Object value) {
+  public static @NlsSafe String renderValue(Object value) {
     if (value == null) return "null";
     if (value instanceof String) return '"' + StringUtil.escapeStringCharacters((String)value) + '"';
     if (value instanceof Float) return value + "f";
@@ -90,6 +91,9 @@ public abstract class DfConstantType<T> implements DfType {
       PsiField field = (PsiField)value;
       PsiClass containingClass = field.getContainingClass();
       return containingClass == null ? field.getName() : containingClass.getName() + "." + field.getName();
+    }
+    if (value instanceof PsiType) {
+      return ((PsiType)value).getPresentableText();
     }
     return value.toString();
   }

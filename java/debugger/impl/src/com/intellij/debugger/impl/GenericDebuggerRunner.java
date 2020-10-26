@@ -17,6 +17,7 @@ import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.execution.runners.JavaProgramPatcher;
 import com.intellij.execution.runners.JvmPatchableProgramRunner;
 import com.intellij.execution.ui.RunContentDescriptor;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.util.text.StringUtil;
@@ -54,8 +55,10 @@ public class GenericDebuggerRunner implements JvmPatchableProgramRunner<GenericD
     executionManager
       .executePreparationTasks(environment, state)
       .onSuccess(__ -> {
-        executionManager.startRunProfile(environment, state, state1 -> {
-          return doExecute(state, environment);
+        ApplicationManager.getApplication().invokeAndWait(() -> {
+          executionManager.startRunProfile(environment, state, state1 -> {
+            return doExecute(state, environment);
+          });
         });
       });
   }
@@ -79,11 +82,11 @@ public class GenericDebuggerRunner implements JvmPatchableProgramRunner<GenericD
       }
       if (connection == null) {
         int transport = DebuggerSettings.getInstance().getTransport();
-        connection = DebuggerManagerImpl.createDebugParameters(parameters,
-                                                               true,
-                                                               transport,
-                                                               transport == DebuggerSettings.SOCKET_TRANSPORT ? "0" : "",
-                                                               false);
+        connection = new RemoteConnectionBuilder(true, transport, transport == DebuggerSettings.SOCKET_TRANSPORT ? "0" : "")
+          .asyncAgent(true)
+          .project(environment.getProject())
+          .memoryAgent(DebuggerSettings.getInstance().ENABLE_MEMORY_AGENT)
+          .create(parameters);
         isPollConnection = true;
       }
 

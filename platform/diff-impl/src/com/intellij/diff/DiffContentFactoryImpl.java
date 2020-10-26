@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.diff;
 
 import com.intellij.codeInsight.daemon.OutsidersPsiFileSupport;
@@ -7,6 +7,7 @@ import com.intellij.diff.contents.*;
 import com.intellij.diff.tools.util.DiffNotifications;
 import com.intellij.diff.util.DiffUserDataKeysEx;
 import com.intellij.diff.util.DiffUtil;
+import com.intellij.diff.vcs.DiffVcsFacade;
 import com.intellij.ide.highlighter.ArchiveFileType;
 import com.intellij.lang.properties.charset.Native2AsciiCharset;
 import com.intellij.openapi.application.ReadAction;
@@ -34,7 +35,6 @@ import com.intellij.ui.LightColors;
 import com.intellij.util.LineSeparator;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.PathUtil;
-import com.intellij.vcsUtil.VcsUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -270,7 +270,7 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
                                      @NotNull FileType fileType,
                                      @NotNull String fileName) throws IOException {
     if (isBinaryContent(content, fileType)) {
-      return createBinaryImpl(project, content, fileType, VcsUtil.getFilePath(fileName), null);
+      return createBinaryImpl(project, content, fileType, DiffVcsFacade.getInstance().getFilePath(fileName), null);
     }
 
     return createDocumentFromBytes(project, content, fileType, fileName);
@@ -282,7 +282,7 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
                                      byte @NotNull [] content,
                                      @NotNull VirtualFile highlightFile) throws IOException {
     if (isBinaryContent(content, highlightFile.getFileType())) {
-      return createBinaryImpl(project, content, highlightFile.getFileType(), VcsUtil.getFilePath(highlightFile), highlightFile);
+      return createBinaryImpl(project, content, highlightFile.getFileType(), DiffVcsFacade.getInstance().getFilePath(highlightFile), highlightFile);
     }
 
     return createDocumentFromBytes(project, content, highlightFile);
@@ -336,7 +336,7 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
                                   byte @NotNull [] content,
                                   @NotNull FileType type,
                                   @NotNull String fileName) throws IOException {
-    return createBinaryImpl(project, content, type, VcsUtil.getFilePath(fileName), null);
+    return createBinaryImpl(project, content, type, DiffVcsFacade.getInstance().getFilePath(fileName), null);
   }
 
 
@@ -405,9 +405,9 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
   private static Document createDocument(@Nullable Project project,
                                          @NotNull String content,
                                          @Nullable FileType fileType,
-                                         @Nullable @NonNls String fileName,
+                                         @NonNls @NotNull FilePath filePath,
                                          boolean readOnly) {
-    Document document = createPsiDocument(project, content, fileType, fileName, readOnly);
+    Document document = createPsiDocument(project, content, fileType, filePath, readOnly);
     if (document == null) {
       document = EditorFactory.getInstance().createDocument(content);
       document.setReadOnly(readOnly);
@@ -419,16 +419,12 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
   private static Document createPsiDocument(@Nullable Project project,
                                             @NotNull String content,
                                             @Nullable FileType fileType,
-                                            @NonNls @Nullable String fileName,
+                                            @NonNls @NotNull FilePath filePath,
                                             boolean readOnly) {
     if (project == null || project.isDefault()) return null;
     if (fileType == null || fileType.isBinary()) return null;
 
-    if (fileName == null) {
-      fileName = "diff." + StringUtil.defaultIfEmpty(fileType.getDefaultExtension(), "txt");
-    }
-
-    LightVirtualFile file = new LightVirtualFile(fileName, fileType, content);
+    LightVirtualFile file = new MyLightVirtualFile(filePath, fileType, content);
     file.setWritable(!readOnly);
 
     Document document = ReadAction.compute(() -> FileDocumentManager.getInstance().getDocument(file));
@@ -593,7 +589,7 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
     public DocumentContentBuilder contextByHighlightFile(@Nullable VirtualFile file) {
       if (file != null) {
         context = new Context.ByHighlightFile(file);
-        originalFilePath = VcsUtil.getFilePath(file);
+        originalFilePath = DiffVcsFacade.getInstance().getFilePath(file);
         fileName = file.getName();
       }
       return this;
@@ -606,7 +602,7 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
         context = new Context.ByReferent(referent);
         VirtualFile file = referent.getHighlightFile();
         if (file != null) {
-          originalFilePath = VcsUtil.getFilePath(file);
+          originalFilePath = DiffVcsFacade.getInstance().getFilePath(file);
           fileName = file.getName();
         }
       }
@@ -628,13 +624,23 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
     @NotNull
     private DocumentContent build(@NotNull TextContent textContent) {
       FileType fileType = context != null ? context.getContentType() : null;
-      Document document = createDocument(project, textContent.text, fileType, fileName, readOnly);
+
+      FilePath filePath = originalFilePath;
+      if (filePath == null) {
+        String name = fileName;
+        if (name == null) {
+          name = "diff." + StringUtil.defaultIfEmpty(fileType != null ? fileType.getDefaultExtension() : null, "txt");
+        }
+        filePath = DiffVcsFacade.getInstance().getFilePath(name);
+      }
+
+      Document document = createDocument(project, textContent.text, fileType, filePath, readOnly);
 
       DocumentContent documentContent = new ContextReferentDocumentContent(project, document, textContent, context);
 
       VirtualFile file = FileDocumentManager.getInstance().getFile(document);
-      if (originalFilePath != null && file instanceof LightVirtualFile) {
-        OutsidersPsiFileSupport.markFile(file, originalFilePath.getPath());
+      if (file instanceof LightVirtualFile) {
+        OutsidersPsiFileSupport.markFile(file, originalFilePath != null ? originalFilePath.getPath() : null);
       }
 
       if (fileName != null) {
@@ -649,10 +655,25 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
     }
   }
 
+  private static final class MyLightVirtualFile extends LightVirtualFile {
+    private final FilePath myPath;
+
+    private MyLightVirtualFile(@NotNull FilePath path, @Nullable FileType fileType, @NotNull String content) {
+      super(path.getName(), fileType, content);
+      myPath = path;
+    }
+
+    @NotNull
+    @Override
+    public String getPath() {
+      return myPath.getPath();
+    }
+  }
+
   private static class MyBinaryLightVirtualFile extends BinaryLightVirtualFile {
     private final FilePath myPath;
 
-    MyBinaryLightVirtualFile(@NotNull FilePath path, FileType type, byte @NotNull [] content) {
+    MyBinaryLightVirtualFile(@NotNull FilePath path, @Nullable FileType type, byte @NotNull [] content) {
       super(path.getName(), type, content);
       myPath = path;
     }
@@ -664,7 +685,7 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
     }
   }
 
-  private static class FileReferentDocumentContent extends DocumentContentBase {
+  private static final class FileReferentDocumentContent extends DocumentContentBase {
     @NotNull private final VirtualFile myHighlightFile;
 
     private FileReferentDocumentContent(@Nullable Project project, @NotNull Document document, @NotNull VirtualFile highlightFile) {
@@ -683,7 +704,7 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
     }
   }
 
-  private static class ContentReferentDocumentContent extends DocumentContentBase {
+  private static final class ContentReferentDocumentContent extends DocumentContentBase {
     @NotNull private final DocumentContent myReferent;
 
     private ContentReferentDocumentContent(@Nullable Project project, @NotNull Document document, @NotNull DocumentContent referent) {
@@ -702,7 +723,7 @@ public class DiffContentFactoryImpl extends DiffContentFactoryEx {
     }
   }
 
-  private static class ContextReferentDocumentContent extends DocumentContentBase {
+  private static final class ContextReferentDocumentContent extends DocumentContentBase {
     @Nullable private final LineSeparator mySeparator;
     @Nullable private final Charset myCharset;
     @Nullable private final Boolean myBOM;

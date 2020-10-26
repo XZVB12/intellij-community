@@ -17,13 +17,13 @@ package com.siyeh.ig.dataflow;
 
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.siyeh.ig.psiutils.ParenthesesUtils;
+import com.intellij.psi.util.PsiUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-class ScopeUtils {
+final class ScopeUtils {
 
   private ScopeUtils() {}
 
@@ -34,11 +34,13 @@ class ScopeUtils {
     while (prevSibling instanceof PsiWhiteSpace || prevSibling instanceof PsiComment) {
       prevSibling = prevSibling.getPrevSibling();
     }
-    if (skipDeclarationStatements && prevSibling instanceof PsiDeclarationStatement) {
+    if (prevSibling instanceof PsiDeclarationStatement) {
       if (prevSibling.equals(variable.getParent())) {
         return null;
       }
-      return findTighterDeclarationLocation(prevSibling, variable, true);
+      if (skipDeclarationStatements) {
+        return findTighterDeclarationLocation(prevSibling, variable, true);
+      }
     }
     return prevSibling;
   }
@@ -91,7 +93,7 @@ class ScopeUtils {
           final PsiExpression expression = statement.getExpression();
           if (expression instanceof PsiAssignmentExpression) {
             final PsiAssignmentExpression assignmentExpression = (PsiAssignmentExpression)expression;
-            final PsiExpression lExpression = ParenthesesUtils.stripParentheses(assignmentExpression.getLExpression());
+            final PsiExpression lExpression = PsiUtil.skipParenthesizedExprDown(assignmentExpression.getLExpression());
             if (!lExpression.equals(referenceElement)) {
               commonParent = PsiTreeUtil.getParentOfType(commonParent, PsiCodeBlock.class);
             }

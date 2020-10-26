@@ -6,24 +6,26 @@ import com.intellij.application.options.editor.checkBox
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.fileChooser.PathChooserDialog
-import com.intellij.openapi.options.BoundCompositeConfigurable
+import com.intellij.openapi.help.HelpManager
 import com.intellij.openapi.options.BoundCompositeSearchableConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ex.ConfigurableWrapper
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.openapi.ui.panel.ComponentPanelBuilder
 import com.intellij.ui.IdeUICustomization
 import com.intellij.ui.layout.*
 import com.intellij.util.PlatformUtils
+import com.intellij.util.ui.UIUtil
 
 // @formatter:off
 private val model = GeneralSettings.getInstance()
 private val myChkReopenLastProject                get() = CheckboxDescriptor(IdeUICustomization.getInstance().projectMessage("checkbox.reopen.last.project.on.startup"), PropertyBinding(model::isReopenLastProject, model::setReopenLastProject))
 private val myConfirmExit                         get() = CheckboxDescriptor(IdeBundle.message("checkbox.confirm.application.exit"), PropertyBinding(model::isConfirmExit, model::setConfirmExit))
-private val myShowWelcomeScreen                   get() = CheckboxDescriptor(IdeBundle.message("checkbox.show.welcome.screen"), PropertyBinding(model::isShowWelcomeScreen, model::setShowWelcomeScreen))
+private val mySkipWelcomeScreen                   get() = CheckboxDescriptor(IdeBundle.message("checkbox.skip.welcome.screen"), PropertyBinding({ !model.isShowWelcomeScreen }, { model.isShowWelcomeScreen = !it }))
 private val myChkSyncOnFrameActivation            get() = CheckboxDescriptor(IdeBundle.message("checkbox.synchronize.files.on.frame.activation"), PropertyBinding(model::isSyncOnFrameActivation, model::setSyncOnFrameActivation))
 private val myChkSaveOnFrameDeactivation          get() = CheckboxDescriptor(IdeBundle.message("checkbox.save.files.on.frame.deactivation"), PropertyBinding(model::isSaveOnFrameDeactivation, model::setSaveOnFrameDeactivation))
 private val myChkAutoSaveIfInactive               get() = CheckboxDescriptor(IdeBundle.message("checkbox.save.files.automatically"), PropertyBinding(model::isAutoSaveIfInactive, model::setAutoSaveIfInactive))
-private val myChkUseSafeWrite                     get() = CheckboxDescriptor("Use \"safe write\" (save changes to a temporary file first)", PropertyBinding(model::isUseSafeWrite, model::setUseSafeWrite))
+private val myChkUseSafeWrite                     get() = CheckboxDescriptor(IdeBundle.message("checkbox.safe.write"), PropertyBinding(model::isUseSafeWrite, model::setUseSafeWrite))
 // @formatter:on
 
 internal val allOptionDescriptors
@@ -53,47 +55,51 @@ class GeneralSettingsConfigurable: BoundCompositeSearchableConfigurable<Searchab
 
   override fun createPanel(): DialogPanel {
     return panel {
-      titledRow(IdeBundle.message("general.settings.row.startup.shutdown")) {
+      row {
+        checkBox(myConfirmExit)
+      }
+      row {
+        cell {
+          label(IdeBundle.message("group.settings.process.tab.close"))
+          buttonGroup(model::getProcessCloseConfirmation, model::setProcessCloseConfirmation) {
+            radioButton(IdeBundle.message("radio.process.close.terminate"), GeneralSettings.ProcessCloseConfirmation.TERMINATE)
+            radioButton(IdeBundle.message("radio.process.close.disaconnect"), GeneralSettings.ProcessCloseConfirmation.DISCONNECT)
+            radioButton(IdeBundle.message("radio.process.close.ask"), GeneralSettings.ProcessCloseConfirmation.ASK)
+          }
+        }
+      }
+      titledRow(IdeUICustomization.getInstance().projectMessage("tab.title.project")) {
         row {
           checkBox(myChkReopenLastProject)
         }
         row {
-          checkBox(myConfirmExit)
+          cell(isFullWidth = true) {
+            label(IdeUICustomization.getInstance().projectMessage("label.open.project.in"))
+            buttonGroup(model::getConfirmOpenNewProject, model::setConfirmOpenNewProject) {
+              radioButton(IdeUICustomization.getInstance().projectMessage("radio.button.open.project.in.the.new.window"), GeneralSettings.OPEN_PROJECT_NEW_WINDOW)
+              radioButton(IdeUICustomization.getInstance().projectMessage("radio.button.open.project.in.the.same.window"), GeneralSettings.OPEN_PROJECT_SAME_WINDOW)
+              radioButton(IdeUICustomization.getInstance().projectMessage("radio.button.confirm.window.to.open.project.in"), GeneralSettings.OPEN_PROJECT_ASK)
+            }
+          }
         }
 
         if (PlatformUtils.isDataGrip()) {
           row {
-            checkBox(myShowWelcomeScreen)
+            checkBox(mySkipWelcomeScreen)
           }
         }
-      }
-      titledRow(IdeUICustomization.getInstance().projectMessage("border.title.project.opening")) {
-        row(IdeBundle.message("settings.general.default.directory")) {
-          textFieldWithBrowseButton(model::getDefaultProjectDirectory, model::setDefaultProjectDirectory,
-                                    fileChooserDescriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
-                                      .also { it.putUserData(PathChooserDialog.PREFER_LAST_OVER_EXPLICIT, false) })
-            .growPolicy(GrowPolicy.MEDIUM_TEXT)
-            .comment(IdeBundle.message("settings.general.directory.preselected"), 80)
-        }
-        buttonGroup(model::getConfirmOpenNewProject, model::setConfirmOpenNewProject) {
-          row {
-            radioButton(IdeUICustomization.getInstance().projectMessage("radio.button.open.project.in.the.new.window"), GeneralSettings.OPEN_PROJECT_NEW_WINDOW)
-          }
-          row {
-            radioButton(IdeUICustomization.getInstance().projectMessage("radio.button.open.project.in.the.same.window"), GeneralSettings.OPEN_PROJECT_SAME_WINDOW)
-          }
-          row {
-            radioButton(IdeUICustomization.getInstance().projectMessage("radio.button.confirm.window.to.open.project.in"), GeneralSettings.OPEN_PROJECT_ASK)
+        row {
+          cell {
+            label(IdeUICustomization.getInstance().projectMessage("settings.general.default.directory"))
+            textFieldWithBrowseButton(model::getDefaultProjectDirectory, model::setDefaultProjectDirectory,
+                                      fileChooserDescriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
+                                        .also { it.putUserData(PathChooserDialog.PREFER_LAST_OVER_EXPLICIT, false) })
+              .growPolicy(GrowPolicy.MEDIUM_TEXT)
+              .comment(IdeBundle.message("settings.general.directory.preselected"), 80)
           }
         }
       }
       titledRow(IdeBundle.message("settings.general.synchronization")) {
-        row {
-          checkBox(myChkSyncOnFrameActivation)
-        }
-        row {
-          checkBox(myChkSaveOnFrameDeactivation)
-        }
         row {
           cell(isFullWidth = true) {
             val autoSaveCheckbox = checkBox(myChkAutoSaveIfInactive)
@@ -102,19 +108,17 @@ class GeneralSettingsConfigurable: BoundCompositeSearchableConfigurable<Searchab
           }
         }
         row {
+          checkBox(myChkSaveOnFrameDeactivation)
+        }
+        row {
           checkBox(myChkUseSafeWrite)
         }
-      }
-      titledRow(IdeBundle.message("group.settings.process.tab.close")) {
-        buttonGroup(model::getProcessCloseConfirmation, model::setProcessCloseConfirmation) {
-          row {
-            radioButton(IdeBundle.message("radio.process.close.terminate"), GeneralSettings.ProcessCloseConfirmation.TERMINATE)
-          }
-          row {
-            radioButton(IdeBundle.message("radio.process.close.disaconnect"), GeneralSettings.ProcessCloseConfirmation.DISCONNECT)
-          }
-          row {
-            radioButton(IdeBundle.message("radio.process.close.ask"), GeneralSettings.ProcessCloseConfirmation.ASK)
+        row {
+          checkBox(myChkSyncOnFrameActivation)
+        }
+        createNoteOrCommentRow(ComponentPanelBuilder.createCommentComponent(IdeBundle.message("label.autosave.comment"), true, -1, true)).apply {
+          link(IdeBundle.message("label.autosave.comment.how.it.works"), UIUtil.ComponentStyle.SMALL) {
+            HelpManager.getInstance().invokeHelp("autosave")
           }
         }
       }

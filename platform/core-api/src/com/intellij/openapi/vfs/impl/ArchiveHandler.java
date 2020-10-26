@@ -62,11 +62,11 @@ public abstract class ArchiveHandler {
   public FileAttributes getAttributes(@NotNull String relativePath) {
     if (relativePath.isEmpty()) {
       FileAttributes attributes = FileSystemUtil.getAttributes(myPath);
-      return attributes != null ? new FileAttributes(true, false, false, false, DEFAULT_LENGTH, DEFAULT_TIMESTAMP, false) : null;
+      return attributes != null ? new FileAttributes(true, false, false, false, DEFAULT_LENGTH, DEFAULT_TIMESTAMP, false, FileAttributes.CaseSensitivity.SENSITIVE) : null;
     }
     else {
       EntryInfo entry = getEntryInfo(relativePath);
-      return entry != null ? new FileAttributes(entry.isDirectory, false, false, false, entry.length, entry.timestamp, false) : null;
+      return entry != null ? new FileAttributes(entry.isDirectory, false, false, false, entry.length, entry.timestamp, false, entry.isDirectory ? FileAttributes.CaseSensitivity.SENSITIVE: FileAttributes.CaseSensitivity.UNKNOWN) : null;
     }
   }
 
@@ -230,17 +230,17 @@ public abstract class ArchiveHandler {
    */
   @NotNull
   protected Trinity<String, String, String> splitPathAndFix(@NotNull String entryName) {
-    int p = entryName.lastIndexOf('/');
+    int slashP = entryName.lastIndexOf('/');
     // There are crazy jar files with backslash-containing entries inside (IDEA-228441)
     // Under Windows we can't create files with backslash in the name
     // and although in Unix we can, we prefer not to, to maintain consistency to avoid subtle bugs when the code which confuses file separators with slashes
-    p = Math.max(p, entryName.lastIndexOf('\\'));
+    int p = Math.max(slashP, entryName.lastIndexOf('\\'));
 
     String parentName = p > 0 ? entryName.substring(0, p) : "";
     String shortName = p > 0 ? entryName.substring(p + 1) : entryName;
     String fixedParent = parentName.replace('\\', '/');
     //noinspection StringEquality
-    if (fixedParent != parentName) {
+    if (fixedParent != parentName || slashP == -1 && p != -1) {
       parentName = fixedParent;
       entryName = parentName + '/' + shortName;
     }

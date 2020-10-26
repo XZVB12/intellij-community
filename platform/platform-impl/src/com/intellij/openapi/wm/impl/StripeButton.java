@@ -1,10 +1,11 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.wm.impl;
 
-import com.intellij.featureStatistics.FeatureUsageTracker;
+import com.intellij.ide.HelpTooltip;
 import com.intellij.ide.actions.ActivateToolWindowAction;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ToolWindowAnchor;
@@ -29,7 +30,7 @@ import java.awt.image.BufferedImage;
  * @author Eugene Belyaev
  * @author Vladimir Kondratyev
  */
-public final class StripeButton extends AnchoredButton implements DataProvider {
+public class StripeButton extends AnchoredButton implements DataProvider {
   /**
    * This is analog of Swing mnemonic. We cannot use the standard ones
    * because it causes typing of "funny" characters into the editor.
@@ -38,7 +39,7 @@ public final class StripeButton extends AnchoredButton implements DataProvider {
   private boolean myPressedWhenSelected;
 
   private JLayeredPane myDragPane;
-  private final ToolWindowsPane pane;
+  final ToolWindowsPane pane;
   final ToolWindowImpl toolWindow;
   private JLabel myDragButtonImage;
   private Point myPressedPoint;
@@ -56,16 +57,15 @@ public final class StripeButton extends AnchoredButton implements DataProvider {
 
     addActionListener(e -> {
       String id = toolWindow.getId();
+      ToolWindowManagerImpl manager = toolWindow.getToolWindowManager();
       if (myPressedWhenSelected) {
-        toolWindow.getToolWindowManager().hideToolWindow(id, false);
+        manager.hideToolWindow(id, false, true, ToolWindowEventSource.StripeButton);
       }
       else {
-        toolWindow.getToolWindowManager().activated$intellij_platform_ide_impl(toolWindow);
+        manager.activated$intellij_platform_ide_impl(toolWindow, ToolWindowEventSource.StripeButton);
       }
 
       myPressedWhenSelected = false;
-      //noinspection SpellCheckingInspection
-      FeatureUsageTracker.getInstance().triggerFeatureUsed("toolwindow.clickstat." + id);
     });
     addMouseListener(new PopupHandler() {
       @Override
@@ -84,6 +84,24 @@ public final class StripeButton extends AnchoredButton implements DataProvider {
         processDrag(e);
       }
     });
+
+    updateHelpTooltip();
+  }
+
+  private void updateHelpTooltip() {
+    HelpTooltip.dispose(this);
+
+    String activateActionId = ActivateToolWindowAction.getActionIdForToolWindow(toolWindow.getId());
+    AnAction action = ActionManager.getInstance().getAction(activateActionId);
+    if (action != null) {
+      KeyboardShortcut shortcut = ActionManager.getInstance().getKeyboardShortcut(activateActionId);
+      if (shortcut != null) {
+        HelpTooltip tooltip = new HelpTooltip();
+        tooltip.setTitle(toolWindow.getStripeTitle());
+        tooltip.setShortcut(KeymapUtil.getShortcutText(shortcut));
+        tooltip.installOn(this);
+      }
+    }
   }
 
   public @NotNull WindowInfo getWindowInfo() {
@@ -118,6 +136,7 @@ public final class StripeButton extends AnchoredButton implements DataProvider {
 
   private void setMnemonic2(int mnemonic) {
     myMnemonic = mnemonic;
+    updateHelpTooltip();
     revalidate();
     repaint();
   }
@@ -341,6 +360,7 @@ public final class StripeButton extends AnchoredButton implements DataProvider {
       }
     }
     setText(text);
+    updateHelpTooltip();
   }
 
   private void updateState(@NotNull ToolWindowImpl toolWindow) {

@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.plugin.ui;
 
 import com.intellij.codeInsight.hint.TooltipController;
@@ -37,7 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-public class SubstitutionShortInfoHandler implements DocumentListener, EditorMouseMotionListener, CaretListener {
+public final class SubstitutionShortInfoHandler implements DocumentListener, EditorMouseMotionListener, CaretListener {
   private static final Key<SubstitutionShortInfoHandler> LISTENER_KEY = Key.create("sslistener.key");
   private static final TooltipGroup SS_INFO_TOOLTIP_GROUP = new TooltipGroup("SS_INFO_TOOLTIP_GROUP", 0);
   private long modificationTimeStamp;
@@ -132,7 +132,6 @@ public class SubstitutionShortInfoHandler implements DocumentListener, EditorMou
 
   @Override
   public void documentChanged(@NotNull DocumentEvent event) {
-    if (event.getOldLength() == event.getNewLength()) return;
     // to handle backspace & delete (backspace strangely is not reported to the caret listener)
     handleInputFocusMovement(editor.getCaretModel().getLogicalPosition(), true);
     updateEditorInlays();
@@ -174,7 +173,7 @@ public class SubstitutionShortInfoHandler implements DocumentListener, EditorMou
         append(buf, SSRBundle.message("hierarchy.tooltip.message"));
       }
       if (!StringUtil.isEmpty(constraint.getReferenceConstraint())) {
-        final String text = StringUtil.unquoteString(constraint.getReferenceConstraint());
+        final String text = StringUtil.unquoteString(constraint.getReferenceConstraintName());
         append(buf, SSRBundle.message("reference.target.tooltip.message", constraint.isInvertReference() ? 1 : 0, text));
       }
 
@@ -199,7 +198,7 @@ public class SubstitutionShortInfoHandler implements DocumentListener, EditorMou
     }
 
     final String script = namedScriptableDefinition.getScriptCodeConstraint();
-    if (script != null && script.length() > 2) {
+    if (script.length() > 2) {
       append(buf, SSRBundle.message("script.tooltip.message"));
     }
 

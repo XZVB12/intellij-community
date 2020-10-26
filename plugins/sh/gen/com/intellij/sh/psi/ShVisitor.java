@@ -4,6 +4,7 @@ package com.intellij.sh.psi;
 import org.jetbrains.annotations.*;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiNameIdentifierOwner;
+import com.intellij.model.psi.UrlReferenceHost;
 
 public class ShVisitor extends PsiElementVisitor {
 
@@ -196,6 +197,7 @@ public class ShVisitor extends PsiElementVisitor {
 
   public void visitLiteral(@NotNull ShLiteral o) {
     visitSimpleCommandElement(o);
+    // visitUrlReferenceHost(o);
     // visitPsiNameIdentifierOwner(o);
   }
 
@@ -272,6 +274,14 @@ public class ShVisitor extends PsiElementVisitor {
   }
 
   public void visitRedirection(@NotNull ShRedirection o) {
+    visitCompositeElement(o);
+  }
+
+  public void visitRegexCondition(@NotNull ShRegexCondition o) {
+    visitCondition(o);
+  }
+
+  public void visitRegexPattern(@NotNull ShRegexPattern o) {
     visitCompositeElement(o);
   }
 

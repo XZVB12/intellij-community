@@ -1,12 +1,10 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.indexing;
 
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ContentIterator;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
-import com.intellij.openapi.vfs.VirtualFileVisitor;
 import com.intellij.psi.util.CachedValue;
 import com.intellij.psi.util.CachedValueProvider;
 import com.intellij.util.CachedValueImpl;
@@ -17,9 +15,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Set;
 import java.util.function.Supplier;
 
-/**
- * @author peter
- */
 public class AdditionalIndexableFileSet implements IndexableFileSet {
   @Nullable
   private final Project myProject;
@@ -40,10 +35,6 @@ public class AdditionalIndexableFileSet implements IndexableFileSet {
     myAdditionalIndexableRoots = new CachedValueImpl<>(() -> new CachedValueProvider.Result<>(collectFilesAndDirectories(),
                                                                                               VirtualFileManager.VFS_STRUCTURE_MODIFICATIONS,
                                                                                               IndexableSetContributorModificationTracker.getInstance()));
-  }
-
-  public AdditionalIndexableFileSet() {
-    this(null);
   }
 
   @NotNull
@@ -70,25 +61,7 @@ public class AdditionalIndexableFileSet implements IndexableFileSet {
     return VfsUtilCore.isUnder(file, additionalIndexableRoots.directories) || additionalIndexableRoots.files.contains(file);
   }
 
-  @Override
-  public void iterateIndexableFilesIn(@NotNull VirtualFile file, @NotNull final ContentIterator iterator) {
-    VfsUtilCore.visitChildrenRecursively(file, new VirtualFileVisitor<Void>() {
-      @Override
-      public boolean visitFile(@NotNull VirtualFile file) {
-        if (!isInSet(file)) {
-          return false;
-        }
-
-        if (!file.isDirectory()) {
-          iterator.processFile(file);
-        }
-
-        return true;
-      }
-    });
-  }
-
-  private static class AdditionalIndexableRoots {
+  private static final class AdditionalIndexableRoots {
     @NotNull
     private final Set<VirtualFile> files;
     @NotNull

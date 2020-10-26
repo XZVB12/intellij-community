@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.editor;
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
@@ -25,10 +25,10 @@ import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.actionSystem.ex.AnActionListener;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ModalityStateListener;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.event.*;
 import com.intellij.openapi.editor.ex.*;
@@ -45,6 +45,7 @@ import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.JBPopupListener;
 import com.intellij.openapi.ui.popup.LightweightWindowEvent;
 import com.intellij.openapi.ui.popup.util.PopupUtil;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.registry.Registry;
@@ -61,12 +62,14 @@ import com.intellij.util.Alarm;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.concurrency.CancellablePromise;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.lang.ref.WeakReference;
@@ -82,6 +85,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
   private static final Key<Boolean> DISABLE_BINDING = Key.create("EditorMouseHoverPopupManager.disable.binding");
   private static final TooltipGroup EDITOR_INFO_GROUP = new TooltipGroup("EDITOR_INFO_GROUP", 0);
   private static final int MAX_POPUP_WIDTH = 650;
+  private static final int MAX_QUICK_DOC_CHARACTERS = 100_000;
 
   private final Alarm myAlarm;
   private final MouseMovementTracker myMouseMovementTracker = new MouseMovementTracker();
@@ -119,11 +123,18 @@ public final class EditorMouseHoverPopupManager implements Disposable {
         closeHint();
       }
     });
-    LaterInvocator.addModalityStateListener(entering -> {
-      cancelProcessingAndCloseHint();
+    LaterInvocator.addModalityStateListener(new ModalityStateListener() {
+      @Override
+      public void beforeModalityStateChanged(boolean entering, @NotNull Object modalEntity) {
+        cancelProcessingAndCloseHint();
+      }
     }, this);
-    IdeEventQueue.getInstance().addActivityListener(() -> {
-      cancelCurrentProcessing();
+    IdeEventQueue.getInstance().addDispatcher(event -> {
+      int eventID = event.getID();
+      if (eventID == KeyEvent.KEY_PRESSED || eventID == KeyEvent.KEY_TYPED) {
+        cancelCurrentProcessing();
+      }
+      return false;
     }, this);
     ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(AnActionListener.TOPIC, new MyActionListener());
   }
@@ -512,7 +523,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
         }
       }
 
-      String quickDocMessage = null;
+      @Nls String quickDocMessage = null;
       PsiElement targetElement = null;
       PsiElement element = getElementForQuickDoc();
       if (element != null) {
@@ -534,6 +545,9 @@ public final class EditorMouseHoverPopupManager implements Disposable {
             }).executeSynchronously();
             if (targetElement != null) {
               quickDocMessage = documentationManager.generateDocumentation(targetElement, element, true);
+              if (quickDocMessage != null && quickDocMessage.length() > MAX_QUICK_DOC_CHARACTERS) {
+                quickDocMessage = quickDocMessage.substring(0, MAX_QUICK_DOC_CHARACTERS);
+              }
             }
           }
         }
@@ -555,15 +569,15 @@ public final class EditorMouseHoverPopupManager implements Disposable {
     }
   }
 
-  private static class Info {
+  private static final class Info {
     private final HighlightInfo highlightInfo;
     private final TooltipAction tooltipAction;
 
-    private final String quickDocMessage;
+    private final @Nls String quickDocMessage;
     private final WeakReference<PsiElement> quickDocElement;
 
 
-    private Info(HighlightInfo highlightInfo, TooltipAction tooltipAction, String quickDocMessage, PsiElement quickDocElement) {
+    private Info(HighlightInfo highlightInfo, TooltipAction tooltipAction, @Nls String quickDocMessage, PsiElement quickDocElement) {
       assert highlightInfo != null || quickDocMessage != null;
       this.highlightInfo = highlightInfo;
       this.tooltipAction = tooltipAction;
@@ -679,7 +693,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
         }
         return null;
       }
-      class MyDocComponent extends DocumentationComponent {
+      final class MyDocComponent extends DocumentationComponent {
         private MyDocComponent() {
           super(documentationManager, false);
           if (deEmphasize) {
@@ -716,6 +730,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
       });
       popupBridge.performWhenAvailable(component::setHint);
       EditorUtil.disposeWithEditor(editor, component);
+      popupBridge.performOnCancel(() -> Disposer.dispose(component));
       return component;
     }
   }
@@ -730,7 +745,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
 
   @NotNull
   public static EditorMouseHoverPopupManager getInstance() {
-    return ServiceManager.getService(EditorMouseHoverPopupManager.class);
+    return ApplicationManager.getApplication().getService(EditorMouseHoverPopupManager.class);
   }
 
   @Nullable
@@ -741,7 +756,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
 
   private static class PopupBridge {
     private AbstractPopup popup;
-    private List<Consumer<AbstractPopup>> consumers = new ArrayList<>();
+    private List<Consumer<? super AbstractPopup>> consumers = new ArrayList<>();
 
     private void setPopup(@NotNull AbstractPopup popup) {
       assert this.popup == null;
@@ -755,7 +770,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
       return popup;
     }
 
-    private void performWhenAvailable(@NotNull Consumer<AbstractPopup> consumer) {
+    private void performWhenAvailable(@NotNull Consumer<? super AbstractPopup> consumer) {
       if (popup == null) {
         consumers.add(consumer);
       }
@@ -774,7 +789,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
     }
   }
 
-  private static class WrapperPanel extends JPanel implements WidthBasedLayout {
+  private static final class WrapperPanel extends JPanel implements WidthBasedLayout {
     private WrapperPanel(JComponent content) {
       super(new BorderLayout());
       setBorder(null);
@@ -801,7 +816,7 @@ public final class EditorMouseHoverPopupManager implements Disposable {
     }
   }
 
-  private static class CombinedPopupLayout implements LayoutManager {
+  private static final class CombinedPopupLayout implements LayoutManager {
     private final JComponent highlightInfoComponent;
     private final DocumentationComponent quickDocComponent;
 

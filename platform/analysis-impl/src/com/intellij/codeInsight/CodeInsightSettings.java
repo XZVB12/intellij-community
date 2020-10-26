@@ -1,11 +1,11 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight;
 
 import com.intellij.codeInsight.editorActions.SmartBackspaceMode;
 import com.intellij.configurationStore.XmlSerializer;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.diagnostic.Logger;
@@ -29,16 +29,13 @@ import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-@State(name = "CodeInsightSettings", storages = {
-  @Storage("editor.xml"),
-  @Storage(value = "editor.codeinsight.xml", deprecated = true),
-})
+@State(name = "CodeInsightSettings", storages = @Storage("editor.xml"))
 public class CodeInsightSettings implements PersistentStateComponent<Element>, Cloneable {
   private static final Logger LOG = Logger.getInstance(CodeInsightSettings.class);
   private final List<PropertyChangeListener> myListeners = new CopyOnWriteArrayList<>();
 
   public static CodeInsightSettings getInstance() {
-    return ServiceManager.getService(CodeInsightSettings.class);
+    return ApplicationManager.getApplication().getService(CodeInsightSettings.class);
   }
 
   public void addPropertyChangeListener(PropertyChangeListener listener, Disposable parentDisposable) {
@@ -60,7 +57,6 @@ public class CodeInsightSettings implements PersistentStateComponent<Element>, C
   public boolean SHOW_EXTERNAL_ANNOTATIONS_INLINE = true;
   public boolean SHOW_INFERRED_ANNOTATIONS_INLINE;
 
-
   public boolean SHOW_PARAMETER_NAME_HINTS_ON_COMPLETION;
   public boolean AUTO_POPUP_PARAMETER_INFO = true;
   public int PARAMETER_INFO_DELAY = 1000;
@@ -68,6 +64,9 @@ public class CodeInsightSettings implements PersistentStateComponent<Element>, C
   public int JAVADOC_INFO_DELAY = 1000;
   public boolean AUTO_POPUP_COMPLETION_LOOKUP = true;
 
+  /**
+   * @deprecated use accessors instead
+   */
   @MagicConstant(intValues = {ALL, NONE, FIRST_LETTER})
   @Deprecated
   public int COMPLETION_CASE_SENSITIVE = FIRST_LETTER;
@@ -169,7 +168,8 @@ public class CodeInsightSettings implements PersistentStateComponent<Element>, C
   /**
    * @deprecated use {@link CodeInsightWorkspaceSettings#optimizeImportsOnTheFly}
    */
-  @SuppressWarnings("MissingDeprecatedAnnotation") public boolean OPTIMIZE_IMPORTS_ON_THE_FLY;
+  @SuppressWarnings("MissingDeprecatedAnnotation")
+  public boolean OPTIMIZE_IMPORTS_ON_THE_FLY;
 
   public boolean ADD_UNAMBIGIOUS_IMPORTS_ON_THE_FLY;
   public boolean ADD_MEMBER_IMPORTS_ON_THE_FLY = true;
@@ -202,9 +202,9 @@ public class CodeInsightSettings implements PersistentStateComponent<Element>, C
   private void setDefaults() {
     try {
       ReflectionUtil.copyFields(CodeInsightSettings.class.getDeclaredFields(), new CodeInsightSettings(), this,
-                                new DifferenceFilter<Object>(null, null) {
+                                new DifferenceFilter<>(null, null) {
                                   @Override
-                                  public boolean isAccept(@NotNull Field field) {
+                                  public boolean test(@NotNull Field field) {
                                     return !field.getName().equals("EXCLUDED_PACKAGES");
                                   }
                                 });

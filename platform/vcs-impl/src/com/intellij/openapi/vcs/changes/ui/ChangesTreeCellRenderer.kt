@@ -1,26 +1,29 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs.changes.ui
 
+import com.intellij.ui.CellRendererPanel
 import com.intellij.util.ui.ThreeStateCheckBox
 import com.intellij.util.ui.accessibility.AccessibleContextDelegate
-import com.intellij.util.ui.components.BorderLayoutPanel
+import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Container
+import java.awt.Dimension
+import javax.accessibility.Accessible
 import javax.accessibility.AccessibleContext
 import javax.accessibility.AccessibleRole
 import javax.swing.JTree
 import javax.swing.tree.TreeCellRenderer
 
-private class ChangesTreeCellRenderer(private val textRenderer: ChangesBrowserNodeRenderer) :
-  BorderLayoutPanel(), TreeCellRenderer {
+abstract class ChangesTreeCellRenderer(
+  protected val textRenderer: ChangesBrowserNodeRenderer
+) : CellRendererPanel(),
+    TreeCellRenderer {
 
-  private val checkBox = ThreeStateCheckBox()
-
-  init {
-    addToLeft(checkBox)
-    addToCenter(textRenderer)
-    isOpaque = false
-  }
+  /**
+   * Otherwise incorrect node sizes are cached - see [com.intellij.ui.tree.ui.DefaultTreeUI.createNodeDimensions].
+   * And [com.intellij.ui.ExpandableItemsHandler] does not work correctly.
+   */
+  override fun getPreferredSize(): Dimension = layout.preferredLayoutSize(this)
 
   override fun getTreeCellRendererComponent(
     tree: JTree,
@@ -33,6 +36,7 @@ private class ChangesTreeCellRenderer(private val textRenderer: ChangesBrowserNo
   ): Component {
     tree as ChangesTree
     background = null
+    isSelected = selected
 
     textRenderer.apply {
       isOpaque = false
@@ -40,32 +44,63 @@ private class ChangesTreeCellRenderer(private val textRenderer: ChangesBrowserNo
       toolTipText = null
       getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus)
     }
-    checkBox.apply {
-      background = null
-      isOpaque = false
-
-      val node = value as ChangesBrowserNode<*>
-      isVisible = tree.run { isShowCheckboxes && isInclusionVisible(node) }
-      if (isVisible) {
-        state = tree.getNodeStatus(node)
-        isEnabled = tree.run { isEnabled && isInclusionEnabled(node) }
-      }
-    }
-    revalidate()
 
     return this
   }
 
   override fun getToolTipText(): String? = textRenderer.toolTipText
+}
+
+class CheckboxTreeCellRenderer(textRenderer: ChangesBrowserNodeRenderer) : ChangesTreeCellRenderer(textRenderer) {
+  private val component = ThreeStateCheckBox()
+
+  init {
+    buildLayout()
+  }
+
+  private fun buildLayout() {
+    layout = BorderLayout()
+
+    add(component, BorderLayout.WEST)
+    add(textRenderer, BorderLayout.CENTER)
+  }
+
+  override fun getTreeCellRendererComponent(tree: JTree,
+                                            value: Any,
+                                            selected: Boolean,
+                                            expanded: Boolean,
+                                            leaf: Boolean,
+                                            row: Int,
+                                            hasFocus: Boolean): Component {
+    val rendererComponent = super.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus)
+
+    value as ChangesBrowserNode<*>
+    tree as ChangesTree
+
+    component.apply {
+      background = null
+      isOpaque = false
+
+      isVisible = tree.run { isShowCheckboxes && isInclusionVisible(value) }
+      if (isVisible) {
+        state = tree.getNodeStatus(value)
+        isEnabled = tree.run { isEnabled && isInclusionEnabled(value) }
+      }
+    }
+
+    return rendererComponent
+  }
 
   override fun getAccessibleContext(): AccessibleContext {
+    val accessibleComponent = component as? Accessible ?: return super.getAccessibleContext()
+
     if (accessibleContext == null) {
-      accessibleContext = object : AccessibleContextDelegate(checkBox.accessibleContext) {
+      accessibleContext = object : AccessibleContextDelegate(accessibleComponent.accessibleContext) {
         override fun getDelegateParent(): Container? = parent
 
         override fun getAccessibleName(): String? {
-          checkBox.accessibleContext.accessibleName = textRenderer.accessibleContext.accessibleName
-          return checkBox.accessibleContext.accessibleName
+          accessibleComponent.accessibleContext.accessibleName = textRenderer.accessibleContext.accessibleName
+          return accessibleComponent.accessibleContext.accessibleName
         }
 
         override fun getAccessibleRole(): AccessibleRole {

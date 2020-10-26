@@ -78,12 +78,11 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
   @Nullable
   private static String findRCFile(@NotNull String shellName) {
     String rcfile = null;
-    //noinspection IfCanBeSwitch
     if (BASH_NAME.equals(shellName) || SH_NAME.equals(shellName)) {
       rcfile = "jediterm-bash.in";
     }
     else if (ZSH_NAME.equals(shellName)) {
-      rcfile = ".zshrc";
+      rcfile = ".zshenv";
     }
     else if (FISH_NAME.equals(shellName)) {
       rcfile = "fish/config.fish";
@@ -169,7 +168,7 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
   protected PtyProcess createProcess(@Nullable String directory, @Nullable String commandHistoryFilePath) throws ExecutionException {
     Map<String, String> envs = getTerminalEnvironment();
 
-    String[] command = ArrayUtil.toStringArray(getCommands(envs));
+    String[] command = ArrayUtil.toStringArray(getInitialCommand(envs));
 
     for (LocalTerminalCustomizer customizer : LocalTerminalCustomizer.EP_NAME.getExtensions()) {
       try {
@@ -195,7 +194,11 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
       return process;
     }
     catch (IOException e) {
-      throw new ExecutionException("Failed to start " + Arrays.toString(command) + " in " + workingDir, e);
+      String errorMessage = "Failed to start " + Arrays.toString(command) + " in " + workingDir;
+      if (workingDir != null && !new File(workingDir).isDirectory()) {
+        errorMessage = "No such directory: " + workingDir;
+      }
+      throw new ExecutionException(errorMessage, e);
     }
   }
 
@@ -233,26 +236,41 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
     return "Local Terminal";
   }
 
+  /**
+   * @param envs environment variables
+   * @return initial command. The result command to execute is calculated by applying
+   *         {@link LocalTerminalCustomizer#customizeCommandAndEnvironment} to it.
+   */
+  public @NotNull List<String> getInitialCommand(@NotNull Map<String, String> envs) {
+    return getCommands(envs);
+  }
 
   /**
-   * @deprecated use {@link #getCommands(Map)} instead
+   * @deprecated use {@link #getInitialCommand(Map)} instead
+   */
+  @ApiStatus.ScheduledForRemoval(inVersion = "2020.3")
+  @Deprecated
+  public @NotNull List<String> getCommands(@NotNull Map<String, String> envs) {
+    return Arrays.asList(getCommand(envs));
+  }
+
+  /**
+   * @deprecated use {@link #getInitialCommand(Map)} instead
    */
   @Deprecated
   @ApiStatus.ScheduledForRemoval(inVersion = "2020.3")
   public String[] getCommand(Map<String, String> envs) {
-    return ArrayUtil.toStringArray(getCommands(envs));
-  }
-
-  public @NotNull List<String> getCommands(@NotNull Map<String, String> envs) {
     String shellPath = getShellPath();
-    return getCommand(shellPath, envs, TerminalOptionsProvider.getInstance().shellIntegration());
+    return ArrayUtil.toStringArray(getCommand(shellPath, envs, TerminalOptionsProvider.getInstance().shellIntegration()));
   }
 
-  private static String getShellPath() {
-    return TerminalOptionsProvider.getInstance().getShellPath();
+  private @NotNull String getShellPath() {
+    return TerminalProjectOptionsProvider.getInstance(myProject).getShellPath();
   }
 
-  public static @NotNull List<String> getCommand(String shellPath, Map<String, String> envs, boolean shellIntegration) {
+  public static @NotNull List<String> getCommand(@NotNull String shellPath,
+                                                 @NotNull Map<String, String> envs,
+                                                 boolean shellIntegration) {
     if (SystemInfo.isWindows) {
       return ParametersListUtil.parse(shellPath, false, false);
     }
@@ -277,9 +295,8 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
     List<String> result = new ArrayList<>();
     result.add(shellCommand);
 
-    String rcFilePath = findRCFile(shellName);
-
-    if (rcFilePath != null && shellIntegration) {
+    String rcFilePath = shellIntegration ? findRCFile(shellName) : null;
+    if (rcFilePath != null) {
       if (shellName.equals(BASH_NAME) || (SystemInfo.isMac && shellName.equals(SH_NAME))) {
         addRcFileArgument(envs, command, result, rcFilePath, "--rcfile");
         // remove --login to enable --rcfile sourcing
@@ -287,15 +304,11 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
         setLoginShellEnv(envs, loginShell);
       }
       else if (shellName.equals(ZSH_NAME)) {
-        String zdotdir = EnvironmentUtil.getEnvironmentMap().get(ZDOTDIR);
+        String zdotdir = envs.get(ZDOTDIR);
         if (StringUtil.isNotEmpty(zdotdir)) {
-          envs.put("_OLD_ZDOTDIR", zdotdir);
-          File zshRc = new File(FileUtil.expandUserHome(zdotdir), ".zshrc");
-          if (zshRc.exists()) {
-            envs.put(JEDITERM_USER_RCFILE, zshRc.getAbsolutePath());
-          }
+          envs.put("_INTELLIJ_ORIGINAL_ZDOTDIR", zdotdir);
         }
-        envs.put(ZDOTDIR, new File(rcFilePath).getParent());
+        envs.put(ZDOTDIR, PathUtil.getParentPath(rcFilePath));
       }
       else if (shellName.equals(FISH_NAME)) {
         String xdgConfig = EnvironmentUtil.getEnvironmentMap().get(XDG_CONFIG_HOME);
@@ -309,9 +322,8 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
 
         envs.put(XDG_CONFIG_HOME, new File(rcFilePath).getParentFile().getParent());
       }
+      setLoginShellEnv(envs, isLogin(command));
     }
-
-    setLoginShellEnv(envs, isLogin(command));
 
     result.addAll(command);
     return result;

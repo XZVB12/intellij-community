@@ -108,6 +108,9 @@ public abstract class JavaStatisticsManager {
       return "field#" + member.getName();
     }
 
+    if (member instanceof PsiRecordComponent) {
+      return "record#" + member.getName();
+    }
     return CLASS_PREFIX + ((PsiClass)member).getQualifiedName();
   }
 
@@ -131,7 +134,7 @@ public abstract class JavaStatisticsManager {
     return ArrayUtilRt.toStringArray(list);
   }
 
-  @NotNull
+  @NotNull @NonNls
   public static String getAfterNewKey(@Nullable PsiType expectedType) {
     return getMemberUseKey1(expectedType) + "###smartAfterNew";
   }

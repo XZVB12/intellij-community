@@ -2,12 +2,14 @@
 package com.intellij.grazie.spellcheck
 
 import com.intellij.grazie.GrazieConfig
+import com.intellij.grazie.GraziePlugin
 import com.intellij.grazie.detector.heuristics.rule.RuleFilter
 import com.intellij.grazie.ide.msg.GrazieStateLifecycle
 import com.intellij.grazie.jlanguage.Lang
 import com.intellij.grazie.jlanguage.LangTool
 import com.intellij.grazie.utils.LinkedSet
 import com.intellij.grazie.utils.toLinkedSet
+import com.intellij.openapi.util.ClassLoaderUtil
 import org.languagetool.JLanguageTool
 import org.languagetool.rules.spelling.SpellingCheckRule
 import org.slf4j.LoggerFactory
@@ -17,48 +19,37 @@ object GrazieSpellchecker : GrazieStateLifecycle {
 
   private val filter by lazy { RuleFilter.withAllBuiltIn() }
   private fun filterCheckers(word: String): Set<SpellerTool> {
+    if (checkers.isEmpty()) return emptySet()
+
     val preferred = filter.filter(listOf(word)).preferred
     return checkers.filter { checker -> preferred.any { checker.lang.equalsTo(it) } }.toSet()
   }
 
-  private val BASE_SPELLCHECKER_LANGUAGE = Lang.AMERICAN_ENGLISH
   private val logger = LoggerFactory.getLogger(GrazieSpellchecker::class.java)
 
   data class SpellerTool(val tool: JLanguageTool, val lang: Lang, val speller: SpellingCheckRule, val suggestLimit: Int) {
     fun check(word: String): Boolean = synchronized(speller) {
-      !speller.isMisspelled(word) || !speller.isMisspelled(word.capitalize())
+      ClassLoaderUtil.computeWithClassLoader<Boolean, Throwable>(GraziePlugin.classLoader) {
+        !speller.isMisspelled(word) || !speller.isMisspelled(word.capitalize())
+      }
     }
 
     fun suggest(text: String): Set<String> = synchronized(speller) {
-      speller.match(tool.getRawAnalyzedSentence(text))
-        .flatMap { it.getSuggestedReplacements() }
-        .take(suggestLimit).toSet()
+      ClassLoaderUtil.computeWithClassLoader<Set<String>, Throwable>(GraziePlugin.classLoader) {
+        speller.match(tool.getRawAnalyzedSentence(text))
+          .flatMap { it.suggestedReplacements }
+          .take(suggestLimit).toSet()
+      }
     }
   }
 
   @Volatile
   private var checkers: LinkedSet<SpellerTool> = LinkedSet()
-    get() {
-      if (field.isEmpty()) {
-        synchronized(this) {
-          if (field.isEmpty()) {
-            field = LinkedSet<SpellerTool>().apply {
-              val tool = LangTool.getTool(BASE_SPELLCHECKER_LANGUAGE)
-              val rule = tool.spellingCheckRule
-              require(rule != null) { "Base spellchecker must contain spelling rule" }
-              add(SpellerTool(tool, BASE_SPELLCHECKER_LANGUAGE, rule, MAX_SUGGESTIONS_COUNT))
-            }
-          }
-        }
-      }
-
-      return field
-    }
 
   override fun init(state: GrazieConfig.State) {
-    checkers = state.availableLanguages.plus(BASE_SPELLCHECKER_LANGUAGE).mapNotNull { lang ->
+    checkers = state.availableLanguages.filterNot { it.isEnglish() }.mapNotNull { lang ->
       val tool = LangTool.getTool(lang, state)
-      tool.spellingCheckRule?.let { SpellerTool(tool, lang, it, MAX_SUGGESTIONS_COUNT) }
+      tool.allSpellingCheckRules.firstOrNull()?.let { SpellerTool(tool, lang, it, MAX_SUGGESTIONS_COUNT) }
     }.toLinkedSet()
   }
 

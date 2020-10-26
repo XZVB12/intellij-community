@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.indexing.impl.perFileVersion;
 
 import com.intellij.openapi.util.Key;
@@ -8,10 +8,7 @@ import com.intellij.openapi.vfs.VirtualFileWithId;
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import com.intellij.testFramework.fixtures.TempDirTestFixture;
 import com.intellij.testFramework.fixtures.impl.TempDirTestFixtureImpl;
-import com.intellij.util.indexing.CompositeDataIndexer;
-import com.intellij.util.indexing.FileContent;
-import com.intellij.util.indexing.IndexedFile;
-import com.intellij.util.indexing.IndexedFileImpl;
+import com.intellij.util.indexing.*;
 import com.intellij.util.io.EnumeratorStringDescriptor;
 import com.intellij.util.io.KeyDescriptor;
 import org.jetbrains.annotations.NotNull;
@@ -136,7 +133,7 @@ public class PersistentSubIndexerVersionEnumeratorTest extends LightJavaCodeInsi
 
   private final MyIndexFileAttribute boo1 = new MyIndexFileAttribute(1, "boo");
 
-  private static class MyIndexFileAttribute {
+  private static final class MyIndexFileAttribute {
     final int version;
     final String name;
 
@@ -169,7 +166,7 @@ public class PersistentSubIndexerVersionEnumeratorTest extends LightJavaCodeInsi
     VirtualFile file = file(attribute);
     file.putUserData(ATTRIBUTE_KEY, attribute);
     try {
-      return myMap.isIndexed(((VirtualFileWithId)file).getId(), new IndexedFileImpl(file, getProject()));
+      return myMap.getSubIndexerState(((VirtualFileWithId)file).getId(), new IndexedFileImpl(file, getProject())) == FileIndexingState.UP_TO_DATE;
     }
     catch (IOException e) {
       LOG.error(e);

@@ -3,14 +3,18 @@ package com.intellij.openapi.roots.ui.configuration;
 
 import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.ui.popup.ListItemDescriptor;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.ui.*;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.ui.navigation.Place;
 import com.intellij.ui.popup.list.GroupedItemsListRenderer;
+import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -19,15 +23,13 @@ import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import java.awt.*;
-import java.util.HashMap;
-import java.util.Map;
 
-public class SidePanel extends JPanel {
+public final class SidePanel extends JPanel {
   private final JList<SidePanelItem> myList;
   private final DefaultListModel<SidePanelItem> myModel;
   private final Place.Navigator myNavigator;
 
-  private final Map<Integer, String> myIndex2Separator = new HashMap<>();
+  private final Int2ObjectMap<@Nls String> myIndex2Separator = new Int2ObjectOpenHashMap<>();
 
   public SidePanel(Place.Navigator navigator) {
     myNavigator = navigator;
@@ -38,7 +40,7 @@ public class SidePanel extends JPanel {
     myList = new JBList<>(myModel);
     myList.setBackground(UIUtil.SIDE_PANEL_BACKGROUND);
     myList.setBorder(JBUI.Borders.emptyTop(5));
-    final ListItemDescriptor<SidePanelItem> descriptor = new ListItemDescriptor<SidePanelItem>() {
+    final ListItemDescriptor<SidePanelItem> descriptor = new ListItemDescriptor<>() {
       @Override
       public String getTextFor(final SidePanelItem value) {
         return value.myText;
@@ -51,7 +53,7 @@ public class SidePanel extends JPanel {
 
       @Override
       public Icon getIconFor(final SidePanelItem value) {
-        return JBUI.scale(EmptyIcon.create(16, 20));
+        return JBUIScale.scaleIcon(EmptyIcon.create(16, 20));
       }
 
       @Override
@@ -65,7 +67,7 @@ public class SidePanel extends JPanel {
       }
     };
 
-    myList.setCellRenderer(new GroupedItemsListRenderer<SidePanelItem>(descriptor) {
+    myList.setCellRenderer(new GroupedItemsListRenderer<>(descriptor) {
       JPanel myExtraPanel;
       SidePanelCountLabel myCountLabel;
       final CellRendererPane myValidationParent = new CellRendererPane();
@@ -88,7 +90,11 @@ public class SidePanel extends JPanel {
       }
 
       @Override
-      public Component getListCellRendererComponent(JList<? extends SidePanelItem> list, SidePanelItem value, int index, boolean isSelected, boolean cellHasFocus) {
+      public Component getListCellRendererComponent(JList<? extends SidePanelItem> list,
+                                                    SidePanelItem value,
+                                                    int index,
+                                                    boolean isSelected,
+                                                    boolean cellHasFocus) {
         layout();
         myCountLabel.setText("");
         final Component component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
@@ -159,7 +165,7 @@ public class SidePanel extends JPanel {
   }
 
   @Nullable
-  private String getSeparatorAbove(final SidePanelItem item) {
+  private @NlsContexts.Separator String getSeparatorAbove(final SidePanelItem item) {
     return myIndex2Separator.get(myModel.indexOf(item));
   }
 
@@ -174,9 +180,9 @@ public class SidePanel extends JPanel {
 
   private static class SidePanelItem {
     private final Place myPlace;
-    private final String myText;
+    private final @Nls String myText;
 
-    SidePanelItem(Place place, String text) {
+    SidePanelItem(Place place, @Nls String text) {
       myPlace = place;
       myText = text;
     }

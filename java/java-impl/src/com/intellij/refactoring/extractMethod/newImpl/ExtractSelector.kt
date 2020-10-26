@@ -2,57 +2,42 @@
 package com.intellij.refactoring.extractMethod.newImpl
 
 import com.intellij.codeInsight.CodeInsightUtil
-import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.SelectionModel
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.*
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.refactoring.extractMethod.PrepareFailedException
 import com.intellij.refactoring.introduceVariable.IntroduceVariableBase
 import com.intellij.refactoring.util.RefactoringUtil
-import kotlin.math.exp
 
 class ExtractSelector {
 
-  private fun findSelectedElements(editor: Editor): List<PsiElement> {
-    val project = editor.project ?: return emptyList()
-    val file = PsiDocumentManager.getInstance(project).getPsiFile(editor.document) ?: return emptyList()
-    val selectionModel: SelectionModel = editor.selectionModel
-    if (selectionModel.hasSelection()) {
-      val startOffset = selectionModel.selectionStart
-      val endOffset = selectionModel.selectionEnd
-      var elements: Array<PsiElement>
-      val expr = CodeInsightUtil.findExpressionInRange(file, startOffset, endOffset)
-      if (expr != null) {
-        elements = arrayOf(expr)
+  private fun findElementsInRange(file: PsiFile, range: TextRange): List<PsiElement> {
+    val expression = CodeInsightUtil.findExpressionInRange(file, range.startOffset, range.endOffset)
+    if (expression != null) return listOf(expression)
+
+    val statements = CodeInsightUtil.findStatementsInRange(file, range.startOffset, range.endOffset)
+    if (statements.isNotEmpty()) return statements.toList()
+
+    val subExpression = IntroduceVariableBase.getSelectedExpression(file.project, file, range.startOffset, range.endOffset)
+    if (subExpression != null && IntroduceVariableBase.getErrorMessage(subExpression) == null) {
+      val originalType = RefactoringUtil.getTypeByExpressionWithExpectedType(subExpression)
+      if (originalType != null) {
+        return listOf(subExpression)
       }
-      else {
-        elements = CodeInsightUtil.findStatementsInRange(file, startOffset, endOffset)
-        if (elements.isEmpty()) {
-          val expression = IntroduceVariableBase.getSelectedExpression(project, file, startOffset, endOffset)
-          if (expression != null && IntroduceVariableBase.getErrorMessage(expression) == null) {
-            val originalType = RefactoringUtil.getTypeByExpressionWithExpectedType(expression)
-            if (originalType != null) {
-              elements = arrayOf(expression)
-            }
-          }
-        }
-      }
-      return elements.toList()
     }
-    return IntroduceVariableBase.collectExpressions(file, editor, editor.caretModel.offset)
+
+    return emptyList()
   }
 
-  fun suggestElementsToExtract(editor: Editor): List<PsiElement> {
-    val selectedElements = findSelectedElements(editor)
-    val alignedElements = alignElements(selectedElements)
-    if (alignedElements.isEmpty()) throw PrepareFailedException("Fail", selectedElements.first())
-    return alignedElements
+  fun suggestElementsToExtract(file: PsiFile, range: TextRange): List<PsiElement> {
+    val selectedElements = findElementsInRange(file, range)
+    return alignElements(selectedElements)
   }
 
   private fun alignElements(elements: List<PsiElement>): List<PsiElement> {
     val singleElement = elements.singleOrNull()
     val alignedElements = when {
       elements.size > 1 -> alignStatements(elements)
+      singleElement is PsiIfStatement -> listOf(alignIfStatement(singleElement))
       singleElement is PsiBlockStatement -> if (singleElement.codeBlock.firstBodyElement != null) listOf(singleElement) else emptyList()
       singleElement is PsiCodeBlock -> alignCodeBlock(singleElement)
       singleElement is PsiExpression -> listOfNotNull(alignExpression(singleElement))
@@ -62,6 +47,18 @@ class ExtractSelector {
       alignedElements.isEmpty() -> emptyList()
       alignedElements.first() !== elements.first() || alignedElements.last() !== elements.last() -> alignElements(alignedElements)
       else -> alignedElements
+    }
+  }
+
+  private fun isControlFlowStatement(statement: PsiStatement?): Boolean {
+    return statement is PsiBreakStatement || statement is PsiContinueStatement || statement is PsiReturnStatement || statement is PsiYieldStatement
+  }
+
+  private fun alignIfStatement(ifStatement: PsiIfStatement): PsiElement {
+    return if (ifStatement.elseBranch == null && isControlFlowStatement(ifStatement.thenBranch)) {
+      ifStatement.condition ?: ifStatement
+    } else {
+      ifStatement
     }
   }
 

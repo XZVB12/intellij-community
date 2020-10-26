@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.configuration
 
 import com.intellij.execution.ExecutionException
@@ -8,6 +8,7 @@ import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.configurations.RunConfigurationBase
 import com.intellij.execution.configurations.RunnerSettings
 import com.intellij.execution.process.ProcessHandler
+import com.intellij.execution.ui.SettingsEditorFragment
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.options.ExtendableSettingsEditor
 import com.intellij.openapi.options.ExtensionSettingsEditor
@@ -19,6 +20,7 @@ import com.intellij.util.SmartList
 import gnu.trove.THashMap
 import org.jdom.Element
 import java.util.*
+import kotlin.collections.ArrayList
 
 private val RUN_EXTENSIONS = Key.create<List<Element>>("run.extension.elements")
 private const val EXT_ID_ATTR = "ID"
@@ -107,6 +109,25 @@ open class RunConfigurationExtensionsManager<U : RunConfigurationBase<*>, T : Ru
         group.addEditor(it.editorTitle, editor)
       }
     }
+  }
+
+  fun createFragments(configuration: U): List<SettingsEditorFragment<U, *>> {
+    val list = ArrayList<SettingsEditorFragment<U, *>>()
+    processApplicableExtensions(configuration) { t ->
+      val fragments = t.createFragments(configuration)
+      if (fragments != null) {
+        list.addAll(fragments)
+      }
+      else {
+        val editor = t.createEditor(configuration)
+        if (editor != null) {
+          val wrapper = SettingsEditorFragment.createWrapper(t.serializationId, t.editorTitle, null, editor)
+          { t.isEnabledFor(configuration, null) }
+          list.add(wrapper)
+        }
+      }
+    }
+    return list
   }
 
   @Throws(Exception::class)

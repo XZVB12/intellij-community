@@ -80,6 +80,11 @@ public abstract class PyCommonResolveTest extends PyCommonResolveTestCase {
     assertResolvesTo(LanguageLevel.getLatest(), PyFunction.class, PyNames.CALL);
   }
 
+  // PY-17877, PY-41380
+  public void testInitializingNotToMetaclassSelfArgsKwargsDunderCall() {
+    assertResolvesTo(LanguageLevel.getLatest(), PyClass.class, "MyClass");
+  }
+
   public void testInitOrNewReturnsInitWhenNewIsFirst() {
     doTestInitOrNewReturnsInit();
   }
@@ -1282,7 +1287,7 @@ public abstract class PyCommonResolveTest extends PyCommonResolveTestCase {
 
     final PsiFile file = myFixture.getFile();
     final TypeEvalContext context = TypeEvalContext.codeAnalysis(myFixture.getProject(), file);
-    final PyResolveContext resolveContext = PyResolveContext.noImplicits().withTypeEvalContext(context);
+    final PyResolveContext resolveContext = PyResolveContext.defaultContext().withTypeEvalContext(context);
 
     // It's like an attempt to find type annotation for attribute on the class level.
     final PyClassTypeImpl classType = new PyClassTypeImpl(target.getContainingClass(), true);
@@ -1468,20 +1473,6 @@ public abstract class PyCommonResolveTest extends PyCommonResolveTestCase {
     myFixture.addFileToProject("a.py", "b = {}  # type: dict"); // specify type of `b` so `__getitem__` could be resolved
 
     final TypeEvalContext context = TypeEvalContext.codeInsightFallback(myFixture.getProject());
-    assertEmpty(file.findTopLevelAttribute("t").multiResolveAssignedValue(PyResolveContext.noImplicits().withTypeEvalContext(context)));
-  }
-
-  // PY-10184
-  public void testHasattrResolveTrueIfBranch() {
-    PsiElement targetElement = resolve();
-    assertInstanceOf(targetElement, PyStringLiteralExpression.class);
-    assertEquals("ajjj", ((PyStringLiteralExpression)targetElement).getStringValue());
-  }
-
-  // PY-10184
-  public void testHasattrResolveConditionalExpression() {
-    PsiElement targetElement = resolve();
-    assertInstanceOf(targetElement, PyStringLiteralExpression.class);
-    assertEquals("fld", ((PyStringLiteralExpression)targetElement).getStringValue());
+    assertEmpty(file.findTopLevelAttribute("t").multiResolveAssignedValue(PyResolveContext.defaultContext().withTypeEvalContext(context)));
   }
 }

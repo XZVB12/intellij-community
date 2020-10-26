@@ -7,13 +7,11 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.tree.TreeUtil;
 import com.intellij.xdebugger.XExpression;
 import com.intellij.xdebugger.evaluation.XDebuggerEvaluator;
-import com.intellij.xdebugger.frame.XCompositeNode;
-import com.intellij.xdebugger.frame.XStackFrame;
-import com.intellij.xdebugger.frame.XValueChildrenList;
-import com.intellij.xdebugger.frame.XValueContainer;
+import com.intellij.xdebugger.frame.*;
 import com.intellij.xdebugger.impl.breakpoints.XExpressionImpl;
 import com.intellij.xdebugger.impl.frame.WatchInplaceEditor;
 import com.intellij.xdebugger.impl.frame.XWatchesView;
+import com.intellij.xdebugger.impl.pinned.items.PinToTopParentValue;
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTree;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -28,6 +26,35 @@ public class WatchesRootNode extends XValueContainerNode<XValueContainer> {
   private final XWatchesView myWatchesView;
   private final List<WatchNodeImpl> myChildren;
 
+  static class RootContainerNode extends XValueContainer implements PinToTopParentValue {
+    private final XStackFrame stackFrame;
+    private final boolean watchesInVariables;
+
+    public RootContainerNode(@Nullable XStackFrame stackFrame,
+                             boolean watchesInVariables) {
+      this.stackFrame = stackFrame;
+      this.watchesInVariables = watchesInVariables;
+    }
+
+    @Override
+    public void computeChildren(@NotNull XCompositeNode node) {
+      if (stackFrame != null && watchesInVariables) {
+        stackFrame.computeChildren(node);
+      }
+      else {
+        node.addChildren(XValueChildrenList.EMPTY, true);
+      }
+    }
+
+    @Nullable
+    @Override
+    public String getTag() {
+      if (stackFrame instanceof PinToTopParentValue)
+        return ((PinToTopParentValue) stackFrame).getTag();
+      return null;
+    }
+  }
+
   @SuppressWarnings("unused")
   // required for com.google.gct.core
   public WatchesRootNode(@NotNull XDebuggerTree tree,
@@ -41,17 +68,7 @@ public class WatchesRootNode extends XValueContainerNode<XValueContainer> {
                          @NotNull List<? extends XExpression> expressions,
                          @Nullable XStackFrame stackFrame,
                          boolean watchesInVariables) {
-    super(tree, null, false, new XValueContainer() {
-      @Override
-      public void computeChildren(@NotNull XCompositeNode node) {
-        if (stackFrame != null && watchesInVariables) {
-          stackFrame.computeChildren(node);
-        }
-        else {
-          node.addChildren(XValueChildrenList.EMPTY, true);
-        }
-      }
-    });
+    super(tree, null, false, new RootContainerNode(stackFrame, watchesInVariables));
     myWatchesView = watchesView;
     myChildren = new ArrayList<>();
     for (XExpression watchExpression : expressions) {
@@ -127,11 +144,16 @@ public class WatchesRootNode extends XValueContainerNode<XValueContainer> {
   }
 
   private void fireNodeInserted(int index) {
-    myTree.getTreeModel().nodesWereInserted(this, new int[]{index});
+    myTree.getTreeModel().nodesWereInserted(this, new int[]{index + headerNodesCount()});
   }
 
   public int removeChildNode(XDebuggerTreeNode node) {
-    return removeChildNode(myChildren, node);
+    int index = myChildren.indexOf(node);
+    if (index != -1) {
+      myChildren.remove(node);
+      fireNodesRemoved(new int[]{index + headerNodesCount()}, new TreeNode[]{node});
+    }
+    return index;
   }
 
   public void removeChildren(Collection<? extends XDebuggerTreeNode> nodes) {
@@ -174,7 +196,7 @@ public class WatchesRootNode extends XValueContainerNode<XValueContainer> {
     if (index == -1) {
       int selectedIndex = myChildren.indexOf(ArrayUtil.getFirstElement(myTree.getSelectedNodes(WatchNodeImpl.class, null)));
       int targetIndex = selectedIndex == - 1 ? myChildren.size() : selectedIndex + 1;
-      messageNode = new WatchNodeImpl(myTree, this, XExpressionImpl.EMPTY_EXPRESSION, null);
+      messageNode = new WatchNodeImpl(myTree, this, XExpressionImpl.EMPTY_EXPRESSION, (XStackFrame)null);
       myChildren.add(targetIndex, messageNode);
       fireNodeInserted(targetIndex);
       getTree().setSelectionRows(ArrayUtilRt.EMPTY_INT_ARRAY);
@@ -183,5 +205,9 @@ public class WatchesRootNode extends XValueContainerNode<XValueContainer> {
       messageNode = node;
     }
     new WatchInplaceEditor(this, myWatchesView, messageNode, node).show();
+  }
+
+  public int headerNodesCount() {
+    return 0;
   }
 }

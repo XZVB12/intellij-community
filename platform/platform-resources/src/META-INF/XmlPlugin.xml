@@ -11,11 +11,11 @@
       <implementation-class>com.intellij.javaee.PsiExternalResourceNotifier</implementation-class>
     </component>
   </project-components>
-  <xi:include href="/META-INF/XmlActions.xml" xpointer="xpointer(/idea-plugin/*)"/>
-  <xi:include href="/META-INF/DomPlugin.xml" xpointer="xpointer(/idea-plugin/*)">
+  <xi:include href="/META-INF/XmlActions.xml"/>
+  <xi:include href="/META-INF/DomPlugin.xml">
     <xi:fallback/>
   </xi:include>
-  <xi:include href="/META-INF/relaxng-plugin.xml" xpointer="xpointer(/idea-plugin/*)">
+  <xi:include href="/META-INF/relaxng-plugin.xml">
     <xi:fallback/>
   </xi:include>
 
@@ -27,6 +27,7 @@
     <extensionPoint name="xml.startTagEndToken" interface="com.intellij.psi.xml.StartTagEndTokenProvider" dynamic="true"/>
     <extensionPoint name="xml.schemaProvider" interface="com.intellij.xml.XmlSchemaProvider" dynamic="true"/>
     <extensionPoint name="xml.xmlExtension" interface="com.intellij.xml.XmlExtension" dynamic="true"/>
+    <extensionPoint name="xml.xmlTypedHandlersAdditionalSupport" interface="com.intellij.openapi.editor.XmlTypedHandlersAdditionalSupport" dynamic="true"/>
     <extensionPoint name="xml.namespaceHelper" interface="com.intellij.xml.XmlNamespaceHelper" dynamic="true"/>
     <extensionPoint name="xml.tagNameProvider" interface="com.intellij.xml.XmlTagNameProvider" dynamic="true"/>
     <extensionPoint name="xml.fileNSInfoProvider" interface="com.intellij.psi.xml.XmlFileNSInfoProvider" dynamic="true"/>
@@ -44,8 +45,6 @@
     <extensionPoint name="xmlStructureViewBuilderProvider"
                     interface="com.intellij.ide.structureView.xml.XmlStructureViewBuilderProvider" dynamic="true"/>
 
-    <extensionPoint name="webBrowserUrlProvider" interface="com.intellij.ide.browsers.WebBrowserUrlProvider" dynamic="true"/>
-
     <extensionPoint name="standardResourceProvider" interface="com.intellij.javaee.StandardResourceProvider" dynamic="true"/>
     <extensionPoint name="standardResource" beanClass="com.intellij.javaee.StandardResourceEP" dynamic="true"/>0
 
@@ -62,7 +61,6 @@
     <extensionPoint name="embeddedTokenHighlighter" interface="com.intellij.ide.highlighter.EmbeddedTokenHighlighter" dynamic="true"/>
     <extensionPoint name="xml.implicitIdRefProvider" interface="com.intellij.psi.impl.source.resolve.reference.impl.providers.ImplicitIdRefProvider" dynamic="true"/>
 
-    <extensionPoint qualifiedName="org.jetbrains.javaScriptDebuggerStarter" interface="com.intellij.ide.browsers.JavaScriptDebuggerStarter" dynamic="true"/>
 
     <extensionPoint name="html.scriptContentProvider"
                     beanClass="com.intellij.lang.LanguageExtensionPoint" dynamic="true">
@@ -71,8 +69,13 @@
 
     <extensionPoint name="html.inlineScriptTokenTypesProvider"
                     beanClass="com.intellij.lang.LanguageExtensionPoint" dynamic="true">
+      <!--suppress DeprecatedClassUsageInspection -->
       <with attribute="implementationClass" implements="com.intellij.lang.HtmlInlineScriptTokenTypesProvider"/>
     </extensionPoint>
+
+    <extensionPoint name="html.embeddedContentSupport"
+                    interface="com.intellij.html.embedding.HtmlEmbeddedContentSupport"
+                    dynamic="true"/>
 
     <extensionPoint name="html.attributeValueProvider"
                     interface="com.intellij.html.impl.providers.HtmlAttributeValueProvider"
@@ -180,7 +183,7 @@
     <projectService serviceInterface="com.intellij.javaee.ExternalResourceManagerExImpl"
                     serviceImplementation="com.intellij.javaee.ProjectResources"/>
 
-    <roots.watchedRootsProvider implementation="com.intellij.codeInsight.daemon.impl.quickfix.FetchExtResourceAction"/>
+    <roots.watchedRootsProvider implementation="com.intellij.codeInsight.daemon.impl.quickfix.FetchExtResourceAction$MyWatchedRootsProvider"/>
 
     <fileBasedIndex implementation="com.intellij.xml.index.XmlTagNamesIndex"/>
     <fileBasedIndex implementation="com.intellij.xml.index.XmlNamespaceIndex"/>
@@ -199,7 +202,6 @@
 
     <applicationService serviceImplementation="com.intellij.application.options.XmlSettings"/>
 
-    <applicationService serviceImplementation="com.intellij.ide.browsers.WebBrowserManager"/>
 
     <projectService serviceInterface="com.intellij.psi.XmlElementFactory"
                     serviceImplementation="com.intellij.psi.XmlElementFactoryImpl"/>
@@ -337,15 +339,12 @@
     <liveTemplateContext implementation="com.intellij.codeInsight.template.XslTextContextType"/>
     <liveTemplateContext implementation="com.intellij.codeInsight.template.XmlContextType"/>
     <liveTemplateContext implementation="com.intellij.codeInsight.template.XmlTextContextType"/>
+    <liveTemplateContext implementation="com.intellij.codeInsight.template.XmlElementContextType"/>
 
     <errorQuickFixProvider implementation="com.intellij.codeInsight.daemon.impl.analysis.XmlErrorQuickFixProvider"/>
 
     <elementDescriptionProvider implementation="com.intellij.refactoring.util.XmlNonCodeSearchElementDescriptionProvider"/>
 
-    <referenceProviderType key="Uri references provider"
-                           implementationClass="com.intellij.psi.impl.source.resolve.reference.impl.providers.URIReferenceProvider"/>
-    <referenceProviderType key="Schema references provider"
-                           implementationClass="com.intellij.psi.impl.source.resolve.reference.impl.providers.SchemaReferencesProvider"/>
     <multiHostInjector implementation="com.intellij.psi.impl.source.resolve.reference.impl.providers.XsdRegExpInjector"/>
     <lang.parserDefinition language="XsdRegExp" implementationClass="com.intellij.psi.impl.source.resolve.reference.impl.providers.XsdRegExpParserDefinition"/>
 
@@ -366,11 +365,6 @@
 
     <moveLeftRightHandler language="XML"
                           implementationClass="com.intellij.codeInsight.editorActions.moveLeftRight.XmlMoveLeftRightHandler"/>
-
-    <applicationService serviceInterface="com.intellij.ide.browsers.WebBrowserService"
-                        serviceImplementation="com.intellij.ide.browsers.impl.WebBrowserServiceImpl"/>
-
-    <applicationService serviceInterface="com.intellij.ide.browsers.BrowserLauncher" serviceImplementation="com.intellij.ide.browsers.BrowserLauncherImpl"/>
 
     <patterns.patternClass className="com.intellij.patterns.XmlPatterns" alias="xml"/>
 
@@ -402,7 +396,7 @@
                      enabledByDefault="true" level="ERROR" runForWholeFile="true" unfair="true"
                      implementationClass="com.intellij.xml.util.XmlInvalidIdInspection"/>
     <localInspection language="XML" shortName="XmlWrongRootElement"
-                     bundle="messages.XmlBundle" key="xml.inspection.wrong.root.element"
+                     bundle="messages.XmlBundle" key="xml.inspections.wrong.root.element"
                      groupBundle="messages.XmlBundle" groupKey="xml.inspections.group.name"
                      enabledByDefault="true" level="ERROR"
                      implementationClass="com.intellij.codeInspection.htmlInspections.XmlWrongRootElementInspection"/>
@@ -436,11 +430,11 @@
                      groupBundle="messages.XmlBundle" groupKey="html.inspections.group.name"
                      implementationClass="com.intellij.xml.util.CheckValidXmlInScriptBodyInspection"/>
     <localInspection language="XML" shortName="RequiredAttributes" enabledByDefault="true" level="WARNING"
-                     bundle="messages.InspectionsBundle" key="inspection.required.attributes.display.name"
+                     bundle="messages.XmlBundle" key="xml.inspections.required.attributes.display.name"
                      groupBundle="messages.XmlBundle" groupKey="html.inspections.group.name"
                      implementationClass="com.intellij.codeInspection.htmlInspections.RequiredAttributesInspection"/>
     <localInspection language="HTML" shortName="HtmlExtraClosingTag" enabledByDefault="true" level="WARNING"
-                     bundle="messages.XmlBundle" key="html.inspection.extra.closing.tag"
+                     bundle="messages.XmlBundle" key="html.inspections.extra.closing.tag"
                      groupBundle="messages.XmlBundle" groupKey="html.inspections.group.name"
                      implementationClass="com.intellij.codeInspection.htmlInspections.HtmlExtraClosingTagInspection"/>
     <localInspection language="HTML" shortName="HtmlUnknownTag" enabledByDefault="true" level="WARNING"
@@ -488,6 +482,9 @@
 
     <gotoRelatedProvider implementation="com.intellij.navigation.HtmlGotoRelatedProvider"/>
     <xml.relatedToHtmlFilesContributor implementation="com.intellij.navigation.LinkedToHtmlFilesContributor"/>
+    <applicationService serviceInterface="com.intellij.ide.browsers.WebBrowserXmlService"
+                        serviceImplementation="com.intellij.ide.browsers.WebBrowserXmlServiceImpl"
+                        overrides="true"/>
 
     <intentionAction>
       <category>XML</category>
@@ -593,24 +590,17 @@
     <codeInsight.unresolvedReferenceQuickFixProvider
         implementation="com.intellij.psi.impl.source.resolve.reference.impl.providers.DependentNSReferenceQuickFixProvider"/>
 
-    <selectInTarget implementation="com.intellij.ide.browsers.actions.SelectInDefaultBrowserTarget"/>
     <xml.xmlExtension implementation="com.intellij.xml.HtmlXmlExtension" id="html"/>
 
-    <applicationConfigurable groupId="tools" groupWeight="160" instance="com.intellij.ide.browsers.BrowserSettings" id="reference.settings.ide.settings.web.browsers"
-                             key="browsers.settings" bundle="messages.XmlBundle"/>
     <lang.inspectionSuppressor language="XML" implementationClass="com.intellij.codeInspection.XmlInspectionSuppressor"/>
     <smartPointer.anchorProvider implementation="com.intellij.psi.impl.smartPointers.XmlAnchorProvider"/>
 
-    <stepsBeforeRunProvider implementation="com.intellij.ide.browsers.LaunchBrowserBeforeRunTaskProvider"/>
 
     <editorFactoryListener implementation="com.intellij.codeInsight.editorActions.XmlTagNameSynchronizer$MyEditorFactoryListener"/>
     <psi.symbolReferenceProvider hostLanguage="XML"
                                  hostElementClass="com.intellij.psi.xml.XmlNamedReferenceHost"
+                                 anyReferenceClass="true"
                                  targetClass="com.intellij.model.Symbol"
                                  implementationClass="com.intellij.xml.impl.XmlNamedReferenceProvider"/>
-    <notificationWhitelist groupIds="URL does not respond notification"/>
-  </extensions>
-  <extensions defaultExtensionNs="org.jetbrains">
-    <urlOpener implementation="com.intellij.ide.browsers.impl.DefaultUrlOpener" order="last"/>
   </extensions>
 </idea-plugin>

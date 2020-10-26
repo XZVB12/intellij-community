@@ -46,6 +46,7 @@ public final class StatusBarWidgetProviderToFactoryAdapter implements StatusBarW
         return result;
       }
       if (ApplicationManager.getApplication().isInternal()) {
+        //noinspection HardCodedStringLiteral
         return widget.ID();
       }
     }
@@ -59,6 +60,11 @@ public final class StatusBarWidgetProviderToFactoryAdapter implements StatusBarW
       return false;
     }
     return getWidget() != null;
+  }
+
+  @Override
+  public boolean isConfigurable() {
+    return !getDisplayName().isEmpty();
   }
 
   @Override

@@ -16,6 +16,7 @@ import com.intellij.openapi.options.ex.ConfigurableWrapper;
 import com.intellij.openapi.options.ex.SortedConfigurableGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.ui.*;
 import com.intellij.ui.components.GradientViewport;
@@ -35,6 +36,7 @@ import com.intellij.util.ui.tree.TreeUtil;
 import com.intellij.util.ui.tree.WideSelectionTreeUI;
 import com.intellij.util.ui.update.MergingUpdateQueue;
 import com.intellij.util.ui.update.Update;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.concurrency.AsyncPromise;
@@ -95,7 +97,6 @@ public class SettingsTreeView extends JComponent implements Accessible, Disposab
 
     myTree.setCellRenderer(new MyRenderer());
     myTree.setRootVisible(false);
-    myTree.setShowsRootHandles(false);
     myTree.setExpandableItemsEnabled(false);
     RelativeFont.BOLD.install(myTree);
     setComponentPopupMenuTo(myTree);
@@ -170,6 +171,8 @@ public class SettingsTreeView extends JComponent implements Accessible, Disposab
     myBuilder = new MyBuilder(new SimpleTreeStructure.Impl(myRoot));
     myBuilder.setFilteringMerge(300, null);
     Disposer.register(this, myBuilder);
+
+    myTree.getAccessibleContext().setAccessibleName(UIBundle.message("settings.tree.settings.categories.accessible.name"));
   }
 
   @Override
@@ -262,12 +265,12 @@ public class SettingsTreeView extends JComponent implements Accessible, Disposab
   }
 
   @NotNull
-  Collection<String> getPathNames(Configurable configurable) {
+  Collection<@NlsContexts.ConfigurableName String> getPathNames(Configurable configurable) {
     return getPathNames(findNode(configurable));
   }
 
   @NotNull
-  private static Collection<String> getPathNames(@Nullable MyNode node) {
+  private static Collection<@NlsContexts.ConfigurableName String> getPathNames(@Nullable MyNode node) {
     if (node == null) {
       return Collections.emptyList();
     }
@@ -344,7 +347,7 @@ public class SettingsTreeView extends JComponent implements Accessible, Disposab
   }
 
   @Nullable
-  private String findGroupNameAt(@SuppressWarnings("SameParameterValue") int x, int y) {
+  private @NlsContexts.ConfigurableName String findGroupNameAt(@SuppressWarnings("SameParameterValue") int x, int y) {
     TreePath path = myTree.getClosestPathForLocation(x - myTree.getX(), y - myTree.getY());
     while (path != null) {
       MyNode node = extractNode(path);
@@ -497,7 +500,7 @@ public class SettingsTreeView extends JComponent implements Accessible, Disposab
   private final class MyNode extends CachingSimpleNode {
     private final Configurable.Composite myComposite;
     private final Configurable myConfigurable;
-    private final String myDisplayName;
+    private final @NlsContexts.ConfigurableName String myDisplayName;
     private final int myLevel;
     private ConfigurableTreeRenderer myRenderer;
     private boolean myPrepareRenderer = true;
@@ -507,7 +510,7 @@ public class SettingsTreeView extends JComponent implements Accessible, Disposab
       myComposite = configurable instanceof Configurable.Composite ? (Configurable.Composite)configurable : null;
       myConfigurable = configurable;
       String name = configurable.getDisplayName();
-      myDisplayName = name != null ? name.replace("\n", " ") : "{ " + configurable.getClass().getSimpleName() + " }";
+      myDisplayName = name != null ? name.replace("\n", " ") : "{ " + configurable.getClass().getSimpleName() + " }";  // NON-NLS (safe)
       myLevel = level;
     }
 
@@ -648,9 +651,9 @@ public class SettingsTreeView extends JComponent implements Accessible, Disposab
       }
       myNodeIcon.setIcon(nodeIcon);
       if (node != null && UISettings.getInstance().getShowInplaceCommentsInternal()) {
-        String id = node.myConfigurable instanceof ConfigurableWrapper ? ((ConfigurableWrapper)node.myConfigurable).getId() :
-                    node.myConfigurable instanceof SearchableConfigurable ? ((SearchableConfigurable)node.myConfigurable).getId() :
-                    node.myConfigurable.getClass().getSimpleName();
+        @NonNls String id = node.myConfigurable instanceof ConfigurableWrapper ? ((ConfigurableWrapper)node.myConfigurable).getId() :
+                            node.myConfigurable instanceof SearchableConfigurable ? ((SearchableConfigurable)node.myConfigurable).getId() :
+                            node.myConfigurable.getClass().getSimpleName();
         PluginDescriptor plugin;
         if (node.myConfigurable instanceof ConfigurableWrapper) {
           plugin = ((ConfigurableWrapper)node.myConfigurable).getExtensionPoint().getPluginDescriptor();

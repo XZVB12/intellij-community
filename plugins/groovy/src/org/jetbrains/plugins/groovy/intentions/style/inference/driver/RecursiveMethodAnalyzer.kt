@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.intentions.style.inference.driver
 
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.psi.*
 import com.intellij.psi.util.parentOfType
 import org.jetbrains.plugins.groovy.intentions.style.inference.*
@@ -89,7 +90,7 @@ internal class RecursiveMethodAnalyzer(val method: GrMethod, signatureInferenceC
    * Visits every parameter of [lowerType] (which is probably parameterized with type parameters) and sets restrictions found in [upperType]
    * We need to distinguish containing and subtyping relations, so this is why there are [UPPER] and [EQUAL] bounds
    */
-  private fun processRequiredParameters(lowerType: PsiType, upperType: PsiType) = with(builder.signatureInferenceContext) {
+  private fun processRequiredParameters(lowerType: PsiType, upperType: PsiType): Unit = with(builder.signatureInferenceContext) {
     val (unwrappedLowerType, unwrappedUpperType) = coherentDeepComponentType(lowerType, upperType)
     var currentLowerType = unwrappedLowerType as? PsiClassType ?: return
     var firstVisit = true
@@ -169,6 +170,7 @@ internal class RecursiveMethodAnalyzer(val method: GrMethod, signatureInferenceC
         primitiveType.getBoxedType(context)?.accept(this)
       }
     })
+    return
   }
 
   private tailrec fun coherentDeepComponentType(lowerType: PsiType, upperType: PsiType) : Pair<PsiType, PsiType> =
@@ -256,14 +258,15 @@ internal class RecursiveMethodAnalyzer(val method: GrMethod, signatureInferenceC
 
 
   override fun visitExpression(expression: GrExpression) {
-    if (expression is GrOperatorExpression) {
+    ProgressManager.checkCanceled()
+    if (expression is GrOperatorExpression && builder.signatureInferenceContext.allowedToResolveOperators) {
       val operatorMethodResolveResult = expression.reference?.advancedResolve()
       if (operatorMethodResolveResult != null) {
         processMethod(operatorMethodResolveResult)
       }
       builder.addConstrainingExpression(expression)
     }
-    if (expression is GrIndexProperty) {
+    if (expression is GrIndexProperty && builder.signatureInferenceContext.allowedToResolveOperators) {
       expression.lValueReference?.advancedResolve()?.run {
         val lValueArguments = extractArguments(expression, expression.lValueReference as? GrIndexPropertyReference)
         processMethod(this, lValueArguments)
@@ -368,10 +371,12 @@ internal class RecursiveMethodAnalyzer(val method: GrMethod, signatureInferenceC
   }
 
   private fun processExitExpression(expression: GrExpression) {
-    val returnType = expression.parentOfType<GrMethod>()?.returnType?.takeIf { it != PsiType.NULL && it != PsiType.VOID } ?: return
-    builder.addConstrainingExpression(expression)
-    val typeParameter = expression.type.typeParameter() ?: return
-    builder.generateRequiredTypes(typeParameter, returnType, UPPER)
+    if (builder.signatureInferenceContext.allowedToProcessReturnType) {
+      val returnType = expression.parentOfType<GrMethod>()?.returnType?.takeIf { it != PsiType.NULL && it != PsiType.VOID } ?: return
+      builder.addConstrainingExpression(expression)
+      val typeParameter = expression.type.typeParameter() ?: return
+      builder.generateRequiredTypes(typeParameter, returnType, UPPER)
+    }
   }
 
   fun buildUsageInformation(): TypeUsageInformation = builder.build()

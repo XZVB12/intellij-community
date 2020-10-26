@@ -22,7 +22,6 @@ import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.util.Alarm;
 import com.intellij.util.containers.ContainerUtil;
@@ -111,8 +110,7 @@ public class DomElementsErrorPanel extends JPanel implements CommittablePanel, H
   @Override
   protected void paintComponent(Graphics g) {
     super.paintComponent(g);
-
-    myErrorStripeRenderer.paint(this, g, new Rectangle(0, 0, getWidth(), getHeight()));
+    myErrorStripeRenderer.getStatus().getIcon().paintIcon(this, g, 0, 0);
   }
 
   @Override
@@ -141,7 +139,7 @@ public class DomElementsErrorPanel extends JPanel implements CommittablePanel, H
   private class DomElementsTrafficLightRenderer extends TrafficLightRenderer {
     DomElementsTrafficLightRenderer(@NotNull XmlFile xmlFile) {
       super(xmlFile.getProject(),
-            PsiDocumentManager.getInstance(xmlFile.getProject()).getDocument(xmlFile));
+            xmlFile.getViewProvider().getDocument());
     }
 
     @NotNull

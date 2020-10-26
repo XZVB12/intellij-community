@@ -8,11 +8,15 @@ import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.IconManager;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.ui.ColorIcon;
+import com.intellij.util.ui.EmptyIcon;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -26,18 +30,21 @@ public class HighlightDisplayLevel {
 
   public static final HighlightDisplayLevel GENERIC_SERVER_ERROR_OR_WARNING =
     new HighlightDisplayLevel(HighlightSeverity.GENERIC_SERVER_ERROR_OR_WARNING,
-                              new ColorizedIcon(CodeInsightColors.GENERIC_SERVER_ERROR_OR_WARNING, AllIcons.General.InspectionsWarning));
+                              createIconPair(CodeInsightColors.GENERIC_SERVER_ERROR_OR_WARNING,
+                                             AllIcons.General.InspectionsWarning, AllIcons.General.InspectionsWarningEmpty));
 
   public static final HighlightDisplayLevel ERROR =
     new HighlightDisplayLevel(HighlightSeverity.ERROR,
-                              new ColorizedIcon(CodeInsightColors.ERRORS_ATTRIBUTES, AllIcons.General.InspectionsError));
+                              createIconPair(CodeInsightColors.ERRORS_ATTRIBUTES,
+                                             AllIcons.General.InspectionsError, AllIcons.General.InspectionsErrorEmpty));
 
   public static final HighlightDisplayLevel WARNING =
     new HighlightDisplayLevel(HighlightSeverity.WARNING,
-                              new ColorizedIcon(CodeInsightColors.WARNINGS_ATTRIBUTES, AllIcons.General.InspectionsWarning));
+                              createIconPair(CodeInsightColors.WARNINGS_ATTRIBUTES,
+                                             AllIcons.General.InspectionsWarning, AllIcons.General.InspectionsWarningEmpty));
 
   private static final TextAttributesKey DO_NOT_SHOW_KEY = TextAttributesKey.createTextAttributesKey("DO_NOT_SHOW");
-  public static final HighlightDisplayLevel DO_NOT_SHOW = new HighlightDisplayLevel(HighlightSeverity.INFORMATION, createIconByMask(JBColor.gray));
+  public static final HighlightDisplayLevel DO_NOT_SHOW = new HighlightDisplayLevel(HighlightSeverity.INFORMATION, EmptyIcon.ICON_0);
   /**
    * @deprecated use {@link #WEAK_WARNING} instead
    */
@@ -46,7 +53,8 @@ public class HighlightDisplayLevel {
 
   public static final HighlightDisplayLevel WEAK_WARNING =
     new HighlightDisplayLevel(HighlightSeverity.WEAK_WARNING,
-                              new ColorizedIcon(CodeInsightColors.WEAK_WARNING_ATTRIBUTES, AllIcons.General.InspectionsWarning));
+                              createIconPair(CodeInsightColors.WEAK_WARNING_ATTRIBUTES,
+                                             AllIcons.General.InspectionsWarning, AllIcons.General.InspectionsWarningEmpty));
 
   public static final HighlightDisplayLevel NON_SWITCHABLE_ERROR = new HighlightDisplayLevel(HighlightSeverity.ERROR) {
     @Override
@@ -61,7 +69,7 @@ public class HighlightDisplayLevel {
     }
   };
 
-  private Icon myIcon;
+  private Pair<Icon, Icon> myIconPair = new Pair<>(null, null);
   private final HighlightSeverity mySeverity;
 
   @Nullable
@@ -83,8 +91,12 @@ public class HighlightDisplayLevel {
   }
 
   public HighlightDisplayLevel(@NotNull HighlightSeverity severity, @NotNull Icon icon) {
+    this(severity, new Pair<>(icon, icon));
+  }
+
+  public HighlightDisplayLevel(@NotNull HighlightSeverity severity, Pair<@NotNull Icon, @NotNull Icon> iconPair) {
     this(severity);
-    myIcon = icon;
+    myIconPair = iconPair;
     ourMap.put(mySeverity, this);
   }
 
@@ -93,17 +105,21 @@ public class HighlightDisplayLevel {
   }
 
 
-  public String toString() {
+  public @NonNls String toString() {
     return mySeverity.toString();
   }
 
   @NotNull
-  public String getName() {
+  public @NonNls String getName() {
     return mySeverity.getName();
   }
 
   public Icon getIcon() {
-    return myIcon;
+    return myIconPair.first;
+  }
+
+  public Icon getOutlineIcon() {
+    return myIconPair.second;
   }
 
   @NotNull
@@ -116,13 +132,13 @@ public class HighlightDisplayLevel {
   }
 
   public static void registerSeverity(@NotNull HighlightSeverity severity, @NotNull TextAttributesKey key, @Nullable Icon icon) {
-    Icon severityIcon = icon != null ? icon : createIconByKey(key);
-    final HighlightDisplayLevel level = ourMap.get(severity);
+    Pair<Icon, Icon> iconPair = icon != null ? new Pair<> (icon, icon) : createIconByKey(key);
+    HighlightDisplayLevel level = ourMap.get(severity);
     if (level == null) {
-      new HighlightDisplayLevel(severity, severityIcon);
+      new HighlightDisplayLevel(severity, iconPair);
     }
     else {
-      level.myIcon = severityIcon;
+      level.myIconPair = iconPair;
     }
   }
 
@@ -130,8 +146,14 @@ public class HighlightDisplayLevel {
     return JBUIScale.scale(14);
   }
 
-  public static Icon createIconByKey(@NotNull TextAttributesKey key) {
-    return new SingleColorIcon(key);
+  private static Pair<Icon, Icon> createIconByKey(@NotNull TextAttributesKey key) {
+    return StringUtil.containsIgnoreCase(key.getExternalName(), "error") ?
+           createIconPair(key, AllIcons.General.InspectionsError, AllIcons.General.InspectionsErrorEmpty) :
+           createIconPair(key, AllIcons.General.InspectionsWarning, AllIcons.General.InspectionsWarningEmpty);
+  }
+
+  private static Pair<Icon, Icon> createIconPair(@NotNull TextAttributesKey key, @NotNull Icon first, @NotNull Icon second) {
+    return new Pair<>(new ColorizedIcon(key, first), new ColorizedIcon(key, second));
   }
 
   @NotNull
@@ -211,7 +233,7 @@ public class HighlightDisplayLevel {
     }
   }
 
-  private static class ColorizedIcon extends SingleColorIcon {
+  private static final class ColorizedIcon extends SingleColorIcon {
     private final Icon baseIcon;
 
     private ColorizedIcon(@NotNull TextAttributesKey key, @NotNull Icon baseIcon) {

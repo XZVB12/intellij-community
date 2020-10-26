@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.fileEditor.impl;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -6,13 +6,17 @@ import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.ui.UISettingsListener;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.components.*;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.components.StoragePathMacros;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.extensions.ExtensionPointListener;
+import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.fileEditor.*;
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx;
 import com.intellij.openapi.fileEditor.ex.FileEditorWithProvider;
 import com.intellij.openapi.progress.ProcessCanceledException;
-import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupActivity;
 import com.intellij.openapi.util.Pair;
@@ -21,24 +25,21 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.util.ArrayUtilRt;
-import com.intellij.util.messages.MessageBusConnection;
+import com.intellij.util.messages.SimpleMessageBusConnection;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
-@State(name = "editorHistoryManager", storages = {
-  @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE),
-  @Storage(value = StoragePathMacros.WORKSPACE_FILE, deprecated = true)
-})
+@State(name = "editorHistoryManager", storages = @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE))
 public final class EditorHistoryManager implements PersistentStateComponent<Element>, Disposable {
   private static final Logger LOG = Logger.getInstance(EditorHistoryManager.class);
 
   private final Project myProject;
 
   public static EditorHistoryManager getInstance(@NotNull Project project){
-    return ServiceManager.getService(project, EditorHistoryManager.class);
+    return project.getService(EditorHistoryManager.class);
   }
 
   /**
@@ -49,10 +50,8 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
   EditorHistoryManager(@NotNull Project project) {
     myProject = project;
 
-    MessageBusConnection connection = project.getMessageBus().connect();
-
+    SimpleMessageBusConnection connection = project.getMessageBus().simpleConnect();
     connection.subscribe(UISettingsListener.TOPIC, uiSettings -> trimToSize());
-
     connection.subscribe(FileEditorManagerListener.Before.FILE_EDITOR_MANAGER, new FileEditorManagerListener.Before() {
       @Override
       public void beforeFileClosed(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
@@ -60,9 +59,16 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
       }
     });
     connection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, new MyEditorManagerListener());
+
+    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.addExtensionPointListener(new ExtensionPointListener<FileEditorProvider>() {
+      @Override
+      public void extensionRemoved(@NotNull FileEditorProvider provider, @NotNull PluginDescriptor pluginDescriptor) {
+        myEntriesList.forEach(e -> e.onProviderRemoval(provider));
+      }
+    }, this);
   }
 
-  static class EditorHistoryManagerStartUpActivity implements DumbAware, StartupActivity {
+  static final class EditorHistoryManagerStartUpActivity implements StartupActivity.DumbAware {
     @Override
     public void runActivity(@NotNull Project project) {
       getInstance(project);
@@ -136,6 +142,7 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
     }
   }
 
+  @SuppressWarnings("WeakerAccess")
   public void updateHistoryEntry(@NotNull VirtualFile file, boolean changeEntryOrderOnly) {
     updateHistoryEntry(file, null, null, changeEntryOrderOnly);
   }
@@ -163,7 +170,7 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
       return;
     }
     HistoryEntry entry = getEntry(file);
-    if(entry == null){
+    if (entry == null) {
       // Size of entry list can be less than number of opened editors (some entries can be removed)
       if (file.isValid()) {
         // the file could have been deleted, so the isValid() check is essential
@@ -191,6 +198,7 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
         }
       }
     }
+
     FileEditorWithProvider selectedEditorWithProvider = editorManager.getSelectedEditorWithProvider(file);
     if (selectedEditorWithProvider != null) {
       //LOG.assertTrue(selectedEditorWithProvider != null);

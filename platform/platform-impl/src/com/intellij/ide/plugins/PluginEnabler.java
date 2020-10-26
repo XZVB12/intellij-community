@@ -2,17 +2,19 @@
 package com.intellij.ide.plugins;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.extensions.PluginId;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import java.io.IOException;
-import java.nio.file.FileSystems;
-import java.nio.file.Path;
 import java.util.*;
+import java.util.function.Predicate;
+
+import static com.intellij.openapi.util.text.StringUtil.join;
+import static java.util.Collections.emptyList;
+import static java.util.stream.Collectors.toSet;
 
 /**
  * @author yole
@@ -20,101 +22,105 @@ import java.util.*;
 public final class PluginEnabler {
   private static final Logger LOG = Logger.getInstance(PluginEnabler.class);
 
-  public static boolean enablePlugins(Collection<IdeaPluginDescriptor> plugins, boolean enable) {
-    return updatePluginEnabledState(enable ? plugins : Collections.emptyList(),
-                                    enable ? Collections.emptyList() : plugins,
-                                    null);
+  private PluginEnabler() {
+  }
+
+  public static boolean enablePlugins(@Nullable Project project,
+                                      @NotNull List<? extends IdeaPluginDescriptor> plugins,
+                                      boolean enable) {
+    return updatePluginEnabledState(
+      project,
+      enable ? plugins : emptyList(),
+      enable ? emptyList() : plugins,
+      null,
+      true
+    );
   }
 
   /**
    * @return true if the requested enabled state was applied without restart, false if restart is required
    */
-  public static boolean updatePluginEnabledState(Collection<IdeaPluginDescriptor> pluginsToEnable,
-                                                 Collection<IdeaPluginDescriptor> pluginsToDisable,
-                                                 @Nullable JComponent parentComponent) {
-    List<IdeaPluginDescriptorImpl> pluginDescriptorsToEnable = loadFullDescriptors(pluginsToEnable);
-    List<IdeaPluginDescriptorImpl> pluginDescriptorsToDisable = loadFullDescriptors(pluginsToDisable);
-
-    Set<PluginId> disabledIds = PluginManagerCore.getDisabledIds();
-    for (PluginDescriptor descriptor : pluginsToEnable) {
-      descriptor.setEnabled(true);
-      disabledIds.remove(descriptor.getPluginId());
-    }
-    for (PluginDescriptor descriptor : pluginsToDisable) {
-      descriptor.setEnabled(false);
-      disabledIds.add(descriptor.getPluginId());
+  public static boolean updatePluginEnabledState(@Nullable Project project,
+                                                 @NotNull List<? extends IdeaPluginDescriptor> pluginsToEnable,
+                                                 @NotNull List<? extends IdeaPluginDescriptor> pluginsToDisable,
+                                                 @Nullable JComponent parentComponent,
+                                                 boolean updateDisabledPluginsState) {
+    if (pluginsToEnable.isEmpty() &&
+        pluginsToDisable.isEmpty()) {
+      return true;
     }
 
-    try {
-      PluginManagerCore.saveDisabledPlugins(disabledIds, false);
-    }
-    catch (IOException e) {
-      LOG.error(e);
-    }
+    Set<PluginId> pluginIdsToEnable = mapPluginId(pluginsToEnable);
+    LOG.info(getLogMessage(pluginIdsToEnable, true));
+    updateEnabledState(
+      pluginsToEnable,
+      __ -> true
+    );
 
-    if (ContainerUtil.all(pluginDescriptorsToDisable, DynamicPlugins::allowLoadUnloadWithoutRestart) &&
-        ContainerUtil.all(pluginDescriptorsToEnable, DynamicPlugins::allowLoadUnloadWithoutRestart)) {
-      boolean needRestart = false;
-      for (IdeaPluginDescriptorImpl descriptor : pluginDescriptorsToDisable) {
-        if (!DynamicPlugins.unloadPluginWithProgress(parentComponent, descriptor, true)) {
-          needRestart = true;
-          break;
-        }
-      }
+    Set<PluginId> pluginIdsToDisable = mapPluginId(pluginsToDisable);
+    LOG.info(getLogMessage(pluginIdsToDisable, false));
+    updateEnabledState(
+      pluginsToDisable,
+      updateDisabledPluginsState ? __ -> false : getEnabledState(project)
+    );
 
-      if (!needRestart) {
-        for (IdeaPluginDescriptor descriptor : pluginDescriptorsToEnable) {
-          DynamicPlugins.loadPlugin((IdeaPluginDescriptorImpl)descriptor);
-        }
-        return true;
-      }
+    boolean requiresRestart =
+      updateDisabledPluginsState && !DisabledPluginsState.updateDisabledPluginsState(pluginIdsToEnable, pluginIdsToDisable) ||
+      !DynamicPlugins.loadUnloadPlugins(pluginsToEnable, pluginsToDisable, project, parentComponent);
+
+    if (requiresRestart) {
+      InstalledPluginsState.getInstance().setRestartRequired(true);
     }
-    InstalledPluginsState.getInstance().setRestartRequired(true);
-    return false;
+    return !requiresRestart;
   }
 
-  private static List<IdeaPluginDescriptorImpl> loadFullDescriptors(Collection<IdeaPluginDescriptor> pluginsToEnable) {
-    List<IdeaPluginDescriptorImpl> result = new ArrayList<>();
-    for (IdeaPluginDescriptor descriptor : pluginsToEnable) {
-      if (descriptor instanceof IdeaPluginDescriptorImpl) {
-        result.add(loadFullDescriptor((IdeaPluginDescriptorImpl) descriptor));
-      }
-    }
-    return result;
+  public static @NotNull Set<PluginId> mapPluginId(@NotNull List<? extends IdeaPluginDescriptor> descriptors) {
+    return descriptors
+      .stream()
+      .map(IdeaPluginDescriptor::getPluginId)
+      .filter(Objects::nonNull)
+      .collect(toSet());
   }
 
-  @Nullable
-  public static IdeaPluginDescriptorImpl tryLoadFullDescriptor(@NotNull IdeaPluginDescriptorImpl descriptor) {
-    PathBasedJdomXIncluder.PathResolver<?> resolver = createPathResolverForPlugin(descriptor, null);
-    return PluginManager.loadDescriptor(descriptor.getPluginPath(), PluginManagerCore.PLUGIN_XML, Collections.emptySet(), descriptor.isBundled(), resolver);
+  private static @NotNull Predicate<PluginId> getEnabledState(@Nullable Project project) {
+    ProjectPluginTrackerManager manager = ProjectPluginTrackerManager.getInstance();
+
+    return pluginId -> Arrays
+      .stream(ProjectManager.getInstance().getOpenProjects())
+      .filter(openProject -> !openProject.equals(project))
+      .map(manager::createPluginTracker)
+      .anyMatch(pluginTracker -> pluginTracker.isEnabled(pluginId));
   }
 
-  @NotNull
-  static PathBasedJdomXIncluder.PathResolver<?> createPathResolverForPlugin(@NotNull IdeaPluginDescriptorImpl descriptor,
-                                                                            @Nullable DescriptorLoadingContext context) {
-    if (PluginManagerCore.isRunningFromSources() &&
-        descriptor.getPluginPath().getFileSystem().equals(FileSystems.getDefault()) &&
-        descriptor.getPath().toString().contains("out/classes")) {
-      return new ClassPathXmlPathResolver(descriptor.getPluginClassLoader());
+  private static void updateEnabledState(@NotNull List<? extends IdeaPluginDescriptor> descriptors,
+                                         @NotNull Predicate<PluginId> predicate) {
+    for (IdeaPluginDescriptor descriptor : descriptors) {
+      boolean enabled = predicate.test(descriptor.getPluginId());
+      descriptor.setEnabled(enabled);
     }
-
-    if (context != null) {
-      PathBasedJdomXIncluder.PathResolver<Path> resolver = PluginManagerCore.createPluginJarsPathResolver(descriptor.getPluginPath(), context);
-      if (resolver != null) {
-        return resolver;
-      }
-    }
-    return PathBasedJdomXIncluder.DEFAULT_PATH_RESOLVER;
   }
 
-  @NotNull
-  public static IdeaPluginDescriptorImpl loadFullDescriptor(@NotNull IdeaPluginDescriptorImpl descriptor) {
-    // PluginDescriptor fields are cleaned after the plugin is loaded, so we need to reload the descriptor to check if it's dynamic
-    IdeaPluginDescriptorImpl fullDescriptor = tryLoadFullDescriptor(descriptor);
-    if (fullDescriptor == null) {
-      LOG.error("Could not load full descriptor for plugin " + descriptor.getPath());
-      fullDescriptor = descriptor;
-    }
-    return fullDescriptor;
+  private static @NotNull String getLogMessage(@NotNull Collection<PluginId> plugins,
+                                               boolean enable) {
+    return getLogMessage(
+      "Plugins to " + (enable ? "enable" : "disable"),
+      plugins
+    );
+  }
+
+  public static @NotNull String getLogMessage(@NotNull String message,
+                                              @NotNull Collection<PluginId> plugins) {
+    StringBuilder buffer = new StringBuilder(message)
+      .append(':')
+      .append(' ')
+      .append('[');
+
+    join(
+      plugins,
+      PluginId::getIdString,
+      ", ",
+      buffer
+    );
+    return buffer.append(']').toString();
   }
 }

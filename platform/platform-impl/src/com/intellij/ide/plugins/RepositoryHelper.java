@@ -18,6 +18,7 @@ import com.intellij.util.Urls;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.URLUtil;
 import com.intellij.util.text.VersionComparatorUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -54,10 +55,11 @@ public final class RepositoryHelper {
    * Loads list of plugins, compatible with a current build, from all configured repositories
    */
   @NotNull
-  public static List<IdeaPluginDescriptor> loadPluginsFromAllRepositories(@Nullable ProgressIndicator indicator) {
+  public static List<IdeaPluginDescriptor> loadPluginsFromCustomRepositories(@Nullable ProgressIndicator indicator) {
     List<IdeaPluginDescriptor> result = new ArrayList<>();
     Set<PluginId> addedPluginIds = new HashSet<>();
     for (String host : getPluginHosts()) {
+      if (host == null && ApplicationInfoEx.getInstanceEx().usesJetBrainsPluginRepository()) continue;
       try {
         List<IdeaPluginDescriptor> plugins = loadPlugins(host, indicator);
         for (IdeaPluginDescriptor plugin : plugins) {
@@ -67,7 +69,7 @@ public final class RepositoryHelper {
         }
       }
       catch (IOException e) {
-        LOG.info("Couldn't load plugins from " + (host == null ? "main repository" : host) + ": " + e);
+        LOG.info("Couldn't load plugins from" + host + ":" + e);
         LOG.debug(e);
       }
     }
@@ -76,17 +78,26 @@ public final class RepositoryHelper {
 
   /**
    * Loads list of plugins, compatible with a current build, from a main plugin repository.
+   * @deprecated Use `loadPlugins` only for custom repositories. Use {@link MarketplaceRequests} for getting descriptors.
    */
   @NotNull
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.2")
   public static List<IdeaPluginDescriptor> loadPlugins(@Nullable ProgressIndicator indicator) throws IOException {
     return loadPlugins(null, indicator);
   }
 
+  /**
+   * Use method only for getting plugins from custom repositories
+   */
   @NotNull
   public static List<IdeaPluginDescriptor> loadPlugins(@Nullable String repositoryUrl, @Nullable ProgressIndicator indicator) throws IOException {
     return loadPlugins(repositoryUrl, null, indicator);
   }
 
+  /**
+   * Use method only for getting plugins from custom repositories
+   */
   @NotNull
   public static List<IdeaPluginDescriptor> loadPlugins(@Nullable String repositoryUrl,
                                                        @Nullable BuildNumber build,
@@ -94,8 +105,9 @@ public final class RepositoryHelper {
     File pluginListFile;
     Url url;
     if (repositoryUrl == null) {
+      LOG.error("Using deprecated API for getting plugins from Marketplace");
       String base = ApplicationInfoImpl.getShadowInstance().getPluginsListUrl();
-      url = Urls.newFromEncoded(base).addParameters(singletonMap("uuid", PermanentInstallationID.get()));
+      url = Urls.newFromEncoded(base).addParameters(singletonMap("uuid", PermanentInstallationID.get()));  // NON-NLS
       pluginListFile = new File(PathManager.getPluginsPath(), PLUGIN_LIST_FILE);
     }
     else {
@@ -104,14 +116,14 @@ public final class RepositoryHelper {
     }
 
     if (!URLUtil.FILE_PROTOCOL.equals(url.getScheme())) {
-      url = url.addParameters(singletonMap("build", build != null ? build.asString() : MarketplaceRequests.getBuildForPluginRepositoryRequests()));
+      url = url.addParameters(singletonMap("build", build != null ? build.asString() : MarketplaceRequests.getInstance().getBuildForPluginRepositoryRequests()));
     }
 
     if (indicator != null) {
       indicator.setText2(IdeBundle.message("progress.connecting.to.plugin.manager", url.getAuthority()));
     }
 
-    List<PluginNode> descriptors = MarketplaceRequests.readOrUpdateFile(
+    List<PluginNode> descriptors = MarketplaceRequests.getInstance().readOrUpdateFile(
       pluginListFile,
       url.toExternalForm(),
       indicator,
@@ -123,8 +135,11 @@ public final class RepositoryHelper {
 
   /**
    * Reads cached plugin descriptors from a file. Returns {@code null} if cache file does not exist.
+   * @deprecated use `MarketplaceRequest.getMarketplaceCachedPlugins`
    */
   @Nullable
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.2")
   public static List<IdeaPluginDescriptor> loadCachedPlugins() throws IOException {
     File file = new File(PathManager.getPluginsPath(), PLUGIN_LIST_FILE);
     return file.length() > 0 ? process(loadPluginList(file), null, null) : null;
@@ -142,14 +157,12 @@ public final class RepositoryHelper {
       build = PluginManagerCore.getBuildNumber();
     }
 
-    boolean isCommunityIDE = !ideContainsUltimateModule();
-    boolean isVendorNotJetBrains = !ApplicationInfoImpl.getShadowInstance().isVendorJetBrains();
-    boolean isPaidPluginsRequireMarketplacePlugin = isCommunityIDE || isVendorNotJetBrains;
+    boolean isPaidPluginsRequireMarketplacePlugin = isPaidPluginsRequireMarketplacePlugin();
 
     for (PluginNode node : list) {
       PluginId pluginId = node.getPluginId();
 
-      if (pluginId == null || repositoryUrl != null && node.getDownloadUrl() == null) {
+      if (repositoryUrl != null && node.getDownloadUrl() == null) {
         LOG.debug("Malformed plugin record (id:" + pluginId + " repository:" + repositoryUrl + ")");
         continue;
       }
@@ -172,13 +185,31 @@ public final class RepositoryHelper {
         result.put(pluginId, node);
       }
 
-      //if plugin is paid (has `productCode`) and IDE is not JetBrains "ultimate" then MARKETPLACE_PLUGIN_ID is required
-      if (isPaidPluginsRequireMarketplacePlugin && node.getProductCode() != null) {
-        node.addDepends(MARKETPLACE_PLUGIN_ID);
-      }
+      addMarketplacePluginDependencyIfRequired(node, isPaidPluginsRequireMarketplacePlugin);
     }
 
     return new ArrayList<>(result.values());
+  }
+
+  /**
+   * If plugin is paid (has `productCode`) and IDE is not JetBrains "ultimate" then MARKETPLACE_PLUGIN_ID is required
+   */
+  public static void addMarketplacePluginDependencyIfRequired(@NotNull PluginNode node) {
+    boolean isPaidPluginsRequireMarketplacePlugin = isPaidPluginsRequireMarketplacePlugin();
+
+    addMarketplacePluginDependencyIfRequired(node, isPaidPluginsRequireMarketplacePlugin);
+  }
+
+  private static boolean isPaidPluginsRequireMarketplacePlugin() {
+    boolean isCommunityIDE = !ideContainsUltimateModule();
+    boolean isVendorNotJetBrains = !ApplicationInfoImpl.getShadowInstance().isVendorJetBrains();
+    return isCommunityIDE || isVendorNotJetBrains;
+  }
+
+  private static void addMarketplacePluginDependencyIfRequired(@NotNull PluginNode node, boolean isPaidPluginsRequireMarketplacePlugin) {
+    if (isPaidPluginsRequireMarketplacePlugin && node.getProductCode() != null) {
+      node.addDepends(MARKETPLACE_PLUGIN_ID, false);
+    }
   }
 
   private static boolean ideContainsUltimateModule() {

@@ -7,8 +7,7 @@ import com.intellij.ide.IdeBundle
 import com.intellij.ide.actions.*
 import com.intellij.ide.impl.ContentManagerWatcher
 import com.intellij.idea.ActionsBundle
-import com.intellij.internal.statistic.eventLog.EventPair
-import com.intellij.internal.statistic.eventLog.FeatureUsageData
+import com.intellij.internal.statistic.eventLog.events.EventPair
 import com.intellij.notification.EventLog
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
@@ -20,6 +19,7 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.ActionCallback
 import com.intellij.openapi.util.BusyObject
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.wm.*
 import com.intellij.openapi.wm.ex.ToolWindowEx
 import com.intellij.openapi.wm.impl.content.ToolWindowContentUi
@@ -32,10 +32,13 @@ import com.intellij.ui.content.impl.ContentImpl
 import com.intellij.ui.content.impl.ContentManagerImpl
 import com.intellij.ui.scale.JBUIScale
 import com.intellij.util.SingleAlarm
+import com.intellij.util.ui.ComponentWithEmptyText
 import com.intellij.util.ui.EDT
+import com.intellij.util.ui.StatusText
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.update.Activatable
 import com.intellij.util.ui.update.UiNotifyConnector
+import java.awt.Color
 import java.awt.Component
 import java.awt.Rectangle
 import java.awt.event.ComponentAdapter
@@ -48,8 +51,6 @@ import javax.swing.JLabel
 import javax.swing.LayoutFocusTraversalPolicy
 import kotlin.math.abs
 
-private val LOG = logger<ToolWindowImpl>()
-
 internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
                               private val id: String,
                               private val canCloseContent: Boolean,
@@ -59,7 +60,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
                               windowInfo: WindowInfo,
                               private var contentFactory: ToolWindowFactory?,
                               private var isAvailable: Boolean = true,
-                              private var stripeTitle: String) : ToolWindowEx {
+                              @NlsContexts.TabTitle private var stripeTitle: String) : ToolWindowEx {
   var windowInfoDuringInit: WindowInfoImpl? = null
 
   private val focusTask by lazy { FocusTask(this) }
@@ -321,6 +322,10 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     if (isAvailable != value) {
       isAvailable = value
       toolWindowManager.toolWindowPropertyChanged(this, ToolWindowProperty.AVAILABLE)
+
+      if (!value) {
+        contentUi?.dropCaches()
+      }
     }
   }
 
@@ -383,12 +388,10 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
   }
 
   override fun getTitle(): String? {
-    EDT.assertIsEdt()
     return contentManager.value.selectedContent?.displayName
   }
 
   override fun getStripeTitle(): String {
-    EDT.assertIsEdt()
     return stripeTitle
   }
 
@@ -398,6 +401,9 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     toolWindowManager.toolWindowPropertyChanged(this, ToolWindowProperty.ICON)
   }
 
+  companion object {
+    private val LOG = logger<ToolWindowImpl>()
+  }
   internal fun doSetIcon(newIcon: Icon) {
     val oldIcon = icon
     if (EventLog.LOG_TOOL_WINDOW_ID != id) {
@@ -428,15 +434,19 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
   }
 
   fun fireActivated() {
-    toolWindowManager.activated(this)
+    fireActivated(null)
   }
 
-  fun fireHidden() {
-    toolWindowManager.hideToolWindow(id, false)
+  fun fireActivated(source: ToolWindowEventSource?) {
+    toolWindowManager.activated(this, source)
   }
 
-  fun fireHiddenSide() {
-    toolWindowManager.hideToolWindow(id, true)
+  fun fireHidden(source: ToolWindowEventSource?) {
+    toolWindowManager.hideToolWindow(id, false, true, source)
+  }
+
+  fun fireHiddenSide(source: ToolWindowEventSource?) {
+    toolWindowManager.hideToolWindow(id, true, true, source)
   }
 
   val popupGroup: ActionGroup?
@@ -543,6 +553,15 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     return group
   }
 
+  override fun getEmptyText(): StatusText? {
+    val component = contentManager.value.component
+    return (component as? ComponentWithEmptyText)?.emptyText
+  }
+
+  fun setEmptyStateBackground(color: Color) {
+    decorator?.background = color
+  }
+
   private inner class GearActionGroup : DefaultActionGroup(), DumbAware {
     init {
       templatePresentation.icon = AllIcons.General.GearPlain
@@ -565,7 +584,7 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
 
       addAction(toggleToolbarGroup).setAsSecondary(true)
       addSeparator()
-      add(ToolWindowViewModeAction.Group())
+      add(ActionManager.getInstance().getAction("TW.ViewModeGroup"))
       add(ToolWindowMoveAction.Group())
       add(ResizeActionGroup())
       addSeparator()
@@ -616,11 +635,11 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-      toolWindowManager.removeFromSideBar(id)
+      toolWindowManager.removeFromSideBar(id, ToolWindowEventSource.RemoveStripeButtonAction)
     }
 
-    override fun addAdditionalUsageData(event: AnActionEvent, data: MutableList<EventPair<*>>) {
-      data.add(ToolwindowFusEventFields.TOOLWINDOW with id)
+    override fun getAdditionalUsageData(event: AnActionEvent): List<EventPair<*>> {
+      return listOf(ToolwindowFusEventFields.TOOLWINDOW with id)
     }
   }
 
@@ -645,8 +664,8 @@ internal class ToolWindowImpl(val toolWindowManager: ToolWindowManagerImpl,
       toolWindowManager.setContentUiType(id, if (state) ToolWindowContentUiType.COMBO else ToolWindowContentUiType.TABBED)
     }
 
-    override fun addAdditionalUsageData(event: AnActionEvent, data: MutableList<EventPair<*>>) {
-      data.add(ToolwindowFusEventFields.TOOLWINDOW with id)
+    override fun getAdditionalUsageData(event: AnActionEvent): List<EventPair<*>> {
+      return listOf(ToolwindowFusEventFields.TOOLWINDOW with id)
     }
   }
 

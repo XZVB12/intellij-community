@@ -2,11 +2,10 @@
 package com.intellij.ide.plugins;
 
 import com.intellij.diagnostic.LoadingState;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.updateSettings.impl.PluginDownloader;
-import com.intellij.util.containers.SmartHashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -23,7 +22,7 @@ public final class InstalledPluginsState {
   }
 
   public static InstalledPluginsState getInstance() {
-    return ServiceManager.getService(InstalledPluginsState.class);
+    return ApplicationManager.getApplication().getService(InstalledPluginsState.class);
   }
 
   private final Object myLock = new Object();
@@ -31,7 +30,7 @@ public final class InstalledPluginsState {
   private final Set<PluginId> myInstalledWithoutRestartPlugins = new HashSet<>();
   private final Set<PluginId> myUpdatedPlugins = new HashSet<>();
   private final Set<PluginId> myUninstalledWithoutRestartPlugins = new HashSet<>();
-  private final Set<String> myOutdatedPlugins = new SmartHashSet<>();
+  private final Set<String> myOutdatedPlugins = new HashSet<>();
   private boolean myInstallationInProgress = false;
   private boolean myRestartRequired = false;
 
@@ -113,7 +112,7 @@ public final class InstalledPluginsState {
     }
 
     boolean supersedes = PluginManagerCore.isCompatible(descriptor) &&
-                         PluginDownloader.compareVersionsSkipBrokenAndIncompatible(existing, descriptor.getVersion()) > 0;
+                         PluginDownloader.compareVersionsSkipBrokenAndIncompatible(descriptor.getVersion(), existing) > 0;
 
     String idString = id.getIdString();
 

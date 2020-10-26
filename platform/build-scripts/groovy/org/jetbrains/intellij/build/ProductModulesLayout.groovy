@@ -34,13 +34,6 @@ class ProductModulesLayout {
    */
   List<String> bundledPluginModules = new ArrayList<>(DEFAULT_BUNDLED_PLUGINS)
 
-  /**
-   * @deprecated use {@link #bundledPluginModules} directly instead
-   */
-  Set<String> getAllBundledPluginsModules() {
-    return bundledPluginModules as Set<String>
-  }
-
   private LinkedHashSet<String> pluginsToPublish = new LinkedHashSet<>()
 
   /**
@@ -127,6 +120,13 @@ class ProductModulesLayout {
    */
   @Deprecated
   String classesLoadingOrderFilePath = null
+
+  /**
+   * Module names which should be excluded from this product.
+   * Allows to filter out default platform modules (both api and implementation) as well as product modules.
+   * This API is experimental, use with care
+   */
+  List<String> excludedModuleNames = []
 
   /**
    * @return list of all modules which output is included into the plugin's JARs

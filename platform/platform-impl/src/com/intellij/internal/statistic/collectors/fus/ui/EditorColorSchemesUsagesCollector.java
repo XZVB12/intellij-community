@@ -40,9 +40,10 @@ public class EditorColorSchemesUsagesCollector extends ApplicationUsagesCollecto
     "Aptana",
     "Flash Builder",
     "IdeaLight",
-    "High сontrast",
+    "High contrast",
     "ReSharper",
-    "Rider"
+    "Rider",
+    "IntelliJ Light"
   };
 
   @Override

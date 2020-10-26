@@ -1,7 +1,9 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.dsl;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.*;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.util.SmartList;
@@ -17,13 +19,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 
-@State(
-  name = "DslActivationStatus",
-  storages = {
-    @Storage(value = "dslActivation.xml", roamingType = RoamingType.DISABLED, deprecated = true),
-    @Storage(value = "dslActivationStatus.xml", roamingType = RoamingType.DISABLED)
-  }
-)
+@State(name = "DslActivationStatus", storages = @Storage(value = "dslActivationStatus.xml", roamingType = RoamingType.DISABLED))
 public class DslActivationStatus implements PersistentStateComponent<DslActivationStatus.State> {
   enum Status {
     ACTIVE,
@@ -37,7 +33,7 @@ public class DslActivationStatus implements PersistentStateComponent<DslActivati
     @Attribute
     public Status status;
     @Attribute
-    public String error;
+    public @NlsSafe String error;
 
     public Entry() {
     }
@@ -153,6 +149,6 @@ public class DslActivationStatus implements PersistentStateComponent<DslActivati
   }
 
   public static DslActivationStatus getInstance() {
-    return ServiceManager.getService(DslActivationStatus.class);
+    return ApplicationManager.getApplication().getService(DslActivationStatus.class);
   }
 }

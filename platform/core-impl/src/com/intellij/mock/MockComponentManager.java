@@ -8,29 +8,30 @@ import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Conditions;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.UserDataHolderBase;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.messages.ListenerDescriptor;
 import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusOwner;
 import com.intellij.util.messages.impl.MessageBusFactoryImpl;
 import com.intellij.util.pico.DefaultPicoContainer;
-import gnu.trove.THashMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.picocontainer.MutablePicoContainer;
 import org.picocontainer.PicoContainer;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MockComponentManager extends UserDataHolderBase implements ComponentManager, MessageBusOwner {
-  private final MessageBus myMessageBus = new MessageBusFactoryImpl().createMessageBus(this);
+  private final MessageBus myMessageBus = MessageBusFactoryImpl.createRootBus(this);
   private final DefaultPicoContainer myPicoContainer;
   private final ExtensionsAreaImpl myExtensionArea;
 
-  private final Map<Class<?>, Object> myComponents = new THashMap<>();
-  private final Set<Object> myDisposableComponents = Collections.newSetFromMap(new ConcurrentHashMap<>());
+  private final Map<Class<?>, Object> myComponents = new HashMap<>();
+  private final Set<Object> myDisposableComponents = ContainerUtil.newConcurrentSet();
   private boolean myDisposed;
 
   public MockComponentManager(@Nullable PicoContainer parent, @NotNull Disposable parentDisposable) {
@@ -134,9 +135,8 @@ public class MockComponentManager extends UserDataHolderBase implements Componen
     return Conditions.alwaysFalse();
   }
 
-  @NotNull
   @Override
-  public Object createListener(@NotNull ListenerDescriptor descriptor) {
+  public @NotNull Object createListener(@NotNull ListenerDescriptor descriptor) {
     throw new UnsupportedOperationException();
   }
 }

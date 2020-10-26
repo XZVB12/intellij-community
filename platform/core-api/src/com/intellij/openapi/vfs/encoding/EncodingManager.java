@@ -11,9 +11,6 @@ import org.jetbrains.annotations.Nullable;
 import java.nio.charset.Charset;
 import java.util.Collection;
 
-/**
- * @author cdr
- */
 public abstract class EncodingManager extends EncodingRegistry {
   @NonNls public static final String PROP_NATIVE2ASCII_SWITCH = "native2ascii";
   @NonNls public static final String PROP_PROPERTIES_FILES_ENCODING = "propertiesFilesEncoding";
@@ -49,6 +46,12 @@ public abstract class EncodingManager extends EncodingRegistry {
   public abstract Charset getDefaultCharsetForPropertiesFiles(@Nullable VirtualFile virtualFile);
 
   public abstract void setDefaultCharsetForPropertiesFiles(@Nullable VirtualFile virtualFile, @Nullable Charset charset);
+
+  /**
+   * @return encoding used by default in {@link com.intellij.execution.configurations.GeneralCommandLine}
+   */
+  @Override
+  public abstract @NotNull Charset getDefaultConsoleEncoding();
 
   @Nullable
   public abstract Charset getCachedCharsetFromContent(@NotNull Document document);

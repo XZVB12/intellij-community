@@ -18,6 +18,7 @@ import com.intellij.util.ArrayUtil;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.ProcessingContext;
 import com.jetbrains.python.PyNames;
+import com.jetbrains.python.PyPsiBundle;
 import com.jetbrains.python.PyTokenTypes;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.PyPsiUtils;
@@ -61,7 +62,7 @@ public class PyImportReference extends PyReferenceImpl {
   public String getUnresolvedDescription() {
     final PyImportStatement importStatement = PsiTreeUtil.getParentOfType(myElement, PyImportStatement.class);
     if (importStatement != null) {
-      return "No module named " + myElement.getReferencedName();
+      return PyPsiBundle.message("unresolved.import.reference", myElement.getReferencedName());
     }
     return super.getUnresolvedDescription();
   }
@@ -92,7 +93,7 @@ public class PyImportReference extends PyReferenceImpl {
       // qualifier's type must be module, it should know how to complete
       PyType type = context.getType(qualifier);
       if (type != null) {
-        Object[] variants = getTypeCompletionVariants(myElement, type);
+        Object[] variants = type.getCompletionVariants(myElement.getName(), myElement, new ProcessingContext());
         if (!alreadyHasImportKeyword()) {
           replaceInsertHandler(variants, ImportKeywordHandler.INSTANCE);
         }

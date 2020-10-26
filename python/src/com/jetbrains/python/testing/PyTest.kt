@@ -19,6 +19,7 @@ import com.intellij.execution.Executor
 import com.intellij.execution.Location
 import com.intellij.execution.configurations.RunProfileState
 import com.intellij.execution.runners.ExecutionEnvironment
+import com.intellij.execution.target.TargetEnvironmentRequest
 import com.intellij.execution.testframework.AbstractTestProxy
 import com.intellij.openapi.options.SettingsEditor
 import com.intellij.openapi.project.Project
@@ -26,8 +27,11 @@ import com.intellij.openapi.util.Pair
 import com.intellij.psi.search.GlobalSearchScope
 import com.jetbrains.python.PyNames
 import com.jetbrains.python.PythonHelper
+import com.intellij.execution.target.value.TargetEnvironmentFunction
+import com.intellij.execution.target.value.constant
 import com.jetbrains.python.run.targetBasedConfiguration.PyRunTargetVariant
 import com.jetbrains.python.testing.PyTestSharedForm.*
+import org.jetbrains.annotations.NotNull
 
 /**
  * Pytest runner
@@ -40,8 +44,8 @@ class PyTestSettingsEditor(configuration: PyAbstractTestConfiguration) :
   PyAbstractTestSettingsEditor(
     create(
       configuration,
-      CustomOption(PyTestConfiguration::keywords.name, PyRunTargetVariant.PATH, PyRunTargetVariant.PYTHON),
-      CustomOption(PyTestConfiguration::parameters.name, PyRunTargetVariant.PATH, PyRunTargetVariant.PYTHON)
+      PyTestCustomOption(PyTestConfiguration::keywords, PyRunTargetVariant.PATH, PyRunTargetVariant.PYTHON),
+      PyTestCustomOption(PyTestConfiguration::parameters, PyRunTargetVariant.PATH, PyRunTargetVariant.PYTHON)
     ))
 
 class PyPyTestExecutionEnvironment(configuration: PyTestConfiguration, environment: ExecutionEnvironment) :
@@ -52,15 +56,23 @@ class PyPyTestExecutionEnvironment(configuration: PyTestConfiguration, environme
     super.customizeEnvironmentVars(envs, passParentEnvs)
     envs[PYTEST_RUN_CONFIG] = "True"
   }
+
+  override fun customizePythonExecutionEnvironmentVars(targetEnvironmentRequest: @NotNull TargetEnvironmentRequest,
+                                                       envs: @NotNull MutableMap<String, TargetEnvironmentFunction<String>>,
+                                                       passParentEnvs: Boolean) {
+    super.customizePythonExecutionEnvironmentVars(targetEnvironmentRequest, envs, passParentEnvs)
+    envs[PYTEST_RUN_CONFIG] = constant("True")
+  }
 }
 
 
 class PyTestConfiguration(project: Project, factory: PyTestFactory)
   : PyAbstractTestConfiguration(project, factory, PyTestFrameworkService.getSdkReadableNameByFramework(PyNames.PY_TEST)),
     PyTestConfigurationWithCustomSymbol {
-  @ConfigField
+  @ConfigField("runcfg.pytest.config.keywords")
   var keywords: String = ""
-  @ConfigField
+
+  @ConfigField("runcfg.pytest.config.parameters")
   var parameters: String = ""
 
   override fun getState(executor: Executor, environment: ExecutionEnvironment): RunProfileState? =
@@ -77,7 +89,8 @@ class PyTestConfiguration(project: Project, factory: PyTestFactory)
 
   override fun getTestSpecsForRerun(scope: GlobalSearchScope, locations: MutableList<Pair<Location<*>, AbstractTestProxy>>): List<String> {
     // py.test reruns tests by itself, so we only need to run same configuration and provide --last-failed
-    return target.generateArgumentsLine(this) + listOf(rawArgumentsSeparator, "--last-failed")
+    return target.generateArgumentsLine(this) + listOf(rawArgumentsSeparator, "--last-failed", additionalArguments)
+      .filter(String::isNotEmpty)
   }
 
   override fun getTestSpec(): List<String> {

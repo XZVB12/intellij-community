@@ -16,6 +16,7 @@ import com.intellij.ide.*;
 import com.intellij.ide.actions.ShowSettingsUtilImpl;
 import com.intellij.ide.ui.search.SearchUtil;
 import com.intellij.ide.ui.search.SearchableOptionsRegistrar;
+import com.intellij.lang.LangBundle;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
@@ -24,7 +25,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.options.Configurable;
-import com.intellij.openapi.options.SchemeState;
 import com.intellij.openapi.options.ex.Settings;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
@@ -48,6 +48,7 @@ import com.intellij.ui.*;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.labels.LinkLabel;
+import com.intellij.ui.treeStructure.treetable.DefaultTreeTableExpander;
 import com.intellij.util.Alarm;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
@@ -185,9 +186,9 @@ public class SingleInspectionProfilePanel extends JPanel {
     return null;
   }
 
-  public static String renderSeverity(HighlightSeverity severity) {
-    if (HighlightSeverity.INFORMATION.equals(severity)) return "No highlighting, only fix"; //todo severity presentation
-    return StringUtil.capitalizeWords(StringUtil.toLowerCase(severity.getName()), true);
+  public static @Nls String renderSeverity(HighlightSeverity severity) {
+    if (HighlightSeverity.INFORMATION.equals(severity)) return LangBundle.message("single.inspection.profile.panel.no.highlighting.only.fix");
+    return severity.getDisplayCapitalizedName();
   }
 
   private static boolean isDescriptorAccepted(Descriptor descriptor,
@@ -615,17 +616,7 @@ public class SingleInspectionProfilePanel extends JPanel {
       }
     });
 
-    myTreeExpander = new DefaultTreeExpander(myTreeTable.getTree()) {
-      @Override
-      public boolean canExpand() {
-        return myTreeTable.isShowing();
-      }
-
-      @Override
-      public boolean canCollapse() {
-        return myTreeTable.isShowing();
-      }
-    };
+    myTreeExpander = new DefaultTreeTableExpander(myTreeTable);
     myProfileFilter = new MyFilterComponent();
 
     return scrollPane;
@@ -734,7 +725,7 @@ public class SingleInspectionProfilePanel extends JPanel {
         if (descriptor.loadDescription() != null) {
           // need this in order to correctly load plugin-supplied descriptions
           final Descriptor defaultDescriptor = singleNode.getDefaultDescriptor();
-          final String description = defaultDescriptor.loadDescription();
+          final String description = defaultDescriptor.loadDescription(); //NON-NLS
           try {
             readHTML(myBrowser, SearchUtil.markup(toHTML(myBrowser, description, false), myProfileFilter.getFilter()));
           }
@@ -1080,7 +1071,7 @@ public class SingleInspectionProfilePanel extends JPanel {
   public boolean isModified() {
     if (myTreeTable == null) return false;
     if (myModified) return true;
-    if (myProfile.isChanged() || myProfile.getSchemeState() == SchemeState.POSSIBLY_CHANGED) return true;
+    if (myProfile.isChanged()) return true;
     if (myProfile.getSource().isProjectLevel() != myProfile.isProjectLevel()) return true;
     if (!Comparing.strEqual(myProfile.getSource().getName(), myProfile.getName())) return true;
     if (!Arrays.equals(myInitialScopesOrder, myProfile.getScopesOrder())) return true;
@@ -1195,7 +1186,7 @@ public class SingleInspectionProfilePanel extends JPanel {
     return myTreeTable;
   }
 
-  private class MyFilterComponent extends FilterComponent {
+  private final class MyFilterComponent extends FilterComponent {
     private MyFilterComponent() {
       super(INSPECTION_FILTER_HISTORY, 10);
     }

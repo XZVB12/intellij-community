@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.eventLog;
 
 import com.intellij.openapi.actionSystem.ActionPlaces;
@@ -6,6 +6,9 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.KeyboardShortcut;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
@@ -13,14 +16,19 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import static java.awt.event.KeyEvent.*;
 
-public class ShortcutDataProvider {
+@ApiStatus.Internal
+public final class ShortcutDataProvider {
+  /**
+   * Modifiers that can be used as a separate double click shortcut (Shift+Shift as example)
+   */
+  private static final Collection<Integer> DOUBLE_CLICK_MODIFIER_KEYS = Arrays.asList(VK_CONTROL, VK_SHIFT);
 
   @Nullable
   public static String getActionEventText(@Nullable AnActionEvent event) {
@@ -86,8 +94,16 @@ public class ShortcutDataProvider {
   }
 
   private static String getShortcutText(KeyboardShortcut shortcut) {
-    String results = "";
     int modifiers = shortcut.getFirstKeyStroke().getModifiers();
+    int code = shortcut.getFirstKeyStroke().getKeyCode();
+
+    // Handling shortcuts that looks like [double <modifier_key>] (to avoid FUS-551)
+    if (modifiers == 0 && DOUBLE_CLICK_MODIFIER_KEYS.contains(code)) {
+      String strCode = getLocaleUnawareKeyText(code);
+      return strCode + "+" + strCode;
+    }
+
+    String results = "";
     if (modifiers > 0) {
       final String keyModifiersText = getLocaleUnawareKeyModifiersText(modifiers);
       if (!keyModifiersText.isEmpty()) {
@@ -95,7 +111,7 @@ public class ShortcutDataProvider {
       }
     }
 
-    results += getLocaleUnawareKeyText(shortcut.getFirstKeyStroke().getKeyCode());
+    results += getLocaleUnawareKeyText(code);
     return results;
   }
 
@@ -139,7 +155,7 @@ public class ShortcutDataProvider {
     return StringUtil.join(pressed, "+");
   }
 
-  private static final Map<Integer, String> ourKeyCodes = new HashMap<>();
+  private static final Int2ObjectMap<String> ourKeyCodes = new Int2ObjectOpenHashMap<>();
 
   static {
     ourKeyCodes.put(VK_ENTER, "Enter");

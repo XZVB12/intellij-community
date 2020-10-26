@@ -70,6 +70,7 @@ public final class ConsoleViewUtil {
       editorSettings.setAdditionalLinesCount(0);
       editorSettings.setRightMarginShown(false);
       editorSettings.setCaretRowShown(false);
+      editorSettings.setShowingSpecialChars(false);
       editor.getGutterComponentEx().setPaintBackground(false);
 
       final DelegateColorScheme scheme = updateConsoleColorScheme(editor.getColorsScheme());
@@ -147,7 +148,7 @@ public final class ConsoleViewUtil {
     editor.putUserData(REPLACE_ACTION_ENABLED, true);
   }
 
-  private static class ColorCache {
+  private static final class ColorCache {
     static {
       ApplicationManager.getApplication().getMessageBus().connect().subscribe(LafManagerListener.TOPIC, new LafManagerListener() {
         @Override
@@ -178,7 +179,7 @@ public final class ConsoleViewUtil {
         }
         Key<?> newKey = new Key<>(keyName.toString());
         textAttributeKeys.put(newKey, keys);
-        ConsoleViewContentType contentType = new ConsoleViewContentType(keyName.toString(), HighlighterColors.TEXT) {
+        ConsoleViewContentType contentType = new ConsoleViewContentType(keyName.toString(), new TextAttributes()) {
           @Override
           public TextAttributes getAttributes() {
             return mergedTextAttributes.get(newKey);

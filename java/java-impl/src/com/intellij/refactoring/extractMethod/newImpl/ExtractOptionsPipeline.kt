@@ -13,7 +13,7 @@ import com.intellij.psi.*
 import com.intellij.psi.search.PsiElementProcessor
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.PsiUtil
-import com.intellij.refactoring.extractMethod.PrepareFailedException
+import com.intellij.refactoring.RefactoringBundle
 import com.intellij.refactoring.extractMethod.newImpl.ExtractMethodHelper.findUsedTypeParameters
 import com.intellij.refactoring.extractMethod.newImpl.ExtractMethodHelper.hasExplicitModifier
 import com.intellij.refactoring.extractMethod.newImpl.ExtractMethodHelper.inputParameterOf
@@ -36,6 +36,9 @@ object ExtractMethodPipeline {
   ): ExtractOptions {
     val analyzer = CodeFragmentAnalyzer(extractOptions.elements)
     var options = withMappedName(extractOptions, methodName)
+    if (isStatic && ! options.isStatic) {
+      options = withForcedStatic(analyzer, options) ?: options
+    }
     options = withMappedParametersInput(options, variableData.toList())
     val targetClass = extractOptions.anchor.containingClass!!
     options = if (targetClass.isInterface) {
@@ -44,12 +47,8 @@ object ExtractMethodPipeline {
       options.copy(visibility = visibility)
     }
 
-    if (isStatic && ! options.isStatic) {
-      options = withForcedStatic(analyzer, options) ?: throw PrepareFailedException("Fail", options.elements.first())
-    }
-
     if (isConstructor) {
-      options = asConstructor(analyzer, options)
+      options = asConstructor(analyzer, options) ?: options
     } else {
       options = options.copy(dataOutput = extractOptions.dataOutput.withType(returnType))
     }
@@ -145,7 +144,7 @@ object ExtractMethodPipeline {
     return AnonymousTargetClassPreselectionUtil.getPreselection(candidates, candidates.first()) ?: candidates.first()
   }
 
-  fun <T> selectTargetClass(options: ExtractOptions, onSelected: (ExtractOptions) -> T): ExtractOptions {
+  fun selectTargetClass(options: ExtractOptions, onSelect: (ExtractOptions) -> Unit): ExtractOptions {
     val analyzer = CodeFragmentAnalyzer(options.elements)
     val targetCandidates = findTargetCandidates(analyzer, options)
     val preselection = findDefaultTargetCandidate(targetCandidates)
@@ -154,12 +153,13 @@ object ExtractMethodPipeline {
 
     val processor = PsiElementProcessor<PsiClass> { selected ->
       val mappedOptions = withTargetClass(analyzer, options, selected)!!
-      onSelected(mappedOptions)
+      onSelect(mappedOptions)
       true
     }
 
     if (targetCandidates.size > 1) {
-      NavigationUtil.getPsiElementPopup(targetCandidates.toTypedArray(), PsiClassListCellRenderer(), "Choose Destination Class", processor, preselection)
+      NavigationUtil.getPsiElementPopup(targetCandidates.toTypedArray(), PsiClassListCellRenderer(),
+                                        RefactoringBundle.message("choose.destination.class"), processor, preselection)
         .showInBestPositionFor(editor)
     } else {
       processor.execute(preselection)
@@ -201,8 +201,8 @@ object ExtractMethodPipeline {
     return extractOptions.copy(inputParameters = extractOptions.inputParameters - hidden.flatten() + folded)
   }
 
-  fun asConstructor(analyzer: CodeFragmentAnalyzer, extractOptions: ExtractOptions): ExtractOptions {
-    if (! canBeConstructor(analyzer)) throw PrepareFailedException("Can't be a constructor", extractOptions.elements.first()) //TODO
+  fun asConstructor(analyzer: CodeFragmentAnalyzer, extractOptions: ExtractOptions): ExtractOptions? {
+    if (! canBeConstructor(analyzer)) return null
     return extractOptions.copy(isConstructor = true,
                                methodName = "this",
                                dataOutput = EmptyOutput(),
@@ -211,13 +211,19 @@ object ExtractMethodPipeline {
   }
 
   fun withForcedStatic(analyzer: CodeFragmentAnalyzer, extractOptions: ExtractOptions): ExtractOptions? {
-    val targetClass = PsiTreeUtil.getParentOfType(ExtractMethodHelper.getValidParentOf(extractOptions.elements.first()), PsiClass::class.java)!!
-    val fieldUsages = analyzer.findFieldUsages(targetClass, extractOptions.elements)
-    if (fieldUsages.any { it.isWrite }) return null
+    val targetClass = PsiTreeUtil.getParentOfType(extractOptions.anchor, PsiClass::class.java)!!
+    if (PsiUtil.isLocalOrAnonymousClass(targetClass) || PsiUtil.isInnerClass(targetClass)) return null
+    val localUsages = analyzer.findInstanceMemberUsages(targetClass, extractOptions.elements)
+    val (violatedUsages, fieldUsages) = localUsages
+      .partition { localUsage -> PsiUtil.isAccessedForWriting(localUsage.reference) || localUsage.member !is PsiField }
+
+    if (violatedUsages.isNotEmpty()) return null
+
     val fieldInputParameters =
-      fieldUsages.groupBy { it.field }.entries.map { (field, fieldUsages) ->
+      fieldUsages.groupBy { it.member }.entries.map { (field, fieldUsages) ->
+        field as PsiField
         InputParameter(
-          references = fieldUsages.map { it.classMemberReference },
+          references = fieldUsages.map { it.reference },
           name = field.name,
           type = field.type
         )
@@ -233,9 +239,8 @@ object ExtractMethodPipeline {
     val firstStatement = method.body?.statements?.firstOrNull() ?: return false
     val startsOnBegin = firstStatement.textRange in TextRange(elements.first().textRange.startOffset, elements.last().textRange.endOffset)
     val outStatements = method.body?.statements.orEmpty().dropWhile { it.textRange.endOffset <= elements.last().textRange.endOffset }
-    val hasOuterFinalFieldAssignments = analyzer
-      .findFieldUsages(holderClass, outStatements)
-      .any { it.isWrite && it.field.hasExplicitModifier(PsiModifier.FINAL) }
+    val hasOuterFinalFieldAssignments = analyzer.findInstanceMemberUsages(holderClass, outStatements)
+      .any { localUsage -> localUsage.member.hasModifierProperty(PsiModifier.FINAL) && PsiUtil.isAccessedForWriting(localUsage.reference) }
     return method.isConstructor && startsOnBegin && !hasOuterFinalFieldAssignments && analyzer.findOutputVariables().isEmpty()
   }
 

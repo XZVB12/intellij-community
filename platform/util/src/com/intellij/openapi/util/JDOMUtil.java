@@ -4,6 +4,7 @@ package com.intellij.openapi.util;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.text.Strings;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.util.io.URLUtil;
 import com.intellij.util.text.CharArrayUtil;
@@ -13,10 +14,7 @@ import org.jdom.*;
 import org.jdom.filter.Filter;
 import org.jdom.output.Format;
 import org.jdom.output.XMLOutputter;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Contract;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.*;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -25,6 +23,7 @@ import java.awt.*;
 import java.io.*;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.ClosedFileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -32,10 +31,10 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 public final class JDOMUtil {
-  private static final String X = "x";
-  private static final String Y = "y";
-  private static final String WIDTH = "width";
-  private static final String HEIGHT = "height";
+  private static final @NonNls String X = "x";
+  private static final @NonNls String Y = "y";
+  private static final @NonNls String WIDTH = "width";
+  private static final @NonNls String HEIGHT = "height";
 
   //xpointer($1)
   public static final Pattern XPOINTER_PATTERN = Pattern.compile("xpointer\\((.*)\\)");
@@ -49,7 +48,8 @@ public final class JDOMUtil {
   private static volatile XMLInputFactory XML_INPUT_FACTORY;
 
   // do not use AtomicNotNullLazyValue to reduce class loading
-  private static XMLInputFactory getXmlInputFactory() {
+  @ApiStatus.Internal
+  public static XMLInputFactory getXmlInputFactory() {
     XMLInputFactory factory = XML_INPUT_FACTORY;
     if (factory != null) {
       return factory;
@@ -76,7 +76,8 @@ public final class JDOMUtil {
         }
       }
 
-      if (!SystemInfo.isIbmJvm) {
+      // avoid loading of SystemInfo class
+      if (Strings.indexOfIgnoreCase(System.getProperty("java.vm.vendor", ""), "IBM", 0) < 0) {
         try {
           factory.setProperty("http://java.sun.com/xml/stream/properties/report-cdata-event", true);
         }
@@ -177,7 +178,7 @@ public final class JDOMUtil {
     return result;
   }
 
-  private static void appendLegalized(@NotNull StringBuilder sb, char each) {
+  private static void appendLegalized(@NotNull @NonNls StringBuilder sb, char each) {
     if (each == '<' || each == '>') {
       sb.append(each == '<' ? "&lt;" : "&gt;");
     }
@@ -328,7 +329,12 @@ public final class JDOMUtil {
   }
 
   public static @NotNull Element load(@NotNull Path file) throws JDOMException, IOException {
-    return loadUsingStaX(new InputStreamReader(CharsetToolkit.inputStreamSkippingBOM(new BufferedInputStream(Files.newInputStream(file))), StandardCharsets.UTF_8), null);
+    try {
+      return loadUsingStaX(new InputStreamReader(CharsetToolkit.inputStreamSkippingBOM(new BufferedInputStream(Files.newInputStream(file))), StandardCharsets.UTF_8), null);
+    }
+    catch (ClosedFileSystemException e) {
+      throw new IOException("Cannot read file from closed file system: " + file, e);
+    }
   }
 
   /**
@@ -341,7 +347,12 @@ public final class JDOMUtil {
 
   @ApiStatus.Internal
   public static @NotNull Element load(@NotNull Path file, @Nullable SafeJdomFactory factory) throws JDOMException, IOException {
-    return loadUsingStaX(new InputStreamReader(CharsetToolkit.inputStreamSkippingBOM(new BufferedInputStream(Files.newInputStream(file))), StandardCharsets.UTF_8), factory);
+    try {
+      return loadUsingStaX(new InputStreamReader(CharsetToolkit.inputStreamSkippingBOM(new BufferedInputStream(Files.newInputStream(file))), StandardCharsets.UTF_8), factory);
+    }
+    catch (ClosedFileSystemException e) {
+      throw new IOException("Cannot read file from closed file system: " + file, e);
+    }
   }
 
   /**
@@ -589,14 +600,17 @@ public final class JDOMUtil {
     return null;
   }
 
+  @Contract(pure = true)
   public static @NotNull String escapeText(@NotNull String text) {
     return escapeText(text, false, false);
   }
 
+  @Contract(pure = true)
   public static @NotNull String escapeText(@NotNull String text, boolean escapeSpaces, boolean escapeLineEnds) {
     return escapeText(text, false, escapeSpaces, escapeLineEnds);
   }
 
+  @Contract(pure = true)
   public static @NotNull String escapeText(@NotNull String text, boolean escapeApostrophes, boolean escapeSpaces, boolean escapeLineEnds) {
     StringBuilder buffer = null;
     for (int i = 0; i < text.length(); i++) {
@@ -712,7 +726,7 @@ public final class JDOMUtil {
     }
   }
 
-  private static class ElementInfo {
+  private static final class ElementInfo {
     final @NotNull CharSequence name;
     final boolean hasNullAttributes;
 
@@ -749,6 +763,7 @@ public final class JDOMUtil {
     return e.hasAttributes() ? e.getAttributes() : Collections.emptyList();
   }
 
+  @Contract("_, !null -> !null; !null, _ -> !null")
   public static @Nullable Element merge(@Nullable Element to, @Nullable Element from) {
     if (from == null) {
       return to;
@@ -798,6 +813,18 @@ public final class JDOMUtil {
       to.setAttribute(attribute);
     }
     return to;
+  }
+
+  public static @Nullable Element reduceChildren(@NotNull String name, @NotNull Element parent) {
+    List<Element> children = parent.getChildren(name);
+    Iterator<Element> it = children.iterator();
+    if (!it.hasNext()) return null;
+    Element accumulator = it.next();
+    while (it.hasNext()) {
+      merge(accumulator, it.next());
+      it.remove();
+    }
+    return accumulator;
   }
 
   /**

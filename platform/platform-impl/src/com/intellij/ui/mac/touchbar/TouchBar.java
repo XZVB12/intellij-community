@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui.mac.touchbar;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.ide.DataManager;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
@@ -13,7 +14,6 @@ import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.IndexNotReadyException;
-import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.mac.foundation.ID;
 import org.jetbrains.annotations.NotNull;
@@ -48,6 +48,9 @@ final class TouchBar implements NSTLibrary.ItemCreator {
   private String[] myVisibleIds;
   private long myStartShowNs = 0;
   private long myLastUpdateNs = 0;
+
+  private Timer myAutoCloseTimer = null;
+  private long myLastActiveNs = 0;
 
   private ID myNativePeer;        // java wrapper holds native object
   private String myDefaultOptionalContextName;
@@ -98,7 +101,7 @@ final class TouchBar implements NSTLibrary.ItemCreator {
     myStats = ourCollectStats ? TouchBarStats.getStats(touchbarName) : null;
     myItems = new ItemsContainer(touchbarName);
     if (replaceEsc) {
-      final Icon ic = IconLoader.getIcon("/mac/touchbar/popoverClose_dark.svg");
+      final Icon ic = AllIcons.Mac.Touchbar.PopoverClose;
       myCustomEsc = new TBItemButton(myItemListener, null).setIcon(ic).setWidth(64).setTransparentBg(true).setAction(() -> {
         _closeSelf();
         if (emulateESC) {
@@ -321,6 +324,8 @@ final class TouchBar implements NSTLibrary.ItemCreator {
   void onBeforeShow() {
     myStartShowNs = System.nanoTime();
     myUpdateTimer.start();
+    myAutoCloseTimer = null;
+    myLastActiveNs = 0;
     updateActionItems();
   }
 
@@ -337,12 +342,14 @@ final class TouchBar implements NSTLibrary.ItemCreator {
   void forEachDeep(Consumer<? super TBItem> proc) { myItems.forEachDeep(proc); }
 
   private void _applyPresentationChanges(List<AnAction> actions) {
-    final long startNs = myStats != null ? System.nanoTime() : 0;
+    final long startNs = System.nanoTime();
     if (myLastUpdateNativePeers != null && !myLastUpdateNativePeers.isDone()) {
       myLastUpdateNativePeers.cancel(false);
     }
 
     final List<TBItemButton.Updater> toUpdate = new ArrayList<>();
+    final boolean[] checks = myBarContainer != null && myBarContainer.getType() == BarType.DEBUGGER ? new boolean[]{false, false} : null;
+
     forEachDeep(tbitem -> {
       if (!(tbitem instanceof TBItemAnActionButton)) {
         return;
@@ -355,6 +362,16 @@ final class TouchBar implements NSTLibrary.ItemCreator {
       final @Nullable TBItemButton.Updater updater = item.getNativePeerUpdater();
       if (updater != null) {
         toUpdate.add(updater);
+      }
+
+      // temporary solution to avoid IDEA-227511 MacBook touch bar stuck after debugging
+      // will be removed after global refactoring
+      if (checks != null) {
+        final String actId = ActionManager.getInstance().getId(item.getAnAction());
+        if ("Resume".equals(actId))
+          checks[0] = !presentation.isEnabled();
+        else if ("Pause".equals(actId))
+          checks[1] = !presentation.isEnabled();
       }
     });
 
@@ -375,6 +392,24 @@ final class TouchBar implements NSTLibrary.ItemCreator {
     selectVisibleItemsToShow();
     if (myStats != null) {
       myStats.incrementCounter(StatsCounters.applyPresentaionChangesDurationNs, System.nanoTime() - startNs);
+    }
+
+    if (checks != null) {
+      final boolean isNonActive = checks[0] && checks[1];
+      if (!isNonActive)
+        myLastActiveNs = startNs;
+      if (isNonActive && myLastActiveNs > 0) {
+        if (myAutoCloseTimer == null) {
+          myAutoCloseTimer = new Timer(1500, __ -> _closeSelf());
+          myAutoCloseTimer.setRepeats(false);
+          myAutoCloseTimer.start();
+        }
+      } else {
+        if (myAutoCloseTimer != null) {
+          myAutoCloseTimer.stop();
+          myAutoCloseTimer = null;
+        }
+      }
     }
   }
 

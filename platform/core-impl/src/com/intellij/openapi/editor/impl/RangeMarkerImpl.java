@@ -17,7 +17,9 @@ import com.intellij.openapi.util.UnfairTextRange;
 import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.DocumentUtil;
 import com.intellij.util.ObjectUtils;
+import com.intellij.util.diff.FilesTooBigForDiffException;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -183,29 +185,35 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
   public final void documentChanged(@NotNull DocumentEvent e) {
     int oldStart = intervalStart();
     int oldEnd = intervalEnd();
-    int docLength = getDocument().getTextLength();
+    int docLength = e.getDocument().getTextLength();
     if (!isValid()) {
       LOG.error("Invalid range marker "+ (isGreedyToLeft() ? "[" : "(") + oldStart + ", " + oldEnd + (isGreedyToRight() ? "]" : ")") +
                 ". Event = " + e + ". Doc length=" + docLength + "; "+getClass());
       return;
     }
-    if (intervalStart() > intervalEnd() || intervalStart() < 0 || intervalEnd() > docLength - e.getNewLength() + e.getOldLength()) {
+    if (oldStart > oldEnd || oldStart < 0 || oldEnd > docLength - e.getNewLength() + e.getOldLength()) {
       LOG.error("RangeMarker" + (isGreedyToLeft() ? "[" : "(") + oldStart + ", " + oldEnd + (isGreedyToRight() ? "]" : ")") +
                 " is invalid before update. Event = " + e + ". Doc length=" + docLength + "; "+getClass());
       invalidate(e);
       return;
     }
     changedUpdateImpl(e);
-    if (isValid() && (intervalStart() > intervalEnd() || intervalStart() < 0 || intervalEnd() > docLength)) {
+    int newStart;
+    int newEnd;
+    if (isValid() && ((newStart=intervalStart()) > (newEnd=intervalEnd()) || newStart < 0 || newEnd > docLength)) {
       LOG.error("Update failed. Event = " + e + ". " +
-                "old doc length=" + docLength + "; real doc length = "+getDocument().getTextLength()+
-                "; "+getClass()+"." +
+                "Doc length=" + docLength +
+                "; "+getClass()+". Before update: " + (isGreedyToLeft() ? "[" : "(") + oldStart + ", " + oldEnd + (isGreedyToRight() ? "]" : ")") +
                 " After update: '"+this+"'");
       invalidate(e);
     }
   }
 
   protected void changedUpdateImpl(@NotNull DocumentEvent e) {
+    doChangeUpdate(e);
+  }
+
+  private void doChangeUpdate(@NotNull DocumentEvent e) {
     if (!isValid()) return;
 
     TextRange newRange = applyChange(e, intervalStart(), intervalEnd(), isGreedyToLeft(), isGreedyToRight(), isStickingToRight());
@@ -216,6 +224,47 @@ public class RangeMarkerImpl extends UserDataHolderBase implements RangeMarkerEx
 
     setIntervalStart(newRange.getStartOffset());
     setIntervalEnd(newRange.getEndOffset());
+  }
+
+  protected int persistentHighlighterUpdate(@NotNull DocumentEvent e, int line, boolean wholeLineRange) {
+    DocumentEventImpl event = (DocumentEventImpl)e;
+    boolean viaDiff = isValid() && PersistentRangeMarkerUtil.shouldTranslateViaDiff(event, getStartOffset(), getEndOffset());
+    if (viaDiff) {
+      try {
+        line = translatedViaDiff(event, line);
+      }
+      catch (FilesTooBigForDiffException exception) {
+        viaDiff = false;
+      }
+    }
+    if (!viaDiff) {
+      doChangeUpdate(e);
+      if (isValid()) {
+        line = getDocument().getLineNumber(getStartOffset());
+        int endLine = getDocument().getLineNumber(getEndOffset());
+        if (endLine != line) {
+          setIntervalEnd(getDocument().getLineEndOffset(line));
+        }
+      }
+    }
+    if (isValid() && wholeLineRange) {
+      setIntervalStart(DocumentUtil.getFirstNonSpaceCharOffset(getDocument(), line));
+      setIntervalEnd(getDocument().getLineEndOffset(line));
+    }
+    return line;
+  }
+
+  private int translatedViaDiff(@NotNull DocumentEventImpl e, int line) throws FilesTooBigForDiffException {
+    line = e.translateLineViaDiff(line);
+    if (line < 0 || line >= getDocument().getLineCount()) {
+      invalidate(e);
+    }
+    else {
+      DocumentEx document = getDocument();
+      setIntervalStart(document.getLineStartOffset(line));
+      setIntervalEnd(document.getLineEndOffset(line));
+    }
+    return line;
   }
 
   // Called after the range was shifted from e.getMoveOffset() to e.getOffset()

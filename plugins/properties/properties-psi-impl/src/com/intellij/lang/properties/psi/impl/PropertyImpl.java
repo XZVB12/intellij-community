@@ -189,7 +189,7 @@ public class PropertyImpl extends PropertiesStubElementImpl<PropertyStub> implem
               default:
                 outChars.append("\\u");
                 int start = off - i - 1;
-                int end = start + 4 < s.length() ? start + 4 : s.length();
+                int end = Math.min(start + 4, s.length());
                 outChars.append(s, start, end);
                 i=4;
                 error = true;
@@ -288,7 +288,7 @@ public class PropertyImpl extends PropertiesStubElementImpl<PropertyStub> implem
                 break;
               default:
                 int start = off - i - 1;
-                int end = start + 4 < s.length() ? start + 4 : s.length();
+                int end = Math.min(start + 4, s.length());
                 i=4;
                 error = true;
                 off = end;
@@ -375,7 +375,11 @@ public class PropertyImpl extends PropertiesStubElementImpl<PropertyStub> implem
 
   @Override
   public PropertiesFile getPropertiesFile() {
-    return (PropertiesFile)super.getContainingFile();
+    PsiFile containingFile = super.getContainingFile();
+    if (!(containingFile instanceof PropertiesFile)) {
+      LOG.error("Unexpected file type of: " + containingFile.getName());
+    }
+    return (PropertiesFile)containingFile;
   }
 
   @Override

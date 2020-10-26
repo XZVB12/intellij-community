@@ -15,6 +15,7 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.util.Ref;
 import com.intellij.psi.*;
 import com.intellij.psi.controlFlow.DefUseUtil;
+import com.intellij.psi.impl.source.PsiFieldImpl;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.SmartList;
@@ -122,10 +123,16 @@ public class InvalidPropertyKeyInspection extends AbstractBaseJavaLocalInspectio
         if (!field.hasModifierProperty(PsiModifier.FINAL)) {
           return;
         }
-        final PsiExpression initializer = field.getInitializer();
+        PsiExpression initializer;
+        PsiExpression highlightedExpression;
+        if (field.getContainingFile() == expression.getContainingFile()) {
+          highlightedExpression = initializer = PsiUtil.skipParenthesizedExprDown(field.getInitializer());
+        } else {
+          initializer = PsiUtil.skipParenthesizedExprDown(PsiFieldImpl.getDetachedInitializer(field));
+          highlightedExpression = expression;
+        }
         String key = computeStringValue(initializer);
-        visitPropertyKeyAnnotationParameter(expression, key,
-                                            field.getContainingFile() == expression.getContainingFile() ? initializer : expression);
+        visitPropertyKeyAnnotationParameter(expression, key, highlightedExpression);
       }
       else if (resolvedExpression instanceof PsiLocalVariable) {
         checkLocalVariable((PsiLocalVariable)resolvedExpression, expression);
@@ -219,9 +226,9 @@ public class InvalidPropertyKeyInspection extends AbstractBaseJavaLocalInspectio
                 && Objects.requireNonNull(method.getParameterList().getParameter(i + 1)).isVarArgs()
                 && !hasArrayTypeAt(i + 1, methodCall)) {
               myProblems.putIfAbsent(methodCall, myManager.createProblemDescriptor(methodCall,
-                                                               JavaI18nBundle.message("property.has.more.parameters.than.passed", key, maxParamCount, args.length - i - 1),
-                                                               onTheFly, LocalQuickFix.EMPTY_ARRAY,
-                                                               ProblemHighlightType.GENERIC_ERROR));
+                                                                                   JavaI18nBundle.message("property.has.more.parameters.than.passed", key, maxParamCount, args.length - i - 1),
+                                                                                   onTheFly, LocalQuickFix.EMPTY_ARRAY,
+                                                                                   ProblemHighlightType.LIKE_UNKNOWN_SYMBOL));
             }
             break;
           }
@@ -246,12 +253,12 @@ public class InvalidPropertyKeyInspection extends AbstractBaseJavaLocalInspectio
                                                                       I18nUtil.propertiesFilesByBundleName(bundleName, expression));
       if (problems.containsKey(expression)) return;
       problems.put(expression,
-        manager.createProblemDescriptor(
-          expression,
-          description,
-          propertiesFiles.isEmpty() ? null : new JavaCreatePropertyFix(expression, key, propertiesFiles),
-          ProblemHighlightType.LIKE_UNKNOWN_SYMBOL, onTheFly
-        )
+                   manager.createProblemDescriptor(
+                     expression,
+                     description,
+                     propertiesFiles.isEmpty() ? null : new JavaCreatePropertyFix(expression, key, propertiesFiles),
+                     ProblemHighlightType.LIKE_UNKNOWN_SYMBOL, onTheFly
+                   )
       );
     }
 
@@ -280,8 +287,8 @@ public class InvalidPropertyKeyInspection extends AbstractBaseJavaLocalInspectio
       while (true) {
         if (parent instanceof PsiParenthesizedExpression ||
             parent instanceof PsiConditionalExpression &&
-             (expression == ((PsiConditionalExpression)parent).getThenExpression() ||
-              expression == ((PsiConditionalExpression)parent).getElseExpression())) {
+            (expression == ((PsiConditionalExpression)parent).getThenExpression() ||
+             expression == ((PsiConditionalExpression)parent).getElseExpression())) {
           expression = (PsiExpression)parent;
           parent = expression.getParent();
         }

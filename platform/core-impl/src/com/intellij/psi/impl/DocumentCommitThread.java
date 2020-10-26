@@ -8,7 +8,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.TransactionGuard;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.ex.DocumentEx;
@@ -30,12 +29,11 @@ import com.intellij.psi.text.BlockSupport;
 import com.intellij.util.SmartList;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.concurrency.BoundedTaskExecutor;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.EdtInvocationManager;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
-import org.jetbrains.ide.PooledThreadExecutor;
 
 import java.util.List;
 import java.util.Objects;
@@ -46,13 +44,13 @@ import java.util.concurrent.TimeoutException;
 
 public final class DocumentCommitThread implements Disposable, DocumentCommitProcessor {
   private static final Logger LOG = Logger.getInstance(DocumentCommitThread.class);
-  private static final String SYNC_COMMIT_REASON = "Sync commit";
+  private static final @NonNls String SYNC_COMMIT_REASON = "Sync commit";
 
-  private final ExecutorService executor = AppExecutorUtil.createBoundedApplicationPoolExecutor("Document Committing Pool", PooledThreadExecutor.INSTANCE, 1, this);
+  private final ExecutorService executor = AppExecutorUtil.createBoundedApplicationPoolExecutor("Document Committing Pool", AppExecutorUtil.getAppExecutorService(), 1, this);
   private volatile boolean isDisposed;
 
   static DocumentCommitThread getInstance() {
-    return (DocumentCommitThread)ServiceManager.getService(DocumentCommitProcessor.class);
+    return (DocumentCommitThread)ApplicationManager.getApplication().getService(DocumentCommitProcessor.class);
   }
 
   DocumentCommitThread() {
@@ -72,11 +70,10 @@ public final class DocumentCommitThread implements Disposable, DocumentCommitPro
     if (!project.isInitialized()) return;
 
     PsiDocumentManagerBase documentManager = (PsiDocumentManagerBase)PsiDocumentManager.getInstance(project);
-    assert documentManager.isEventSystemEnabled(document) :"Asynchronous commit is only supported for physical PSI";
+    assert documentManager.isEventSystemEnabled(document) : "Asynchronous commit is only supported for physical PSI" +
+                                                            ", document=" + document +
+                                                            ", viewProvider=" + documentManager.getCachedViewProvider(document);
     TransactionGuard.getInstance().assertWriteSafeContext(modality);
-
-    PsiFile psiFile = documentManager.getCachedPsiFile(document);
-    if (psiFile == null || psiFile instanceof PsiCompiledElement) return;
 
     CommitTask task =
       new CommitTask(project, document, reason, modality, documentManager.getLastCommittedText(document));
@@ -129,6 +126,9 @@ public final class DocumentCommitThread implements Disposable, DocumentCommitPro
     } else {
       for (PsiFile file : viewProvider.getAllFiles()) {
         FileASTNode oldFileNode = file.getNode();
+        if (oldFileNode == null) {
+          throw new AssertionError("No node for " + file.getClass() + " in " + file.getViewProvider().getClass());
+        }
         ProperTextRange changedPsiRange = ChangedPsiRangeUtil
           .getChangedPsiRange(file, task.document, task.myLastCommittedText, document.getImmutableCharSequence());
         if (changedPsiRange != null) {
@@ -200,10 +200,10 @@ public final class DocumentCommitThread implements Disposable, DocumentCommitPro
     ApplicationManager.getApplication().assertIsWriteThread();
     assert !ApplicationManager.getApplication().isWriteAccessAllowed();
 
-    UIUtil.dispatchAllInvocationEvents();
+    EdtInvocationManager.dispatchAllInvocationEvents();
     while (!((BoundedTaskExecutor)executor).isEmpty()) {
       ((BoundedTaskExecutor)executor).waitAllTasksExecuted(timeout, timeUnit);
-      UIUtil.dispatchAllInvocationEvents();
+      EdtInvocationManager.dispatchAllInvocationEvents();
     }
   }
 

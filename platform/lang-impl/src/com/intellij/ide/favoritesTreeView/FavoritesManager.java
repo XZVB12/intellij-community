@@ -40,10 +40,7 @@ import java.util.function.Function;
 import static com.intellij.ide.favoritesTreeView.FavoritesListProvider.EP_NAME;
 
 @Service
-@State(name = "FavoritesManager", storages = {
-  @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE),
-  @Storage(value = StoragePathMacros.WORKSPACE_FILE, deprecated = true),
-})
+@State(name = "FavoritesManager", storages = @Storage(StoragePathMacros.PRODUCT_WORKSPACE_FILE))
 public final class FavoritesManager implements PersistentStateComponent<Element> {
   // fav list name -> list of (root: root url, root class)
   private final Map<String, List<TreeItem<Pair<AbstractUrl, String>>>> myName2FavoritesRoots = new TreeMap<>();
@@ -60,6 +57,10 @@ public final class FavoritesManager implements PersistentStateComponent<Element>
 
   public FavoritesManager(@NotNull Project project) {
     myProject = project;
+    EP_NAME.getPoint(myProject).addChangeListener(() -> {
+      myProviders = null;
+      rootsChanged();
+    }, myProject);
   }
 
   @NotNull
@@ -115,7 +116,7 @@ public final class FavoritesManager implements PersistentStateComponent<Element>
         @Override
         public boolean canClose(String inputString) {
           inputString = inputString.trim();
-          if (myName2FavoritesRoots.keySet().contains(inputString) || getProviders().keySet().contains(inputString)) {
+          if (myName2FavoritesRoots.containsKey(inputString) || getProviders().containsKey(inputString)) {
             Messages.showErrorDialog(project, IdeBundle.message("error.favorites.list.already.exists", inputString.trim()),
                                      IdeBundle.message("title.unable.to.add.favorites.list"));
             return false;
@@ -191,6 +192,7 @@ public final class FavoritesManager implements PersistentStateComponent<Element>
     return !nodes.isEmpty() && addRoots(name, nodes);
   }
 
+  @Nullable
   public synchronized Comparator<FavoriteTreeNodeDescriptor> getCustomComparator(@NotNull final String name) {
     return getProviders().get(name);
   }

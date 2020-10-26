@@ -1,17 +1,8 @@
-# Stubs for tempfile
-# Ron Murawski <ron@horizonchess.com>
-
-# based on http://docs.python.org/3.3/library/tempfile.html
-
 import os
 import sys
 from types import TracebackType
-from typing import Any, AnyStr, Generic, IO, Iterable, Iterator, List, Optional, overload, Tuple, Type, TypeVar, Union
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+from typing import IO, Any, AnyStr, Generic, Iterable, Iterator, List, Optional, Tuple, Type, TypeVar, Union, overload
+from typing_extensions import Literal
 
 # global variables
 TMP_MAX: int
@@ -27,7 +18,7 @@ else:
 
 if sys.version_info >= (3, 8):
     @overload
-    def TemporaryFile(
+    def NamedTemporaryFile(
         mode: Literal["r", "w", "a", "x", "r+", "w+", "a+", "x+", "rt", "wt", "at", "xt", "r+t", "w+t", "a+t", "x+t"],
         buffering: int = ...,
         encoding: Optional[str] = ...,
@@ -35,11 +26,12 @@ if sys.version_info >= (3, 8):
         suffix: Optional[AnyStr] = ...,
         prefix: Optional[AnyStr] = ...,
         dir: Optional[_DirT[AnyStr]] = ...,
+        delete: bool = ...,
         *,
-        errors: Optional[str] = ...
+        errors: Optional[str] = ...,
     ) -> IO[str]: ...
     @overload
-    def TemporaryFile(
+    def NamedTemporaryFile(
         mode: Literal["rb", "wb", "ab", "xb", "r+b", "w+b", "a+b", "x+b"] = ...,
         buffering: int = ...,
         encoding: Optional[str] = ...,
@@ -47,11 +39,12 @@ if sys.version_info >= (3, 8):
         suffix: Optional[AnyStr] = ...,
         prefix: Optional[AnyStr] = ...,
         dir: Optional[_DirT[AnyStr]] = ...,
+        delete: bool = ...,
         *,
-        errors: Optional[str] = ...
+        errors: Optional[str] = ...,
     ) -> IO[bytes]: ...
     @overload
-    def TemporaryFile(
+    def NamedTemporaryFile(
         mode: str = ...,
         buffering: int = ...,
         encoding: Optional[str] = ...,
@@ -59,81 +52,11 @@ if sys.version_info >= (3, 8):
         suffix: Optional[AnyStr] = ...,
         prefix: Optional[AnyStr] = ...,
         dir: Optional[_DirT[AnyStr]] = ...,
+        delete: bool = ...,
         *,
-        errors: Optional[str] = ...
-    ) -> IO[Any]: ...
-else:
-    @overload
-    def TemporaryFile(
-        mode: Literal["r", "w", "a", "x", "r+", "w+", "a+", "x+", "rt", "wt", "at", "xt", "r+t", "w+t", "a+t", "x+t"],
-        buffering: int = ...,
-        encoding: Optional[str] = ...,
-        newline: Optional[str] = ...,
-        suffix: Optional[AnyStr] = ...,
-        prefix: Optional[AnyStr] = ...,
-        dir: Optional[_DirT[AnyStr]] = ...,
-    ) -> IO[str]: ...
-    @overload
-    def TemporaryFile(
-        mode: Literal["rb", "wb", "ab", "xb", "r+b", "w+b", "a+b", "x+b"] = ...,
-        buffering: int = ...,
-        encoding: Optional[str] = ...,
-        newline: Optional[str] = ...,
-        suffix: Optional[AnyStr] = ...,
-        prefix: Optional[AnyStr] = ...,
-        dir: Optional[_DirT[AnyStr]] = ...,
-    ) -> IO[bytes]: ...
-    @overload
-    def TemporaryFile(
-        mode: str = ...,
-        buffering: int = ...,
-        encoding: Optional[str] = ...,
-        newline: Optional[str] = ...,
-        suffix: Optional[AnyStr] = ...,
-        prefix: Optional[AnyStr] = ...,
-        dir: Optional[_DirT[AnyStr]] = ...,
+        errors: Optional[str] = ...,
     ) -> IO[Any]: ...
 
-if sys.version_info >= (3, 8):
-    @overload
-    def NamedTemporaryFile(
-        mode: Literal["r", "w", "a", "x", "r+", "w+", "a+", "x+", "rt", "wt", "at", "xt", "r+t", "w+t", "a+t", "x+t"],
-        buffering: int = ...,
-        encoding: Optional[str] = ...,
-        newline: Optional[str] = ...,
-        suffix: Optional[AnyStr] = ...,
-        prefix: Optional[AnyStr] = ...,
-        dir: Optional[_DirT[AnyStr]] = ...,
-        delete: bool = ...,
-        *,
-        errors: Optional[str] = ...
-    ) -> IO[str]: ...
-    @overload
-    def NamedTemporaryFile(
-        mode: Literal["rb", "wb", "ab", "xb", "r+b", "w+b", "a+b", "x+b"] = ...,
-        buffering: int = ...,
-        encoding: Optional[str] = ...,
-        newline: Optional[str] = ...,
-        suffix: Optional[AnyStr] = ...,
-        prefix: Optional[AnyStr] = ...,
-        dir: Optional[_DirT[AnyStr]] = ...,
-        delete: bool = ...,
-        *,
-        errors: Optional[str] = ...
-    ) -> IO[bytes]: ...
-    @overload
-    def NamedTemporaryFile(
-        mode: str = ...,
-        buffering: int = ...,
-        encoding: Optional[str] = ...,
-        newline: Optional[str] = ...,
-        suffix: Optional[AnyStr] = ...,
-        prefix: Optional[AnyStr] = ...,
-        dir: Optional[_DirT[AnyStr]] = ...,
-        delete: bool = ...,
-        *,
-        errors: Optional[str] = ...
-    ) -> IO[Any]: ...
 else:
     @overload
     def NamedTemporaryFile(
@@ -168,6 +91,78 @@ else:
         dir: Optional[_DirT[AnyStr]] = ...,
         delete: bool = ...,
     ) -> IO[Any]: ...
+
+if sys.platform == "win32":
+    TemporaryFile = NamedTemporaryFile
+else:
+    if sys.version_info >= (3, 8):
+        @overload
+        def TemporaryFile(
+            mode: Literal["r", "w", "a", "x", "r+", "w+", "a+", "x+", "rt", "wt", "at", "xt", "r+t", "w+t", "a+t", "x+t"],
+            buffering: int = ...,
+            encoding: Optional[str] = ...,
+            newline: Optional[str] = ...,
+            suffix: Optional[AnyStr] = ...,
+            prefix: Optional[AnyStr] = ...,
+            dir: Optional[_DirT[AnyStr]] = ...,
+            *,
+            errors: Optional[str] = ...,
+        ) -> IO[str]: ...
+        @overload
+        def TemporaryFile(
+            mode: Literal["rb", "wb", "ab", "xb", "r+b", "w+b", "a+b", "x+b"] = ...,
+            buffering: int = ...,
+            encoding: Optional[str] = ...,
+            newline: Optional[str] = ...,
+            suffix: Optional[AnyStr] = ...,
+            prefix: Optional[AnyStr] = ...,
+            dir: Optional[_DirT[AnyStr]] = ...,
+            *,
+            errors: Optional[str] = ...,
+        ) -> IO[bytes]: ...
+        @overload
+        def TemporaryFile(
+            mode: str = ...,
+            buffering: int = ...,
+            encoding: Optional[str] = ...,
+            newline: Optional[str] = ...,
+            suffix: Optional[AnyStr] = ...,
+            prefix: Optional[AnyStr] = ...,
+            dir: Optional[_DirT[AnyStr]] = ...,
+            *,
+            errors: Optional[str] = ...,
+        ) -> IO[Any]: ...
+    else:
+        @overload
+        def TemporaryFile(
+            mode: Literal["r", "w", "a", "x", "r+", "w+", "a+", "x+", "rt", "wt", "at", "xt", "r+t", "w+t", "a+t", "x+t"],
+            buffering: int = ...,
+            encoding: Optional[str] = ...,
+            newline: Optional[str] = ...,
+            suffix: Optional[AnyStr] = ...,
+            prefix: Optional[AnyStr] = ...,
+            dir: Optional[_DirT[AnyStr]] = ...,
+        ) -> IO[str]: ...
+        @overload
+        def TemporaryFile(
+            mode: Literal["rb", "wb", "ab", "xb", "r+b", "w+b", "a+b", "x+b"] = ...,
+            buffering: int = ...,
+            encoding: Optional[str] = ...,
+            newline: Optional[str] = ...,
+            suffix: Optional[AnyStr] = ...,
+            prefix: Optional[AnyStr] = ...,
+            dir: Optional[_DirT[AnyStr]] = ...,
+        ) -> IO[bytes]: ...
+        @overload
+        def TemporaryFile(
+            mode: str = ...,
+            buffering: int = ...,
+            encoding: Optional[str] = ...,
+            newline: Optional[str] = ...,
+            suffix: Optional[AnyStr] = ...,
+            prefix: Optional[AnyStr] = ...,
+            dir: Optional[_DirT[AnyStr]] = ...,
+        ) -> IO[Any]: ...
 
 # It does not actually derive from IO[AnyStr], but it does implement the
 # protocol.
@@ -186,7 +181,7 @@ class SpooledTemporaryFile(IO[AnyStr]):
             prefix: Optional[str] = ...,
             dir: Optional[str] = ...,
             *,
-            errors: Optional[str] = ...
+            errors: Optional[str] = ...,
         ) -> None: ...
         @overload
         def __init__(
@@ -200,7 +195,7 @@ class SpooledTemporaryFile(IO[AnyStr]):
             prefix: Optional[str] = ...,
             dir: Optional[str] = ...,
             *,
-            errors: Optional[str] = ...
+            errors: Optional[str] = ...,
         ) -> None: ...
         @overload
         def __init__(
@@ -214,9 +209,8 @@ class SpooledTemporaryFile(IO[AnyStr]):
             prefix: Optional[str] = ...,
             dir: Optional[str] = ...,
             *,
-            errors: Optional[str] = ...
+            errors: Optional[str] = ...,
         ) -> None: ...
-
         @property
         def errors(self) -> Optional[str]: ...
     else:

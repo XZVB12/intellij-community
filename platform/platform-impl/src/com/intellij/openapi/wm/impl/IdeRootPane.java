@@ -16,8 +16,8 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.wm.IdeFrame;
 import com.intellij.openapi.wm.IdeRootPaneNorthExtension;
-import com.intellij.openapi.wm.impl.customFrameDecorations.header.CustomHeader;
-import com.intellij.openapi.wm.impl.customFrameDecorations.header.MainFrameHeader;
+import com.intellij.openapi.wm.impl.customFrameDecorations.header.MenuFrameHeader;
+import com.intellij.openapi.wm.impl.customFrameDecorations.header.titleLabel.CustomDecorationPath;
 import com.intellij.openapi.wm.impl.status.IdeStatusBarImpl;
 import com.intellij.ui.*;
 import com.intellij.ui.components.JBBox;
@@ -26,6 +26,7 @@ import com.intellij.ui.components.JBPanel;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -40,6 +41,7 @@ import java.util.Objects;
  * @author Anton Katilin
  * @author Vladimir Kondratyev
  */
+@ApiStatus.Internal
 public class IdeRootPane extends JRootPane implements UISettingsListener {
   /**
    * Toolbar and status bar.
@@ -58,7 +60,8 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
 
   private boolean myFullScreen;
 
-  private MainFrameHeader myCustomFrameTitlePane;
+  private MenuFrameHeader myCustomFrameTitlePane;
+  private CustomDecorationPath mySelectedEditorFilePath;
   private final boolean myDecoratedMenu;
 
   protected IdeRootPane(@NotNull JFrame frame, @NotNull IdeFrame frameHelper, @NotNull Disposable parentDisposable) {
@@ -87,14 +90,14 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
       if (isDecoratedMenu()) {
         JdkEx.setHasCustomDecoration(frame);
 
-        myCustomFrameTitlePane = CustomHeader.createMainFrameHeader(frame, menu);
+        mySelectedEditorFilePath = CustomDecorationPath.Companion.createInstance(frame);
+        myCustomFrameTitlePane = new MenuFrameHeader(frame, mySelectedEditorFilePath, createMenuBar());
         getLayeredPane().add(myCustomFrameTitlePane, JLayeredPane.DEFAULT_LAYER - 2);
-        menu.setVisible(false);
       }
 
       if (FrameInfoHelper.isFloatingMenuBarSupported()) {
         menuBar = menu;
-        getLayeredPane().add(menuBar, new Integer(JLayeredPane.DEFAULT_LAYER - 1));
+        getLayeredPane().add(menuBar, Integer.valueOf(JLayeredPane.DEFAULT_LAYER - 1));
       }
 
       addPropertyChangeListener(IdeFrameDecorator.FULL_SCREEN, __ -> updateScreenState(frameHelper));
@@ -128,10 +131,6 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
 
   public @NotNull ToolWindowsPane getToolWindowPane() {
     return myToolWindowsPane;
-  }
-
-  public void init(@NotNull ProjectFrameHelper frame, @NotNull Disposable parentDisposable) {
-    createAndConfigureStatusBar(frame, parentDisposable);
   }
 
   private void updateScreenState(@NotNull IdeFrame helper) {
@@ -224,25 +223,30 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
   }
 
   void updateMainMenuActions() {
-    ((IdeMenuBar)menuBar).updateMenuActions();
+    ((IdeMenuBar)menuBar).updateMenuActions(false);
     menuBar.repaint();
+
+    if (myCustomFrameTitlePane != null) {
+      myCustomFrameTitlePane.updateMenuActions(false);
+      myCustomFrameTitlePane.repaint();
+    }
   }
 
   private static @NotNull JComponent createToolbar() {
     ActionGroup group = (ActionGroup)CustomActionsSchema.getInstance().getCorrectedAction(IdeActions.GROUP_MAIN_TOOLBAR);
-    ActionManagerEx actionManager = ActionManagerEx.getInstanceEx();
-    ActionToolbar toolBar = actionManager.createActionToolbar(ActionPlaces.MAIN_TOOLBAR, Objects.requireNonNull(group), true);
+    ActionToolbar toolBar = ActionManagerEx.getInstanceEx()
+      .createActionToolbar(ActionPlaces.MAIN_TOOLBAR, Objects.requireNonNull(group), true);
     toolBar.setLayoutPolicy(ActionToolbar.WRAP_LAYOUT_POLICY);
 
     DefaultActionGroup menuGroup = new DefaultActionGroup();
     menuGroup.add(new ViewToolbarAction());
     menuGroup.add(new CustomizeUIAction());
-    PopupHandler.installUnknownPopupHandler(toolBar.getComponent(), menuGroup, actionManager);
+    PopupHandler.installUnknownPopupHandler(toolBar.getComponent(), menuGroup);
 
     return toolBar.getComponent();
   }
 
-  private void createAndConfigureStatusBar(@NotNull IdeFrame frame, @NotNull Disposable parentDisposable) {
+  public void createAndConfigureStatusBar(@NotNull IdeFrame frame, @NotNull Disposable parentDisposable) {
     myStatusBar = createStatusBar(frame);
     Disposer.register(parentDisposable, myStatusBar);
 
@@ -289,11 +293,13 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
     }
   }
 
-  protected void installNorthComponents(@NotNull Project project) {
-    if (myCustomFrameTitlePane != null) {
-      myCustomFrameTitlePane.setProject(project);
+  void setProject(Project project) {
+    if (mySelectedEditorFilePath != null) {
+      mySelectedEditorFilePath.setProject(project);
     }
+  }
 
+  protected void installNorthComponents(@NotNull Project project) {
     myNorthComponents.addAll(IdeRootPaneNorthExtension.EP_NAME.getExtensionList(project));
     if (myNorthComponents.isEmpty()) {
       return;
@@ -473,6 +479,7 @@ public class IdeRootPane extends JRootPane implements UISettingsListener {
         Dimension tpd = myCustomFrameTitlePane.getPreferredSize();
         if (tpd != null) {
           int tpHeight = tpd.height;
+
           myCustomFrameTitlePane.setBounds(0, 0, w, tpHeight);
           contentY += tpHeight;
         }

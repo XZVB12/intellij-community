@@ -10,7 +10,6 @@ import com.intellij.debugger.engine.evaluation.TextWithImports;
 import com.intellij.execution.ExecutionException;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.LanguageFileType;
@@ -128,7 +127,7 @@ public abstract class DebuggerUtils {
 
   public static <R, T extends Value> R processCollectibleValue(
     @NotNull ThrowableComputable<? extends T, ? extends EvaluateException> valueComputable,
-    @NotNull Function<T, R> processor) throws EvaluateException {
+    @NotNull Function<? super T, ? extends R> processor) throws EvaluateException {
     int retries = 10;
     while (true) {
       T result = valueComputable.compute();
@@ -198,7 +197,7 @@ public abstract class DebuggerUtils {
   }
 
   /**
-   * Optimized version of {@link com.sun.jdi.ClassType#concreteMethodByName(java.lang.String, java.lang.String)}.
+   * Optimized version of {@link ClassType#concreteMethodByName(String, String)}.
    * It does not gather all visible methods before checking so can return early
    */
   @Nullable
@@ -426,7 +425,15 @@ public abstract class DebuggerUtils {
   }
 
   @Nullable
-  public static PsiClass findClass(@NotNull String className, @NotNull Project project, final GlobalSearchScope scope) {
+  public static PsiClass findClass(@NotNull String className, @NotNull Project project, @NotNull GlobalSearchScope scope) {
+    return findClass(className, project, scope, true);
+  }
+
+  @Nullable
+  public static PsiClass findClass(@NotNull String className,
+                                   @NotNull Project project,
+                                   @NotNull GlobalSearchScope scope,
+                                   boolean fallbackToAllScope) {
     ApplicationManager.getApplication().assertReadAccessAllowed();
     try {
       if (getArrayClass(className) != null) {
@@ -441,7 +448,7 @@ public abstract class DebuggerUtils {
 
       PsiManager psiManager = PsiManager.getInstance(project);
       PsiClass psiClass = ClassUtil.findPsiClass(psiManager, className, null, true, scope);
-      if (psiClass == null) {
+      if (psiClass == null && fallbackToAllScope) {
         GlobalSearchScope globalScope = GlobalSearchScope.allScope(project);
         if (!globalScope.equals(scope)) {
           psiClass = ClassUtil.findPsiClass(psiManager, className, null, true, globalScope);
@@ -491,19 +498,19 @@ public abstract class DebuggerUtils {
   public static boolean hasSideEffects(@Nullable PsiElement element) {
     return hasSideEffectsOrReferencesMissingVars(element, null);
   }
-  
+
   public static boolean hasSideEffectsOrReferencesMissingVars(@Nullable PsiElement element, @Nullable final Set<String> visibleLocalVariables) {
     if (element == null) {
       return false;
     }
     final Ref<Boolean> rv = new Ref<>(Boolean.FALSE);
     element.accept(new JavaRecursiveElementWalkingVisitor() {
-      @Override 
+      @Override
       public void visitPostfixExpression(final PsiPostfixExpression expression) {
         rv.set(Boolean.TRUE);
       }
 
-      @Override 
+      @Override
       public void visitReferenceExpression(final PsiReferenceExpression expression) {
         final PsiElement psiElement = expression.resolve();
         if (psiElement instanceof PsiLocalVariable) {
@@ -525,7 +532,7 @@ public abstract class DebuggerUtils {
         }
       }
 
-      @Override 
+      @Override
       public void visitPrefixExpression(final PsiPrefixExpression expression) {
         final IElementType op = expression.getOperationTokenType();
         if (JavaTokenType.PLUSPLUS.equals(op) || JavaTokenType.MINUSMINUS.equals(op)) {
@@ -536,12 +543,12 @@ public abstract class DebuggerUtils {
         }
       }
 
-      @Override 
+      @Override
       public void visitAssignmentExpression(final PsiAssignmentExpression expression) {
         rv.set(Boolean.TRUE);
       }
 
-      @Override 
+      @Override
       public void visitCallExpression(final PsiCallExpression callExpression) {
         rv.set(Boolean.TRUE);
         //final PsiMethod method = callExpression.resolveMethod();
@@ -585,7 +592,7 @@ public abstract class DebuggerUtils {
   }
 
   public static DebuggerUtils getInstance() {
-    return ServiceManager.getService(DebuggerUtils.class);
+    return ApplicationManager.getApplication().getService(DebuggerUtils.class);
   }
 
   public abstract PsiExpression substituteThis(PsiExpression expressionWithThis, PsiExpression howToEvaluateThis, Value howToEvaluateThisValue, StackFrameContext context) throws EvaluateException;

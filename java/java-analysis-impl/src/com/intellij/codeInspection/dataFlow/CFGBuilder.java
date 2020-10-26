@@ -26,6 +26,7 @@ import com.intellij.codeInspection.dataFlow.value.DfaValueFactory;
 import com.intellij.codeInspection.dataFlow.value.DfaVariableValue;
 import com.intellij.psi.*;
 import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
@@ -263,19 +264,6 @@ public class CFGBuilder {
   }
 
   /**
-   * Generate instructions to replace class value on top of stack with the corresponding object value
-   * <p>
-   * Stack before: ... class_value
-   * <p>
-   * Stack after: ... object_value
-   *
-   * @return this builder
-   */
-  public CFGBuilder objectOf() {
-    return add(new ObjectOfInstruction());
-  }
-
-  /**
    * Generate instructions to bind top-of-stack value to the given expression. Stack remains unchanged.
    *
    * @param expression expression to bind top-of-stack value to
@@ -297,6 +285,20 @@ public class CFGBuilder {
    */
   public CFGBuilder isInstance(PsiMethodCallExpression anchor) {
     return add(new InstanceofInstruction(anchor));
+  }
+
+  /**
+   * Generate instructions to perform an Class.isAssignableFrom operation
+   * <p>
+   * Stack before: ... super_class sub_class
+   * <p>
+   * Stack after: ... result
+   *
+   * @param anchor element to bind this instruction to
+   * @return this builder
+   */
+  public CFGBuilder isAssignableFrom(PsiMethodCallExpression anchor) {
+    return add(new IsAssignableInstruction(anchor));
   }
 
   /**
@@ -766,14 +768,18 @@ public class CFGBuilder {
     }
     PsiLocalVariable localFn = ExpressionUtils.resolveLocalVariable(stripped);
     if (localFn != null) {
-      PsiLambdaExpression localLambda =
-        ObjectUtils.tryCast(PsiUtil.skipParenthesizedExprDown(localFn.getInitializer()), PsiLambdaExpression.class);
-      if (myAnalyzer.wasAdded(localLambda)) {
-        PsiElement scope = PsiUtil.getVariableCodeBlock(localFn, null);
-        List<PsiReferenceExpression> refs = VariableAccessUtils.getVariableReferences(localFn, scope);
-        if (ContainerUtil.getOnlyItem(refs) == stripped) {
-          myAnalyzer.removeLambda(localLambda);
-          return tryInlineLambda(argCount, localLambda, resultNullability, pushArgs);
+      PsiElement parent =
+        PsiTreeUtil.getParentOfType(functionalExpression, PsiLambdaExpression.class, PsiClass.class, PsiMethod.class);
+      if (PsiTreeUtil.isAncestor(parent, localFn, true)) {
+        PsiLambdaExpression localLambda =
+          ObjectUtils.tryCast(PsiUtil.skipParenthesizedExprDown(localFn.getInitializer()), PsiLambdaExpression.class);
+        if (myAnalyzer.wasAdded(localLambda)) {
+          PsiElement scope = PsiUtil.getVariableCodeBlock(localFn, null);
+          List<PsiReferenceExpression> refs = VariableAccessUtils.getVariableReferences(localFn, scope);
+          if (ContainerUtil.getOnlyItem(refs) == stripped) {
+            myAnalyzer.removeLambda(localLambda);
+            return tryInlineLambda(argCount, localLambda, resultNullability, pushArgs);
+          }
         }
       }
     }

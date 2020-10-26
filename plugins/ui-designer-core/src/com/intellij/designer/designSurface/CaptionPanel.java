@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.designer.designSurface;
 
 import com.intellij.designer.actions.CommonEditActionsProvider;
@@ -11,7 +11,8 @@ import com.intellij.openapi.actionSystem.*;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.SideBorder;
 import com.intellij.ui.components.JBLayeredPane;
-import com.intellij.util.containers.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -214,7 +215,7 @@ public class CaptionPanel extends JBLayeredPane implements DataProvider, DeleteP
 
     boolean update = !myRootChildren.isEmpty();
 
-    IntArrayList oldSelection = null;
+    IntList oldSelection = null;
     if (myCaption != null) {
       oldSelection = new IntArrayList();
       for (RadComponent component : myArea.getSelection()) {
@@ -253,7 +254,7 @@ public class CaptionPanel extends JBLayeredPane implements DataProvider, DeleteP
         int selectionSize = oldSelection.size();
 
         for (int i = 0; i < selectionSize; i++) {
-          int index = oldSelection.get(i);
+          int index = oldSelection.getInt(i);
           if (0 <= index && index < componentSize) {
             newSelection.add(myRootChildren.get(index));
           }

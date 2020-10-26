@@ -92,7 +92,7 @@ public class MultipleBuildsView implements BuildProgressListener, Disposable {
       if (obj.statusMessage != null) {
         SimpleColoredComponent statusComponent = new SimpleColoredComponent();
         statusComponent.setIcon(EmptyIcon.ICON_16);
-        statusComponent.append(obj.statusMessage, SimpleTextAttributes.GRAY_ATTRIBUTES);
+        statusComponent.append(obj.statusMessage, SimpleTextAttributes.REGULAR_ATTRIBUTES);
         panel.add(statusComponent, BorderLayout.SOUTH);
       }
       return panel;
@@ -148,7 +148,7 @@ public class MultipleBuildsView implements BuildProgressListener, Disposable {
         listModel.addElement(buildInfo);
 
         RunContentDescriptor contentDescriptor;
-        Supplier<RunContentDescriptor> contentDescriptorSupplier = buildInfo.getContentDescriptorSupplier();
+        Supplier<? extends RunContentDescriptor> contentDescriptorSupplier = buildInfo.getContentDescriptorSupplier();
         contentDescriptor = contentDescriptorSupplier != null ? contentDescriptorSupplier.get() : null;
         final Runnable activationCallback;
         if (contentDescriptor != null) {
@@ -164,14 +164,8 @@ public class MultipleBuildsView implements BuildProgressListener, Disposable {
         }
 
         BuildView view = myViewMap.computeIfAbsent(buildInfo, info -> {
-          final DefaultBuildDescriptor buildDescriptor = new DefaultBuildDescriptor(
-            buildInfo.getId(), buildInfo.getTitle(), buildInfo.getWorkingDir(), buildInfo.getStartTime());
-          buildDescriptor.setActivateToolWindowWhenAdded(buildInfo.isActivateToolWindowWhenAdded());
-          buildDescriptor.setActivateToolWindowWhenFailed(buildInfo.isActivateToolWindowWhenFailed());
-          buildDescriptor.setAutoFocusContent(buildInfo.isAutoFocusContent());
-
           String selectionStateKey = "build.toolwindow." + myViewManager.getViewName() + ".selection.state";
-          final BuildView buildView = new BuildView(myProject, buildDescriptor, selectionStateKey, myViewManager);
+          BuildView buildView = new BuildView(myProject, buildInfo, selectionStateKey, myViewManager);
           Disposer.register(this, buildView);
           if (contentDescriptor != null) {
             Disposer.register(buildView, contentDescriptor);

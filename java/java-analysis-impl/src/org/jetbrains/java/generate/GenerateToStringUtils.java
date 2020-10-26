@@ -30,7 +30,7 @@ import java.util.List;
 /**
  * Utility methods for GenerationToStringAction and the inspections.
  */
-public class GenerateToStringUtils {
+public final class GenerateToStringUtils {
 
     private static final Logger log = Logger.getInstance("#GenerateToStringUtils");
 
@@ -48,7 +48,7 @@ public class GenerateToStringUtils {
     }
 
     /**
-     * Filters the list of fields from the class with the given parameters from the {@link org.jetbrains.java.generate.config.Config config} settings.
+     * Filters the list of fields from the class with the given parameters from the {@link Config config} settings.
      *
      * @param clazz          the class to filter it's fields
      * @param pattern        the filter pattern to filter out unwanted fields

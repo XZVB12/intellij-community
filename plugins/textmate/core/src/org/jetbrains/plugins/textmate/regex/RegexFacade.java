@@ -13,7 +13,7 @@ import org.joni.exception.JOniException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
-public class RegexFacade {
+public final class RegexFacade {
   private static final Regex FAILED_REGEX = new Regex("^$", UTF8Encoding.INSTANCE);
   private static final Logger LOGGER = Logger.getInstance(RegexFacade.class);
 
@@ -46,7 +46,7 @@ public class RegexFacade {
     MatchData lastMatch = lastResult != null ? lastResult.lastMatch : MatchData.NOT_MATCHED;
 
     if (lastId == string.id && lastOffset <= byteOffset) {
-      if (!lastMatch.matched() || lastMatch.byteOffset().getStartOffset() >= byteOffset) {
+      if (!lastMatch.matched() || lastMatch.byteOffset().start >= byteOffset) {
         checkMatched(lastMatch, string);
         return lastMatch;
       }
@@ -65,9 +65,9 @@ public class RegexFacade {
   }
 
   private static void checkMatched(MatchData match, StringWithId string) {
-    if (match.matched() && match.byteOffset().getEndOffset() > string.bytes.length) {
+    if (match.matched() && match.byteOffset().end > string.bytes.length) {
       throw new IllegalStateException(
-        "Match data out of bounds: " + match.byteOffset().getStartOffset() + " > " + string.bytes.length + "\n" +
+        "Match data out of bounds: " + match.byteOffset().start + " > " + string.bytes.length + "\n" +
         new String(string.bytes, StandardCharsets.UTF_8));
     }
   }
@@ -83,7 +83,7 @@ public class RegexFacade {
     return REGEX_CACHE.computeIfAbsent(regexString, RegexFacade::new);
   }
 
-  private static class LastMatch {
+  private static final class LastMatch {
     private final Object lastId;
     private final int lastOffset;
     private final MatchData lastMatch;

@@ -39,9 +39,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * @author cdr
- */
 public class SliceNode extends AbstractTreeNode<SliceUsage> implements DuplicateNodeRenderer.DuplicatableNode<SliceNode>, MyColoredTreeCellRenderer {
   protected List<SliceNode> myCachedChildren;
   boolean dupNodeCalculated;
@@ -142,10 +139,8 @@ public class SliceNode extends AbstractTreeNode<SliceUsage> implements Duplicate
 
   @Override
   protected void update(@NotNull PresentationData presentation) {
-    if (presentation != null) {
-      presentation.setChanged(presentation.isChanged() || changed);
-      changed = false;
-    }
+    presentation.setChanged(presentation.isChanged() || changed);
+    changed = false;
   }
 
   public void calculateDupNode() {

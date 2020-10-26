@@ -1,10 +1,11 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.gradle.importing
 
 import com.intellij.openapi.externalSystem.importing.ImportSpec
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.util.io.FileUtil
 import groovy.json.StringEscapeUtils.escapeJava
+import org.assertj.core.api.Assertions.assertThat
 import org.gradle.util.GradleVersion
 import org.jetbrains.plugins.gradle.settings.GradleSettings
 import org.junit.Test
@@ -55,12 +56,12 @@ open class GradleOutputParsersMessagesImportingTest : BuildViewMessagesImporting
       currentGradleVersion < GradleVersion.version("2.14") -> expectedExecutionTree =
         "-\n" +
         " -failed\n" +
-        "  -impl/build.gradle\n" +
+        "  -build.gradle\n" +
         "   Could not find method ghostConf() for arguments [project ':api'] on project ':impl'"
       else -> expectedExecutionTree =
         "-\n" +
         " -failed\n" +
-        "  -impl/build.gradle\n" +
+        "  -build.gradle\n" +
         "   Could not find method ghostConf() for arguments [project ':api'] on object of type org.gradle.api.internal.artifacts.dsl.dependencies.DefaultDependencyHandler"
     }
     assertSyncViewTreeEquals(expectedExecutionTree)
@@ -109,11 +110,15 @@ open class GradleOutputParsersMessagesImportingTest : BuildViewMessagesImporting
     assertSyncViewTreeEquals(expectedExecutionTree)
 
     val filePath = FileUtil.toSystemDependentName(myProjectConfig.path)
+    val tryScanSuggestion = if (isGradleNewerOrSameAs("4.10")) " Run with --scan to get full insights." else ""
     assertSyncViewSelectedNode("Something's wrong!",
                                "Build file '$filePath' line: 1\n\n" +
                                "A problem occurred evaluating root project 'project'.\n" +
                                "> Failed to apply plugin [class 'example.SomePlugin']\n" +
-                               "   > Something's wrong!\n")
+                               "   > Something's wrong!\n" +
+                               "\n" +
+                               "* Try:\n" +
+                               "Run with --stacktrace option to get the stack trace. Run with --debug option to get more log output.$tryScanSuggestion\n")
 
   }
 
@@ -145,7 +150,7 @@ open class GradleOutputParsersMessagesImportingTest : BuildViewMessagesImporting
                                "\n")
 
     // successful import when repository is added
-    buildScript.withMavenCentral(isGradleNewerOrSameThen("6.0"))
+    buildScript.withMavenCentral(isGradleNewerOrSameAs("6.0"))
     importProject(buildScript.generate())
     assertSyncViewTreeEquals("-\n" +
                              " finished")
@@ -164,7 +169,7 @@ open class GradleOutputParsersMessagesImportingTest : BuildViewMessagesImporting
                                } +
                                "\n" +
                                "Possible solution:\n" +
-                               " - Disable offline mode and reimport the project\n" +
+                               " - Disable offline mode and reload the project\n" +
                                "\n")
 
     // check unresolved dependency for offline mode when merged project used
@@ -178,7 +183,7 @@ open class GradleOutputParsersMessagesImportingTest : BuildViewMessagesImporting
                                "Could not resolve junit:junit:99.99.\n" +
                                "\n" +
                                "Possible solution:\n" +
-                               " - Disable offline mode and reimport the project\n" +
+                               " - Disable offline mode and reload the project\n" +
                                "\n")
 
     currentExternalProjectSettings.isResolveModulePerSourceSet = true
@@ -232,7 +237,7 @@ open class GradleOutputParsersMessagesImportingTest : BuildViewMessagesImporting
                                "\n")
 
     // successful import when repository is added
-    buildScript.withBuildScriptMavenCentral(isGradleNewerOrSameThen("6.0"))
+    buildScript.withBuildScriptMavenCentral(isGradleNewerOrSameAs("6.0"))
     importProject(buildScript.generate())
     assertSyncViewTreeEquals("-\n" +
                              " finished")
@@ -323,10 +328,18 @@ open class GradleOutputParsersMessagesImportingTest : BuildViewMessagesImporting
                              "   Cannot get property 'foo' on null object")
 
     val filePath = FileUtil.toSystemDependentName(myProjectConfig.path)
-    assertSyncViewSelectedNode("Cannot get property 'foo' on null object",
-                               "Build file '$filePath' line: 1\n\n" +
-                               "A problem occurred evaluating root project 'project'.\n" +
-                               "> Cannot get property 'foo' on null object\n")
+    assertSyncViewSelectedNode("Cannot get property 'foo' on null object", true) {
+      val tryScanSuggestion = if (isGradleNewerOrSameAs("4.10")) " Run with --scan to get full insights." else ""
+      assertThat(it).startsWith("Build file '$filePath' line: 1\n\n" +
+                                "A problem occurred evaluating root project 'project'.\n" +
+                                "> Cannot get property 'foo' on null object\n" +
+                                "\n" +
+                                "* Try:\n" +
+                                "Run with --debug option to get more log output.$tryScanSuggestion\n" +
+                                "\n" +
+                                "* Exception is:\n" +
+                                "org.gradle.api.GradleScriptException: A problem occurred evaluating root project 'project'.")
+    }
   }
 
   @Test

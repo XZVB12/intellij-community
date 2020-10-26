@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui;
 
 import com.intellij.openapi.application.Application;
@@ -11,6 +11,7 @@ import com.intellij.openapi.ui.FixedSizeButton;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.CharFilter;
 import com.intellij.openapi.util.text.StringUtil;
@@ -31,6 +32,8 @@ import javax.swing.table.TableColumnModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.lang.reflect.InvocationTargetException;
 
 public final class GuiUtils {
@@ -75,7 +78,7 @@ public final class GuiUtils {
   }
 
   @Deprecated
-  public static JPanel makeTitledPanel(JComponent aComponent, String aTitle) {
+  public static JPanel makeTitledPanel(JComponent aComponent, @NlsContexts.BorderTitle String aTitle) {
     JPanel result = makePaddedPanel(aComponent, false, true, false, true);
     return wrapWithBorder(result, IdeBorderFactory.createTitledBorder(aTitle));
   }
@@ -264,6 +267,11 @@ public final class GuiUtils {
     return s;
   }
 
+  /**
+   * @deprecated Use {@link Application#invokeAndWait}
+   */
+  @SuppressWarnings("RedundantThrows")
+  @Deprecated
   public static void runOrInvokeAndWait(@NotNull Runnable runnable) throws InvocationTargetException, InterruptedException {
     ApplicationManager.getApplication().invokeAndWait(runnable);
   }
@@ -304,5 +312,26 @@ public final class GuiUtils {
     FontMetrics fontMetrics = comp.getFontMetrics(comp.getFont());
     size.width = fontMetrics.charWidth('a') * charCount;
     return size;
+  }
+
+  public static void installVisibilityReferent(JComponent owner, JComponent referent) {
+    referent.addComponentListener(new ComponentAdapter() {
+      @Override
+      public void componentShown(ComponentEvent e) {
+        toggleVisibility(e);
+      }
+
+      @Override
+      public void componentHidden(ComponentEvent e) {
+        toggleVisibility(e);
+      }
+
+      private void toggleVisibility(ComponentEvent e) {
+        Component component = e.getComponent();
+        if (component != null) {
+          owner.setVisible(component.isVisible());
+        }
+      }
+    });
   }
 }

@@ -1,8 +1,4 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
 package com.intellij.openapi.ui;
 
 import com.intellij.ide.IdeBundle;
@@ -25,7 +21,6 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeNode;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
-import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -86,14 +81,46 @@ public abstract class NamedItemsListEditor<T> extends MasterDetailsComponent {
     return true;
   }
 
+  /**
+   * @deprecated override {@link #getCopyDialogTitle()}, {@link #getCreateNewDialogTitle()}, {@link #getNewLabelText()} instead
+   */
+  @SuppressWarnings({"DeprecatedIsStillUsed", "HardCodedStringLiteral"})
+  @Deprecated
   protected String subjDisplayName() {
     return "item";
   }
 
+  /**
+   * Returns title for "Copy" dialog. The method must be overriden in the implementations because the default implementation isn't friendly
+   * for localization.
+   */
+  protected @NlsContexts.DialogTitle String getCopyDialogTitle() {
+    //noinspection HardCodedStringLiteral
+    return "Copy " + subjDisplayName();
+  }
+
+  /**
+   * Returns label text for "Copy" and "Create New" dialogs. The method must be overriden in the implementations because the default
+   * implementation isn't friendly for localization.
+   */
+  protected @NlsContexts.Label String getNewLabelText() {
+    //noinspection HardCodedStringLiteral
+    return "New " + subjDisplayName() + " name:";
+  }
+
+  /**
+   * Returns title for "Create New" dialog. The method must be overriden in the implementations because the default implementation isn't friendly
+   * for localization.
+   */
+  protected @NlsContexts.DialogTitle String getCreateNewDialogTitle() {
+    //noinspection HardCodedStringLiteral
+    return "Create New " + subjDisplayName();
+  }
+
+
   @Nullable
-  public String askForProfileName(@NlsContexts.DialogTitle String titlePattern) {
-    String title = MessageFormat.format(titlePattern, subjDisplayName());
-    return Messages.showInputDialog(IdeBundle.message("dialog.message.new.name", subjDisplayName()), title, Messages.getQuestionIcon(), "", new InputValidator() {
+  public String askForProfileName(@NlsContexts.DialogTitle String title) {
+    return Messages.showInputDialog(getNewLabelText(), title, Messages.getQuestionIcon(), "", new InputValidator() {
       @Override
       public boolean checkInput(String s) {
         return s.length() > 0 && findByName(s) == null;
@@ -107,7 +134,7 @@ public abstract class NamedItemsListEditor<T> extends MasterDetailsComponent {
   }
 
   @Nullable
-  protected T findByName(String name) {
+  protected T findByName(@NlsSafe String name) {
     for (T item : myItems) {
       if (Objects.equals(name, myNamer.getName(item))) return item;
     }
@@ -276,7 +303,7 @@ public abstract class NamedItemsListEditor<T> extends MasterDetailsComponent {
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent event) {
-      final String profileName = askForProfileName(IdeBundle.message("dialog.title.copy"));
+      String profileName = askForProfileName(getCopyDialogTitle());
       if (profileName == null) return;
 
       @SuppressWarnings("unchecked") final T clone = myCloner.copyOf((T)getSelectedObject());
@@ -319,7 +346,7 @@ public abstract class NamedItemsListEditor<T> extends MasterDetailsComponent {
 
   @Nullable
   protected T createItem() {
-    final String name = askForProfileName(IdeBundle.message("dialog.title.create.new"));
+    String name = askForProfileName(getCreateNewDialogTitle());
     if (name == null) return null;
     final T newItem = myFactory.create();
     myNamer.setName(newItem, name);

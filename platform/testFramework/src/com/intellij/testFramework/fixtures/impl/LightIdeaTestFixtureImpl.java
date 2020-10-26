@@ -1,11 +1,10 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.testFramework.fixtures.impl;
 
 import com.intellij.application.options.CodeStyle;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.command.impl.StartMarkAction;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
@@ -14,7 +13,6 @@ import com.intellij.openapi.vfs.newvfs.persistent.PersistentFS;
 import com.intellij.psi.codeStyle.CodeStyleSchemes;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageManagerImpl;
-import com.intellij.refactoring.rename.inplace.InplaceRefactoring;
 import com.intellij.testFramework.*;
 import com.intellij.testFramework.fixtures.LightIdeaTestFixture;
 import org.jetbrains.annotations.NotNull;
@@ -35,7 +33,7 @@ public final class LightIdeaTestFixtureImpl extends BaseFixture implements Light
   public void setUp() throws Exception {
     super.setUp();
 
-    TestApplicationManager application = LightPlatformTestCase.initApplication();
+    TestApplicationManager application = TestApplicationManager.getInstance();
     Pair<Project, Module> setup = LightPlatformTestCase.doSetup(myProjectDescriptor, LocalInspectionTool.EMPTY_ARRAY, getTestRootDisposable());
     myProject = setup.getFirst();
     myModule = setup.getSecond();
@@ -63,10 +61,6 @@ public final class LightIdeaTestFixtureImpl extends BaseFixture implements Light
         }
       })
       .append(() -> {
-        StartMarkAction.checkCleared(project);
-        InplaceRefactoring.checkCleared();
-      })
-      .append(() -> {
         if (project != null) {
           TestApplicationManagerKt.waitForProjectLeakingThreads(project);
         }
@@ -76,7 +70,7 @@ public final class LightIdeaTestFixtureImpl extends BaseFixture implements Light
         myProject = null;
         myModule = null;
         if (project != null) {
-          LightPlatformTestCase.doTearDown(project, LightPlatformTestCase.getApplication());
+          TestApplicationManagerKt.tearDownProjectAndApp(project);
         }
       })
       .append(() -> LightPlatformTestCase.checkEditorsReleased())

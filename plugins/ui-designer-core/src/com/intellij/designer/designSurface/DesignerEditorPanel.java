@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.designer.designSurface;
 
 import com.intellij.designer.*;
@@ -29,6 +29,7 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.ThreeComponentsSplitter;
 import com.intellij.openapi.ui.VerticalFlowLayout;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.registry.Registry;
@@ -43,10 +44,12 @@ import com.intellij.ui.components.JBLayeredPane;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.containers.FixedHashMap;
-import com.intellij.util.containers.IntArrayList;
 import com.intellij.util.ui.AsyncProcessIcon;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -330,7 +333,7 @@ public abstract class DesignerEditorPanel extends JPanel
     myPanel.add(myErrorPanel, ERROR_CARD);
   }
 
-  public final void showError(@NotNull String message, @NotNull Throwable e) {
+  public final void showError(@NotNull @Nls String message, @NotNull Throwable e) {
     if (isProjectClosed()) {
       return;
     }
@@ -423,7 +426,7 @@ public abstract class DesignerEditorPanel extends JPanel
       fixesPanel.setOpaque(false);
       fixesPanel.add(Box.createHorizontalStrut(icon.getIconWidth()));
 
-      for (Pair<String, Runnable> pair : message.myAdditionalFixes) {
+      for (Pair<@Nls String, Runnable> pair : message.myAdditionalFixes) {
         HyperlinkLabel fixLabel = new HyperlinkLabel();
         fixLabel.setOpaque(false);
         fixLabel.setHyperlinkText(pair.getFirst());
@@ -469,7 +472,7 @@ public abstract class DesignerEditorPanel extends JPanel
     myProgressPanel.setOpaque(false);
   }
 
-  protected final void showProgress(String message) {
+  protected final void showProgress(@Nls String message) {
     myProgressMessage.setText(message);
     if (myProgressPanel.getParent() == null) {
       myGlassLayer.setEnabled(false);
@@ -574,9 +577,9 @@ public abstract class DesignerEditorPanel extends JPanel
     if (myRootComponent != null && myExpandedState == null && mySelectionState == null) {
       myExpandedState = new int[myExpandedComponents == null ? 0 : myExpandedComponents.size()][];
       for (int i = 0; i < myExpandedState.length; i++) {
-        IntArrayList path = new IntArrayList();
+        IntList path = new IntArrayList();
         componentToPath((RadComponent)myExpandedComponents.get(i), path);
-        myExpandedState[i] = path.toArray();
+        myExpandedState[i] = path.toIntArray();
       }
 
       mySelectionState = getSelectionState();
@@ -606,15 +609,15 @@ public abstract class DesignerEditorPanel extends JPanel
     int[][] selectionState = new int[selection.size()][];
 
     for (int i = 0; i < selectionState.length; i++) {
-      IntArrayList path = new IntArrayList();
+      IntList path = new IntArrayList();
       componentToPath(selection.get(i), path);
-      selectionState[i] = path.toArray();
+      selectionState[i] = path.toIntArray();
     }
 
     return selectionState;
   }
 
-  private static void componentToPath(RadComponent component, IntArrayList path) {
+  private static void componentToPath(RadComponent component, IntList path) {
     RadComponent parent = component.getParent();
 
     if (parent != null) {
@@ -712,7 +715,7 @@ public abstract class DesignerEditorPanel extends JPanel
    * Returns a suitable version label from the version attribute from a {@link PaletteItem} version
    */
   @NotNull
-  public String getVersionLabel(@Nullable String version) {
+  public @NlsSafe String getVersionLabel(@Nullable String version) {
     return StringUtil.notNullize(version);
   }
 
@@ -992,7 +995,7 @@ public abstract class DesignerEditorPanel extends JPanel
     }
 
     @Override
-    public void showError(@NonNls String message, Throwable e) {
+    public void showError(@Nls String message, Throwable e) {
       DesignerEditorPanel.this.showError(message, e);
     }
 
@@ -1073,14 +1076,14 @@ public abstract class DesignerEditorPanel extends JPanel
 
   private class FixableMessageAction extends AbstractComboBoxAction<FixableMessageInfo> {
     private final DefaultActionGroup myActionGroup = new DefaultActionGroup();
-    private String myTitle;
+    private @NlsSafe String myTitle;
     private boolean myIsAdded;
 
     FixableMessageAction() {
       myActionPanel.getActionGroup().add(myActionGroup);
 
       Presentation presentation = getTemplatePresentation();
-      presentation.setDescription("Warnings");
+      presentation.setDescription(DesignerBundle.message("designer.action.warnings.description"));
       presentation.setIcon(AllIcons.General.Warning);
     }
 
@@ -1137,7 +1140,7 @@ public abstract class DesignerEditorPanel extends JPanel
             defaultAction[0] = popupAction;
           }
           if (message.myAdditionalFixes != null && message.myAdditionalFixes.size() > 0) {
-            for (final Pair<String, Runnable> pair : message.myAdditionalFixes) {
+            for (final Pair<@Nls String, Runnable> pair : message.myAdditionalFixes) {
               AnAction popupAction = new AnAction() {
                 @Override
                 public void actionPerformed(@NotNull AnActionEvent e) {
@@ -1171,7 +1174,7 @@ public abstract class DesignerEditorPanel extends JPanel
       }
     }
 
-    private String cleanText(String text) {
+    private @Nls String cleanText(@NlsSafe String text) {
       if (text != null) {
         text = text.trim();
         text = StringUtil.replace(text, "&nbsp;", " ");
@@ -1207,8 +1210,8 @@ public abstract class DesignerEditorPanel extends JPanel
   }
 
   public static final class ErrorInfo {
-    public String myMessage;
-    public String myDisplayMessage;
+    public @Nls String myMessage;
+    public @Nls String myDisplayMessage;
 
     public final List<FixableMessageInfo> myMessages = new ArrayList<>();
 
@@ -1221,18 +1224,18 @@ public abstract class DesignerEditorPanel extends JPanel
 
   public static final class FixableMessageInfo {
     public final boolean myErrorIcon;
-    public final String myBeforeLinkText;
-    public final String myLinkText;
-    public final String myAfterLinkText;
+    public final @Nls String myBeforeLinkText;
+    public final @Nls String myLinkText;
+    public final @Nls String myAfterLinkText;
     public final Runnable myQuickFix;
-    public final List<Pair<String, Runnable>> myAdditionalFixes;
+    public final List<Pair<@Nls String, Runnable>> myAdditionalFixes;
 
     public FixableMessageInfo(boolean errorIcon,
-                              String beforeLinkText,
-                              String linkText,
-                              String afterLinkText,
+                              @Nls String beforeLinkText,
+                              @Nls String linkText,
+                              @Nls String afterLinkText,
                               Runnable quickFix,
-                              List<Pair<String, Runnable>> additionalFixes) {
+                              List<Pair<@Nls String, Runnable>> additionalFixes) {
       myErrorIcon = errorIcon;
       myBeforeLinkText = beforeLinkText;
       myLinkText = linkText;

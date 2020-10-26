@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.ui.tree;
 
+import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.util.treeView.AbstractTreeBuilder;
 import com.intellij.ide.util.treeView.AbstractTreeNode;
 import com.intellij.openapi.application.Application;
@@ -10,7 +11,10 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.ActionCallback;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.IdeFocusManager;
+import com.intellij.pom.Navigatable;
 import com.intellij.ui.ScrollingUtil;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.awt.RelativePoint;
@@ -19,6 +23,7 @@ import com.intellij.ui.tree.TreeVisitor;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.Range;
+import com.intellij.util.concurrency.EdtScheduledExecutorService;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.JBTreeTraverser;
@@ -50,6 +55,7 @@ import java.util.stream.Stream;
 
 import static com.intellij.util.ReflectionUtil.getDeclaredMethod;
 import static com.intellij.util.ReflectionUtil.getField;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.stream.Collectors.toList;
 
 public final class TreeUtil {
@@ -57,8 +63,24 @@ public final class TreeUtil {
   private static final Logger LOG = Logger.getInstance(TreeUtil.class);
   private static final String TREE_UTIL_SCROLL_TIME_STAMP = "TreeUtil.scrollTimeStamp";
   private static final JBIterable<Integer> NUMBERS = JBIterable.generate(0, i -> i + 1);
+  private static final Key<Function<TreePath, Navigatable>> NAVIGATABLE_PROVIDER = Key.create("TreeUtil: convert TreePath to Navigatable");
 
   private TreeUtil() {}
+
+  /**
+   * @return a navigatable object that corresponds to the specified path,  or {@code null} otherwise
+   */
+  public static @Nullable Navigatable getNavigatable(@NotNull JTree tree, @Nullable TreePath path) {
+    Function<? super TreePath, ? extends Navigatable> supplier = UIUtil.getClientProperty(tree, NAVIGATABLE_PROVIDER);
+    return supplier != null ? supplier.apply(path) : getLastUserObject(Navigatable.class, path);
+  }
+
+  /**
+   * Sets the mapping function that provides a navigatable object for a tree path.
+   */
+  public static void setNavigatableProvider(@NotNull JTree tree, @NotNull Function<? super TreePath, ? extends Navigatable> provider) {
+    tree.putClientProperty(NAVIGATABLE_PROVIDER, provider);
+  }
 
   @NotNull
   public static JBTreeTraverser<Object> treeTraverser(@NotNull JTree tree) {
@@ -92,6 +114,10 @@ public final class TreeUtil {
   public static JBIterable<TreeNode> nodeChildren(@Nullable TreeNode treeNode) {
     int count = treeNode == null ? 0 : treeNode.getChildCount();
     return count == 0 ? JBIterable.empty() : NUMBERS.take(count).map(index -> treeNode.getChildAt(index));
+  }
+
+  public static boolean hasManyNodes(@NotNull Tree tree, int threshold) {
+    return treeTraverser(tree).traverse().take(threshold).size() >= threshold;
   }
 
   /**
@@ -320,6 +346,11 @@ public final class TreeUtil {
       selectionPath = selectionPath.pathByAddingChild(model.getChild(root, 0));
     }
     return selectionPath;
+  }
+
+  public static int getRowForNode(@NotNull JTree tree, @NotNull DefaultMutableTreeNode targetNode) {
+    TreeNode[] path = targetNode.getPath();
+    return tree.getRowForPath(new TreePath(path));
   }
 
   /**
@@ -692,7 +723,7 @@ public final class TreeUtil {
         bounds.x = tree.getVisibleRect().x;
       }
 
-    LOG.debug("tree scroll: ", path);
+    if (LOG.isTraceEnabled()) LOG.debug("tree scroll: ", path);
     tree.scrollRectToVisible(bounds);
     // try to scroll later when the tree is ready
     Object property = tree.getClientProperty(TREE_UTIL_SCROLL_TIME_STAMP);
@@ -714,7 +745,7 @@ public final class TreeUtil {
       if (pathBounds != null) {
         Object property = tree.getClientProperty(TREE_UTIL_SCROLL_TIME_STAMP);
         long stamp = property instanceof Long ? (Long)property : Long.MAX_VALUE;
-        LOG.debug("tree scroll ", attempt, stamp == expected ? ": try again: " : ": ignore: ", path);
+        if (LOG.isTraceEnabled()) LOG.debug("tree scroll ", attempt, stamp == expected ? ": try again: " : ": ignore: ", path);
         if (stamp == expected) {
           bounds.y = pathBounds.y - offset; // restore bounds according to the current row
           Rectangle visible = tree.getVisibleRect();
@@ -1369,7 +1400,7 @@ public final class TreeUtil {
   }
 
   private static void expandPathWithDebug(@NotNull JTree tree, @NotNull TreePath path) {
-    LOG.debug("tree expand path: ", path);
+    if (LOG.isTraceEnabled()) LOG.debug("tree expand path: ", path);
     tree.expandPath(path);
   }
 
@@ -1523,7 +1554,7 @@ public final class TreeUtil {
         // do not expand children if parent path is collapsed
         if (!tree.isVisible(path)) {
           if (!promise.isCancelled()) {
-            LOG.debug("tree expand canceled");
+            if (LOG.isTraceEnabled()) LOG.debug("tree expand canceled");
             promise.cancel();
           }
           return TreeVisitor.Action.SKIP_SIBLINGS;
@@ -1602,28 +1633,35 @@ public final class TreeUtil {
     assert EventQueue.isDispatchThread();
     Rectangle bounds = tree.getPathBounds(path);
     if (bounds == null) {
-      LOG.debug("cannot scroll to: ", path);
+      if (LOG.isTraceEnabled()) LOG.debug("cannot scroll to: ", path);
       return false;
     }
+    internalScroll(tree, bounds, centered);
+    // notify screen readers that they should notify the user that the visual appearance of the component has changed
+    AccessibleContext context = tree.getAccessibleContext();
+    if (context != null) context.firePropertyChange(AccessibleContext.ACCESSIBLE_VISIBLE_DATA_PROPERTY, false, true);
+    // try to scroll later when the tree is ready
+    long stamp = 1L + getScrollTimeStamp(tree);
+    tree.putClientProperty(TREE_UTIL_SCROLL_TIME_STAMP, stamp);
+    EdtScheduledExecutorService.getInstance().schedule(() -> {
+      Rectangle boundsLater = stamp != getScrollTimeStamp(tree) ? null : tree.getPathBounds(path);
+      if (boundsLater != null) internalScroll(tree, boundsLater, centered);
+    }, 5, MILLISECONDS);
+    return true;
+  }
+
+  private static void internalScroll(@NotNull JTree tree, @NotNull Rectangle bounds, boolean centered) {
     Container parent = tree.getParent();
     if (parent instanceof JViewport) {
-      if (centered) {
-        Rectangle visible = tree.getVisibleRect();
-        centered = bounds.y < visible.y || bounds.y > visible.y + visible.height - bounds.height;
-        // disable centering if the given path is already visible
-      }
       int width = parent.getWidth();
       if (!centered && tree instanceof Tree && !((Tree)tree).isHorizontalAutoScrollingEnabled()) {
         bounds.x = -tree.getX();
         bounds.width = width;
       }
       else {
-        bounds.width = Math.min(bounds.width, width / 2);
-        bounds.x -= JBUIScale.scale(20); // TODO: calculate a control width
-        if (bounds.x < 0) {
-          bounds.width += bounds.x;
-          bounds.x = 0;
-        }
+        int control = JBUIScale.scale(20); // calculate a control width
+        bounds.x = Math.max(0, bounds.x - control);
+        bounds.width = bounds.x > 0 ? Math.min(bounds.width + control, centered ? width : width / 2) : width;
       }
       int height = parent.getHeight();
       if (height > bounds.height && height < tree.getHeight()) {
@@ -1643,14 +1681,12 @@ public final class TreeUtil {
         if (y > 0) bounds.height -= y;
       }
     }
-    scrollToVisibleWithAccessibility(tree, bounds);
-    return true;
+    tree.scrollRectToVisible(bounds);
   }
 
-  private static void scrollToVisibleWithAccessibility(@NotNull JTree tree, @NotNull Rectangle bounds) {
-    tree.scrollRectToVisible(bounds);
-    AccessibleContext context = tree.getAccessibleContext();
-    if (context != null) context.firePropertyChange(AccessibleContext.ACCESSIBLE_VISIBLE_DATA_PROPERTY, false, true);
+  private static long getScrollTimeStamp(@NotNull JTree tree) {
+    Object property = tree.getClientProperty(TREE_UTIL_SCROLL_TIME_STAMP);
+    return property instanceof Long ? (Long)property : Long.MIN_VALUE;
   }
 
   /**
@@ -1875,5 +1911,78 @@ public final class TreeUtil {
     List<T> list = new ArrayList<>(count);
     visitVisibleRows(tree, path -> filter.test(path) ? mapper.apply(path) : null, list::add);
     return list;
+  }
+
+  /**
+   * @param tree      a tree, which nodes should be iterated
+   * @param path      a starting tree path
+   * @param predicate a predicate that allows to skip some paths
+   * @return {@code null} if next visible path cannot be found
+   */
+  public static @Nullable TreePath nextVisiblePath(@NotNull JTree tree, TreePath path, @NotNull Predicate<TreePath> predicate) {
+    return nextVisiblePath(tree, tree.getRowForPath(path), predicate);
+  }
+
+  /**
+   * @param tree      a tree, which nodes should be iterated
+   * @param row       a starting row number to iterate
+   * @param predicate a predicate that allows to skip some paths
+   * @return {@code null} if next visible path cannot be found
+   */
+  public static @Nullable TreePath nextVisiblePath(@NotNull JTree tree, int row, @NotNull Predicate<TreePath> predicate) {
+    assert EventQueue.isDispatchThread();
+    if (row < 0) return null; // ignore illegal row
+    int count = tree.getRowCount();
+    if (count <= row) return null; // ignore illegal row
+    int stop = row;
+    while (true) {
+      row++; // NB!: increase row before checking for cycle scrolling
+      if (row == count && isCyclicScrollingAllowed()) row = 0;
+      if (row == count) return null; // stop scrolling on last node if no cyclic scrolling
+      if (row == stop) return null; // stop scrolling when cyclic scrolling is done
+      TreePath path = tree.getPathForRow(row);
+      if (path != null && predicate.test(path)) return path;
+    }
+  }
+
+  /**
+   * @param tree      a tree, which nodes should be iterated
+   * @param path      a starting tree path
+   * @param predicate a predicate that allows to skip some paths
+   * @return {@code null} if previous visible path cannot be found
+   */
+  public static @Nullable TreePath previousVisiblePath(@NotNull JTree tree, TreePath path, @NotNull Predicate<TreePath> predicate) {
+    return previousVisiblePath(tree, tree.getRowForPath(path), predicate);
+  }
+
+  /**
+   * @param tree      a tree, which nodes should be iterated
+   * @param row       a starting row number to iterate
+   * @param predicate a predicate that allows to skip some paths
+   * @return {@code null} if previous visible path cannot be found
+   */
+  public static @Nullable TreePath previousVisiblePath(@NotNull JTree tree, int row, @NotNull Predicate<TreePath> predicate) {
+    assert EventQueue.isDispatchThread();
+    if (row < 0) return null; // ignore illegal row
+    int count = tree.getRowCount();
+    if (count <= row) return null; // ignore illegal row
+    int stop = row;
+    while (true) {
+      if (row == 0 && isCyclicScrollingAllowed()) row = count;
+      if (row == 0) return null; // stop scrolling on first node if no cyclic scrolling
+      row--; // NB!: decrease row after checking for cyclic scrolling
+      if (row == stop) return null; // stop scrolling when cyclic scrolling is done
+      TreePath path = tree.getPathForRow(row);
+      if (path != null && predicate.test(path)) return path;
+    }
+  }
+
+  /**
+   * @return {@code true} if cyclic scrolling in trees is allowed, {@code false} otherwise
+   */
+  public static boolean isCyclicScrollingAllowed() {
+    if (!Registry.is("ide.tree.ui.cyclic.scrolling.allowed")) return false;
+    UISettings settings = UISettings.getInstanceOrNull();
+    return settings != null && settings.getCycleScrolling();
   }
 }

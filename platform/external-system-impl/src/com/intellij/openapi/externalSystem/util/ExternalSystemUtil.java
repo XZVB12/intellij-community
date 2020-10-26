@@ -13,6 +13,7 @@ import com.intellij.build.events.impl.*;
 import com.intellij.execution.*;
 import com.intellij.execution.configurations.ConfigurationType;
 import com.intellij.execution.executors.DefaultRunExecutor;
+import com.intellij.execution.filters.Filter;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.process.ProcessOutputTypes;
 import com.intellij.execution.rmi.RemoteUtil;
@@ -36,6 +37,7 @@ import com.intellij.openapi.externalSystem.ExternalSystemManager;
 import com.intellij.openapi.externalSystem.execution.ExternalSystemExecutionConsoleManager;
 import com.intellij.openapi.externalSystem.importing.ImportSpec;
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder;
+import com.intellij.openapi.externalSystem.importing.ImportSpecImpl;
 import com.intellij.openapi.externalSystem.model.*;
 import com.intellij.openapi.externalSystem.model.execution.ExternalSystemTaskExecutionSettings;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
@@ -89,7 +91,6 @@ import com.intellij.openapi.wm.ex.ProgressIndicatorEx;
 import com.intellij.openapi.wm.ex.ToolWindowManagerEx;
 import com.intellij.pom.Navigatable;
 import com.intellij.pom.NonNavigatable;
-import com.intellij.util.ArrayUtil;
 import com.intellij.util.Consumer;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.SmartList;
@@ -389,7 +390,8 @@ public final class ExternalSystemUtil {
           });
         }
 
-        ExternalSystemProcessingManager processingManager = ServiceManager.getService(ExternalSystemProcessingManager.class);
+        ExternalSystemProcessingManager processingManager =
+          ApplicationManager.getApplication().getService(ExternalSystemProcessingManager.class);
         if (processingManager.findTask(ExternalSystemTaskType.RESOLVE_PROJECT, externalSystemId, externalProjectPath) != null) {
           if (callback != null) {
             callback.onFailure(resolveProjectTask.getId(), ExternalSystemBundle.message("error.resolve.already.running", externalProjectPath), null);
@@ -445,7 +447,12 @@ public final class ExternalSystemUtil {
                 public void actionPerformed(@NotNull AnActionEvent e) {
                   Presentation p = e.getPresentation();
                   p.setEnabled(false);
-                  refreshProject(externalProjectPath, importSpec);
+                  Runnable rerunRunnable = importSpec instanceof ImportSpecImpl ? ((ImportSpecImpl)importSpec).getRerunAction() : null;
+                  if (rerunRunnable == null) {
+                    refreshProject(externalProjectPath, importSpec);
+                  } else {
+                    rerunRunnable.run();
+                  }
                 }
               };
               String systemId = id.getProjectSystemId().getReadableName();
@@ -468,7 +475,11 @@ public final class ExternalSystemUtil {
                   contentDescriptor.setActivateToolWindowWhenFailed(reportRefreshError);
                   contentDescriptor.setAutoFocusContent(reportRefreshError);
                   return contentDescriptor;
-                });
+                })
+                .withActions(consoleManager.getCustomActions(project, resolveProjectTask, null))
+                .withContextActions(consoleManager.getCustomContextActions(project, resolveProjectTask, null));
+              Filter[] filters = consoleManager.getCustomExecutionFilters(project, resolveProjectTask, null);
+              Arrays.stream(filters).forEach(buildDescriptor::withExecutionFilter);
               eventDispatcher.onEvent(id, new StartBuildEventImpl(buildDescriptor, BuildBundle.message("build.event.message.syncing")));
             }
 
@@ -492,6 +503,14 @@ public final class ExternalSystemUtil {
             }
 
             @Override
+            public void onCancel(@NotNull ExternalSystemTaskId id) {
+              finishSyncEventSupplier.set(() -> new FinishBuildEventImpl(id, null, System.currentTimeMillis(),
+                                                                         BuildBundle.message("build.status.cancelled"),
+                                                                         new FailureResultImpl()));
+              processHandler.notifyProcessTerminated(1);
+            }
+
+            @Override
             public void onSuccess(@NotNull ExternalSystemTaskId id) {
               finishSyncEventSupplier.set(
                 () -> new FinishBuildEventImpl(id, null, System.currentTimeMillis(), BuildBundle.message("build.status.finished"), new SuccessResultImpl()));
@@ -511,9 +530,10 @@ public final class ExternalSystemUtil {
               }
             }
           };
+
+          LOG.info("External project [" + externalProjectPath + "] resolution task started");
           final long startTS = System.currentTimeMillis();
-          resolveProjectTask
-            .execute(indicator, ArrayUtil.prepend(taskListener, ExternalSystemTaskNotificationListener.EP_NAME.getExtensions()));
+          resolveProjectTask.execute(indicator, taskListener);
           LOG.info("External project [" + externalProjectPath + "] resolution task executed in " +
                    (System.currentTimeMillis() - startTS) + " ms.");
           handExecutionResult(externalSystemTaskActivator, eventDispatcher, finishSyncEventSupplier);
@@ -595,7 +615,7 @@ public final class ExternalSystemUtil {
       }
 
       private void cancelImport() {
-        resolveProjectTask.cancel(ExternalSystemTaskNotificationListener.EP_NAME.getExtensions());
+        resolveProjectTask.cancel();
       }
     };
 
@@ -1007,7 +1027,7 @@ public final class ExternalSystemUtil {
           }
           return;
         }
-        ServiceManager.getService(ProjectDataManager.class).importData(externalProject, project, true);
+        ApplicationManager.getApplication().getService(ProjectDataManager.class).importData(externalProject, project, true);
         if (importResultCallback != null) {
           importResultCallback.consume(true);
         }
@@ -1119,7 +1139,7 @@ public final class ExternalSystemUtil {
       if (externalProject == null) {
         return;
       }
-      ServiceManager.getService(ProjectDataManager.class).importData(externalProject, myProject, true);
+      ApplicationManager.getApplication().getService(ProjectDataManager.class).importData(externalProject, myProject, true);
     }
 
     @Override

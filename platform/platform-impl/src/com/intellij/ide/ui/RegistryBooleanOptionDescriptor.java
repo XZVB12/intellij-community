@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ex.ApplicationEx;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.Changeable;
 import org.jetbrains.annotations.Nullable;
@@ -20,7 +21,7 @@ import javax.swing.*;
 public class RegistryBooleanOptionDescriptor extends BooleanOptionDescription implements Changeable {
   protected final String myKey;
 
-  public RegistryBooleanOptionDescriptor(String option, String registryKey) {
+  public RegistryBooleanOptionDescriptor(@NlsContexts.Label String option, String registryKey) {
     super(option, null);
     myKey = registryKey;
   }
@@ -51,11 +52,10 @@ public class RegistryBooleanOptionDescriptor extends BooleanOptionDescription im
     ApplicationEx app = (ApplicationEx)ApplicationManager.getApplication();
 
     String title = IdeBundle.message("dialog.title.restart.required");
-    String message = IdeBundle
-      .message("dialog.message.must.be.restarted.for.changes.to.take.effect", ApplicationNamesInfo.getInstance().getFullProductName());
-    String action = app.isRestartCapable() ? "Restart" : "Shutdown";
-    String okText = IdeBundle.message("button.now", action);
-    String cancelText = IdeBundle.message("button.later", action);
+    String message = IdeBundle.message("dialog.message.must.be.restarted.for.changes.to.take.effect",
+                                       ApplicationNamesInfo.getInstance().getFullProductName());
+    String okText = IdeBundle.message("button.now", app.isRestartCapable() ? 0 : 1);
+    String cancelText = IdeBundle.message("button.later", app.isRestartCapable() ? 0 : 1);
 
     int result;
     if (parentComponent != null) {

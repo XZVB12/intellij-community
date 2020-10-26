@@ -9,11 +9,13 @@ import com.intellij.codeInspection.InspectionEP;
 import com.intellij.codeInspection.InspectionProfileEntry;
 import com.intellij.diagnostic.PluginException;
 import com.intellij.lang.Language;
+import com.intellij.lang.MetaLanguage;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.util.ResourceUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -98,7 +100,31 @@ public abstract class InspectionToolWrapper<T extends InspectionProfileEntry, E 
 
   public boolean isApplicable(@NotNull Language language) {
     String langId = getLanguage();
-    return langId == null || language.getID().equals(langId) || applyToDialects() && language.isKindOf(langId);
+    return isApplicable(language, langId);
+  }
+
+  private boolean isApplicable(@NotNull Language language, String toolLang) {
+    if (toolLang == null) {
+      return true;
+    }
+    if (language.getID().equals(toolLang)) {
+      return true;
+    }
+    if (applyToDialects()) {
+      if (language.isKindOf(toolLang)) {
+        return true;
+      }
+
+      Language toolLanguage = Language.findLanguageByID(toolLang);
+      if (toolLanguage instanceof MetaLanguage) {
+        for (Language lang : ((MetaLanguage)toolLanguage).getMatchingLanguages()) {
+          if (isApplicable(language, lang.getID())) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   public boolean isCleanupTool() {
@@ -115,6 +141,7 @@ public abstract class InspectionToolWrapper<T extends InspectionProfileEntry, E 
   }
 
   @NotNull
+  @Nls(capitalization = Nls.Capitalization.Sentence)
   public String getDisplayName() {
     if (myEP == null) {
       return getTool().getDisplayName();
@@ -126,6 +153,7 @@ public abstract class InspectionToolWrapper<T extends InspectionProfileEntry, E 
   }
 
   @NotNull
+  @Nls
   public String getGroupDisplayName() {
     if (myEP == null) {
       return getTool().getGroupDisplayName();
@@ -145,7 +173,7 @@ public abstract class InspectionToolWrapper<T extends InspectionProfileEntry, E 
     return myEP == null ? getTool().getDefaultLevel() : myEP.getDefaultLevel();
   }
 
-  public String @NotNull [] getGroupPath() {
+  public @Nls String @NotNull [] getGroupPath() {
     if (myEP == null) {
       return getTool().getGroupPath();
     }
@@ -155,15 +183,16 @@ public abstract class InspectionToolWrapper<T extends InspectionProfileEntry, E 
     }
   }
 
-  public String getStaticDescription() {
+  public @Nls String getStaticDescription() {
     return myEP == null || myEP.hasStaticDescription ? getTool().getStaticDescription() : null;
   }
 
-  public String loadDescription() {
+  public @Nls String loadDescription() {
     final String description = getStaticDescription();
     if (description != null) return description;
     try {
       InputStream descriptionStream = getDescriptionStream();
+      //noinspection HardCodedStringLiteral(IDEA-249976)
       return descriptionStream != null ? ResourceUtil.loadText(descriptionStream) : null;
     }
     catch (IOException ignored) { }

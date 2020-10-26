@@ -85,22 +85,38 @@ open class PySoftFileReferenceContributor : PsiReferenceContributor() {
       val callExpr = argList.parent as? PyCallExpression ?: return false
 
       val builtinCache = PyBuiltinCache.getInstance(expr)
-      val strOrUnicodeType = builtinCache.strOrUnicodeType ?: return false
+      val languageLevel = LanguageLevel.forElement(expr)
+      val bytesOrUnicodeType = PyUnionType.union(
+        listOfNotNull(
+          builtinCache.getBytesType(languageLevel),
+          builtinCache.getUnicodeType(languageLevel)
+        )
+      ) ?: return false
       val osPathLikeType = builtinCache.getObjectType(PyNames.BUILTIN_PATH_LIKE) ?: return false
 
       val typeEvalContext = TypeEvalContext.codeInsightFallback(expr.project)
 
       return callExpr.multiResolveCallee(PyResolveContext.defaultContext().withTypeEvalContext(typeEvalContext))
         .asSequence()
+        // Fail-fast check
+        .filter { callableType ->
+          val parameters = callableType.getParameters(typeEvalContext) ?: return@filter false
+          parameters
+            .mapNotNull { it.getArgumentType(typeEvalContext) }
+            .any {
+              PyTypeChecker.match(bytesOrUnicodeType, it, typeEvalContext) || PyTypeChecker.match(osPathLikeType, it, typeEvalContext)
+            }
+        }
         .mapNotNull {
           val mapping = PyCallExpressionHelper.mapArguments(callExpr, it, typeEvalContext)
           mapping.mappedParameters[expr]?.getArgumentType(typeEvalContext)
         }
+        .mapNotNull(PyUnionType::toNonWeakType)
         .toList()
-        .let { PyUnionType.union(it) }
+        .let(PyUnionType::union)
         .let {
           it != null &&
-          PyTypeChecker.match(strOrUnicodeType, it, typeEvalContext) &&
+          PyTypeChecker.match(bytesOrUnicodeType, it, typeEvalContext) &&
           PyTypeChecker.match(osPathLikeType, it, typeEvalContext)
         }
     }
@@ -168,6 +184,8 @@ open class PySoftFileReferenceContributor : PsiReferenceContributor() {
   }
 
   private object PySoftFileReferenceProvider : PsiReferenceProvider() {
+    override fun acceptsTarget(target: PsiElement): Boolean = target is PsiFileSystemItem
+
     override fun getReferencesByElement(element: PsiElement, context: ProcessingContext): Array<out PsiReference> {
       val expr = element as? PyStringLiteralExpression ?: return emptyArray()
       return PySoftFileReferenceSet(expr, this).allReferences

@@ -1,6 +1,7 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.editorconfig;
 
+import com.intellij.AbstractBundle;
 import com.intellij.application.options.CodeStyle;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -21,8 +22,8 @@ import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import com.intellij.psi.search.FileTypeIndex;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.LineSeparator;
+import org.editorconfig.configmanagement.ConfigEncodingManager;
 import org.editorconfig.configmanagement.EditorConfigIndentOptionsProvider;
-import org.editorconfig.configmanagement.EncodingManager;
 import org.editorconfig.configmanagement.LineEndingsManager;
 import org.editorconfig.configmanagement.StandardEditorConfigProperties;
 import org.editorconfig.core.EditorConfig.OutPair;
@@ -41,11 +42,13 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class Utils {
-
+public final class Utils {
+  public static final String EDITOR_CONFIG_NAME = "EditorConfig";
   public static final String EDITOR_CONFIG_FILE_NAME = ".editorconfig";
 
   public static final  String FULL_SETTINGS_SUPPORT_REG_KEY = "editor.config.full.settings.support";
+
+  public static final String PLUGIN_ID = "org.editorconfig.editorconfigjetbrains";
 
   private static boolean ourIsFullSettingsSupportEnabledInTest;
 
@@ -63,10 +66,14 @@ public class Utils {
     return currentSettings != null && currentSettings.getCustomSettings(EditorConfigSettings.class).ENABLED;
   }
 
+  public static boolean isEnabled(@NotNull Project project) {
+    return isEnabled(CodeStyle.getSettings(project));
+  }
+
   public static boolean isFullIntellijSettingsSupport() {
     return
       ourIsFullSettingsSupportEnabledInTest ||
-      Registry.is(FULL_SETTINGS_SUPPORT_REG_KEY) && !EditorConfigRegistry.shouldSupportCSharp();
+      Registry.is(FULL_SETTINGS_SUPPORT_REG_KEY) && !EditorConfigRegistry.shouldSupportDotNet();
   }
 
   @TestOnly
@@ -78,13 +85,12 @@ public class Utils {
 
   public static void invalidConfigMessage(Project project, String configValue, String configKey, String filePath) {
     final String message = configValue != null ?
-                           "\"" +
-                           configValue +
-                           "\" is not a valid value" +
-                           (!configKey.isEmpty() ? " for " + configKey : "") +
-                           " for file " +
-                           filePath :
-                           "Failed to read .editorconfig file";
+                           AbstractBundle.message(EditorConfigBundle.INSTANCE.getResourceBundle(),
+                                                  "invalid.config.value",
+                                                  configValue,
+                                                  !configKey.isEmpty() ? configKey : "?",
+                                                  filePath) :
+                           EditorConfigBundle.message("read.failure");
     configValue = configValue != null ? configValue : "ioError";
     EditorConfigNotifier.getInstance().error(project, configValue, message);
   }
@@ -173,13 +179,13 @@ public class Utils {
   @NotNull
   public static String getEncodingLine(@NotNull Project project) {
     String encoding = getEncoding(project);
-    return encoding != null ? EncodingManager.charsetKey + "=" + encoding + "\n" : "";
+    return encoding != null ? ConfigEncodingManager.charsetKey + "=" + encoding + "\n" : "";
   }
 
   @Nullable
   public static String getEncoding(@NotNull Project project) {
     final Charset charset = EncodingProjectManager.getInstance(project).getDefaultCharset();
-    for (Map.Entry<String, Charset> entry : EncodingManager.encodingMap.entrySet()) {
+    for (Map.Entry<String, Charset> entry : ConfigEncodingManager.encodingMap.entrySet()) {
       if (entry.getValue() == charset) {
         return entry.getKey();
       }

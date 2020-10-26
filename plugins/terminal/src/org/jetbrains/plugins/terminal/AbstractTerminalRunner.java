@@ -13,7 +13,6 @@ import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
-import com.intellij.openapi.application.AppUIExecutor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
@@ -65,10 +64,10 @@ public abstract class AbstractTerminalRunner<T extends Process> {
   }
 
   public void run() {
-    ProgressManager.getInstance().run(new Task.Backgroundable(myProject, "Running the Terminal", false) {
+    ProgressManager.getInstance().run(new Task.Backgroundable(myProject, TerminalBundle.message("progress.title.running.terminal"), false) {
       @Override
       public void run(@NotNull final ProgressIndicator indicator) {
-        indicator.setText("Running the terminal...");
+        indicator.setText(TerminalBundle.message("progress.text.running.terminal"));
         try {
           doRun();
         }
@@ -138,7 +137,7 @@ public abstract class AbstractTerminalRunner<T extends Process> {
     ProcessHandler processHandler = createProcessHandler(process);
 
     final RunContentDescriptor contentDescriptor =
-      new RunContentDescriptor(null, processHandler, panel, getTerminalConnectionName(process));
+      new RunContentDescriptor(null, processHandler, panel, getTerminalConnectionName(process)); //NON-NLS
 
     contentDescriptor.setAutoFocusContent(true);
 
@@ -262,11 +261,9 @@ public abstract class AbstractTerminalRunner<T extends Process> {
     }
     writeString(terminalWidget.getTerminal(), message.toString());
     terminalWidget.getTerminal().writeCharacters("See your idea.log (Help | " + ShowLogAction.getActionName() + ") for the details.");
-    AppUIExecutor.onUiThread().expireWith(myProject).submit(() -> {
-      if (!Disposer.isDisposed(terminalWidget)) {
-        terminalWidget.getTerminalPanel().setCursorVisible(false);
-      }
-    });
+    ApplicationManager.getApplication().invokeLater(() -> {
+      terminalWidget.getTerminalPanel().setCursorVisible(false);
+    }, myProject.getDisposed());
   }
 
   private static void writeString(@NotNull Terminal terminal, @NotNull String message) {

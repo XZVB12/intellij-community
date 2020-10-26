@@ -6,7 +6,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.extensions.ExtensionNotApplicableException;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.project.DumbAwareRunnable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.util.Disposer;
@@ -22,8 +21,8 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-public final class PlatformProjectViewOpener implements DirectoryProjectConfigurator {
-  public PlatformProjectViewOpener() {
+final class PlatformProjectViewOpener implements DirectoryProjectConfigurator {
+  PlatformProjectViewOpener() {
     if (PlatformUtils.isPyCharmEducational() || PlatformUtils.isDataGrip()) {
       throw ExtensionNotApplicableException.INSTANCE;
     }
@@ -33,7 +32,7 @@ public final class PlatformProjectViewOpener implements DirectoryProjectConfigur
   public void configureProject(@NotNull Project project,
                                @NotNull VirtualFile baseDir,
                                @NotNull Ref<Module> moduleRef,
-                               boolean newProject) {
+                               boolean isProjectCreatedWithWizard) {
     ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow(ToolWindowId.PROJECT_VIEW);
     if (toolWindow == null) {
       MyListener listener = new MyListener(project);
@@ -41,7 +40,7 @@ public final class PlatformProjectViewOpener implements DirectoryProjectConfigur
       project.getMessageBus().connect(listener).subscribe(ToolWindowManagerListener.TOPIC, listener);
     }
     else {
-      StartupManager.getInstance(project).runWhenProjectIsInitialized((DumbAwareRunnable)() -> {
+      StartupManager.getInstance(project).runAfterOpened(() -> {
         activateProjectToolWindow(project, toolWindow);
       });
     }
@@ -64,10 +63,10 @@ public final class PlatformProjectViewOpener implements DirectoryProjectConfigur
     }
 
     @Override
-    public void toolWindowsRegistered(@NotNull List<String> id) {
+    public void toolWindowsRegistered(@NotNull List<String> id, @NotNull ToolWindowManager toolWindowManager) {
       if (id.contains(ToolWindowId.PROJECT_VIEW)) {
         Disposer.dispose(this);
-        activateProjectToolWindow(myProject, ToolWindowManager.getInstance(myProject).getToolWindow(ToolWindowId.PROJECT_VIEW));
+        activateProjectToolWindow(myProject, toolWindowManager.getToolWindow(ToolWindowId.PROJECT_VIEW));
       }
     }
 

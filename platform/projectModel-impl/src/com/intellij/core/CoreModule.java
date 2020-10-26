@@ -18,29 +18,29 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.util.PathUtil;
-import com.intellij.util.pico.DefaultPicoContainer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.nio.file.Path;
 
 /**
  * @author yole
  */
 public class CoreModule extends MockComponentManager implements ModuleEx {
-  private final String myPath;
+  private final Path myPath;
   @NotNull private final Disposable myLifetime;
   @NotNull private final Project myProject;
   @NotNull private final ModuleScopeProvider myModuleScopeProvider;
 
-  public CoreModule(@NotNull Disposable parentDisposable, @NotNull Project project, String moduleFilePath) {
-    super((DefaultPicoContainer)project.getPicoContainer(), parentDisposable);
+  public CoreModule(@NotNull Disposable parentDisposable, @NotNull Project project, @NotNull Path moduleFilePath) {
+    super(project.getPicoContainer(), parentDisposable);
     myLifetime = parentDisposable;
     myProject = project;
     myPath = moduleFilePath;
 
     initModuleExtensions();
 
-    ModuleRootManagerImpl moduleRootManager = new ModuleRootManagerImpl(this) {
+    Disposable moduleRootManager = new ModuleRootManagerImpl(this) {
       @Override
       public void loadState(@NotNull ModuleRootManagerState object) {
         loadState(object, false);
@@ -86,7 +86,7 @@ public class CoreModule extends MockComponentManager implements ModuleEx {
 
   @NotNull
   @Override
-  public String getModuleFilePath() {
+  public Path getModuleNioFile() {
     return myPath;
   }
 
@@ -99,7 +99,7 @@ public class CoreModule extends MockComponentManager implements ModuleEx {
   @NotNull
   @Override
   public String getName() {
-    return StringUtil.trimEnd(PathUtil.getFileName(myPath), ModuleFileType.DOT_DEFAULT_EXTENSION);
+    return StringUtil.trimEnd(myPath.getFileName().toString(), ModuleFileType.DOT_DEFAULT_EXTENSION);
   }
 
   @Override

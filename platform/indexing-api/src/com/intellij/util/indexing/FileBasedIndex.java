@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ContentIterator;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.*;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -39,13 +40,43 @@ public abstract class FileBasedIndex {
   public abstract VirtualFile getFileBeingCurrentlyIndexed();
 
   @ApiStatus.Internal
-  @ApiStatus.Experimental
+  public void registerProjectFileSets(@NotNull Project project) {
+    throw new UnsupportedOperationException();
+  }
+
+  @ApiStatus.Internal
+  public void removeProjectFileSets(@NotNull Project project) {
+    throw new UnsupportedOperationException();
+  }
+
+  /**
+   * Should be called only in dumb mode and only in a read action
+   */
+  @ApiStatus.Internal
+  @Nullable
   public DumbModeAccessType getCurrentDumbModeAccessType() {
     throw new UnsupportedOperationException();
   }
 
-  public abstract void registerIndexableSet(@NotNull IndexableFileSet set, @Nullable Project project);
+  @ApiStatus.Internal
+  public <T> @NotNull Processor<? super T> inheritCurrentDumbAccessType(@NotNull Processor<? super T> processor) {
+    return processor;
+  }
 
+  /**
+   * @deprecated please use {@link IndexableSetContributor} or
+   * {@link com.intellij.util.indexing.roots.IndexableFilesContributor}
+   * which will be managed registered/unregistered automatically.
+   */
+  @Deprecated
+  public abstract void registerIndexableSet(@NotNull IndexableFileSet set, @NotNull Project project);
+
+  /**
+   * @deprecated please use {@link IndexableSetContributor} or
+   * {@link com.intellij.util.indexing.roots.IndexableFilesContributor}
+   * which will be managed registered/unregistered automatically.
+   */
+  @Deprecated
   public abstract void removeIndexableSet(@NotNull IndexableFileSet set);
 
   public static FileBasedIndex getInstance() {
@@ -138,16 +169,21 @@ public abstract class FileBasedIndex {
    * {@link com.intellij.openapi.project.IndexNotReadyException} are not expected to be happen here.
    *
    * <p> In smart mode, the behavior is similar to direct command execution
-   *
    * @param command - a command to execute
-   * @param project - project where dumb mode will be ignored
    * @param dumbModeAccessType - defines in which manner command should be executed. Does a client expect only reliable data
-   *                           or any data from index is fine (even outdated and not yet updated)?
    */
   @ApiStatus.Experimental
   public void ignoreDumbMode(@NotNull Runnable command,
-                             @NotNull Project project,
                              @NotNull DumbModeAccessType dumbModeAccessType) {
+    ignoreDumbMode(dumbModeAccessType, () -> {
+      command.run();
+      return null;
+    });
+  }
+
+  @ApiStatus.Experimental
+  public <T, E extends Throwable> T ignoreDumbMode(@NotNull DumbModeAccessType dumbModeAccessType,
+                                                   @NotNull ThrowableComputable<T, E> computable) throws E {
     throw new UnsupportedOperationException();
   }
 
@@ -199,6 +235,55 @@ public abstract class FileBasedIndex {
 
   public void invalidateCaches() {
     throw new IncorrectOperationException();
+  }
+
+  @ApiStatus.Internal
+  public boolean isIndexingCandidate(@NotNull VirtualFile file, @NotNull ID<?, ?> indexId) {
+    throw new UnsupportedOperationException();
+  }
+
+  @ApiStatus.Experimental
+  public static class AllKeysQuery<K, V> {
+    @NotNull
+    private final ID<K, V> indexId;
+    @NotNull
+    private final Collection<? extends K> dataKeys;
+    @Nullable
+    private final Condition<? super V> valueChecker;
+
+    public AllKeysQuery(@NotNull ID<K, V> id,
+                        @NotNull Collection<? extends K> keys,
+                        @Nullable Condition<? super V> checker) {
+      indexId = id;
+      dataKeys = keys;
+      valueChecker = checker;
+    }
+
+    @NotNull
+    public ID<K, V> getIndexId() {
+      return indexId;
+    }
+
+    @NotNull
+    public Collection<? extends K> getDataKeys() {
+      return dataKeys;
+    }
+
+    @Nullable
+    public Condition<? super V> getValueChecker() {
+      return valueChecker;
+    }
+  }
+
+  /**
+   * Analogue of {@link FileBasedIndex#processFilesContainingAllKeys(ID, Collection, GlobalSearchScope, Condition, Processor)}
+   * which optimized to perform several queries for different indexes.
+   */
+  @ApiStatus.Experimental
+  public boolean processFilesContainingAllKeys(@NotNull Collection<AllKeysQuery<?, ?>> queries,
+                                               @NotNull GlobalSearchScope filter,
+                                               @NotNull Processor<? super VirtualFile> processor) {
+    throw new UnsupportedOperationException();
   }
 
   @FunctionalInterface

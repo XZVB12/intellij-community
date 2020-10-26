@@ -1,9 +1,11 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.packaging;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.*;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.xmlb.XmlSerializerUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.SystemIndependent;
@@ -12,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-@State(name = "PyPackageService", storages = @Storage(value = "packages.xml", roamingType = RoamingType.DISABLED))
+@State(name = "PyPackageService", storages = @Storage(value = "packages.xml", roamingType = RoamingType.DISABLED), reportStatistic = false)
 public class PyPackageService implements
                               PersistentStateComponent<PyPackageService> {
   public volatile Map<String, Boolean> sdkToUsersite = new ConcurrentHashMap<>();
@@ -20,6 +22,11 @@ public class PyPackageService implements
   public volatile @SystemIndependent String virtualEnvBasePath;
   public volatile Boolean PYPI_REMOVED = false;
 
+  /**
+   * @deprecated This field is no longer used to check relevance of the cache.
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.1")
   public long LAST_TIME_CHECKED = 0;
 
   @Override
@@ -62,7 +69,7 @@ public class PyPackageService implements
   }
 
   public static PyPackageService getInstance() {
-    return ServiceManager.getService(PyPackageService.class);
+    return ApplicationManager.getApplication().getService(PyPackageService.class);
   }
 
   public @Nullable @SystemIndependent String getVirtualEnvBasePath() {

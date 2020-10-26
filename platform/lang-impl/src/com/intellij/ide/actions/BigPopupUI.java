@@ -1,12 +1,13 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.actions;
 
-import com.intellij.codeInsight.hint.HintUtil;
+import com.intellij.util.ArrayUtil;
+import com.intellij.util.ui.Advertiser;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.MnemonicHelper;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopup;
+import com.intellij.openapi.util.NlsContexts.PopupAdvertisement;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.ComponentUtil;
 import com.intellij.ui.ScrollingUtil;
@@ -33,7 +34,8 @@ import java.util.Optional;
 public abstract class BigPopupUI extends BorderLayoutPanel implements Disposable {
   private static final int MINIMAL_SUGGESTIONS_LIST_HEIGHT= 100;
 
-  protected final Project myProject;
+  @Nullable protected final Project myProject;
+
   protected ExtendableTextField mySearchField;
   protected JPanel suggestionsPanel;
   protected JBList<Object> myResultsList;
@@ -41,9 +43,9 @@ public abstract class BigPopupUI extends BorderLayoutPanel implements Disposable
   protected Runnable searchFinishedHandler = () -> { };
   protected final List<ViewTypeListener> myViewTypeListeners = ContainerUtil.createLockFreeCopyOnWriteList();
   protected ViewType myViewType = ViewType.SHORT;
-  protected JLabel myHintLabel;
+  protected Advertiser myHintLabel;
 
-  public BigPopupUI(Project project) {
+  public BigPopupUI(@Nullable Project project) {
     myProject = project;
   }
 
@@ -59,8 +61,17 @@ public abstract class BigPopupUI extends BorderLayoutPanel implements Disposable
   @NotNull
   protected abstract JPanel createSettingsPanel();
 
+
   @NotNull
-  protected abstract String getInitialHint();
+  protected @PopupAdvertisement String[] getInitialHints() {
+    String hint = getInitialHint();
+    return hint != null ? new String[]{hint} : ArrayUtil.EMPTY_STRING_ARRAY;
+  }
+  
+  @Nullable
+  protected @PopupAdvertisement String getInitialHint() {
+    return null;
+  }
 
   @NotNull
   protected abstract String getAccessibleName();
@@ -157,8 +168,6 @@ public abstract class BigPopupUI extends BorderLayoutPanel implements Disposable
     addToCenter(suggestionsPanel);
 
     getAccessibleContext().setAccessibleName(getAccessibleName());
-
-    MnemonicHelper.init(this);
   }
 
   protected void addListDataListener(@NotNull AbstractListModel<Object> model) {
@@ -210,22 +219,29 @@ public abstract class BigPopupUI extends BorderLayoutPanel implements Disposable
     pnl.add(resultsScroll, BorderLayout.CENTER);
 
     myHintLabel = createHint();
-    pnl.add(myHintLabel, BorderLayout.SOUTH);
-
+    pnl.add(myHintLabel.getAdComponent(), BorderLayout.SOUTH);
     return pnl;
   }
 
   @NotNull
-  private JLabel createHint() {
-    String hint = getInitialHint();
-    JLabel hintLabel = HintUtil.createAdComponent(hint, JBUI.CurrentTheme.BigPopup.advertiserBorder(), SwingConstants.LEFT);
-    hintLabel.setForeground(JBUI.CurrentTheme.BigPopup.advertiserForeground());
-    hintLabel.setBackground(JBUI.CurrentTheme.BigPopup.advertiserBackground());
-    hintLabel.setOpaque(true);
+  private Advertiser createHint() {
+    Advertiser advertiser = new Advertiser();
+
+    advertiser.setBorder(JBUI.CurrentTheme.BigPopup.advertiserBorder());
+    advertiser.setBackground(JBUI.CurrentTheme.BigPopup.advertiserBackground());
+    advertiser.setForeground(JBUI.CurrentTheme.BigPopup.advertiserForeground());
+    
+    for (@PopupAdvertisement String s : getInitialHints()) {
+      advertiser.addAdvertisement(s, null);  
+    }
+    advertiser.showRandomText();
+
+    JComponent hintLabel = advertiser.getAdComponent();
     Dimension size = hintLabel.getPreferredSize();
     size.height = JBUIScale.scale(17);
     hintLabel.setPreferredSize(size);
-    return hintLabel;
+    
+    return advertiser;
   }
 
   @NotNull

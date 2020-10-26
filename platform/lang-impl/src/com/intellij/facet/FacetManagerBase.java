@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.facet;
 
+import com.intellij.facet.impl.FacetEventsPublisher;
 import com.intellij.facet.impl.FacetLoadingErrorDescription;
 import com.intellij.facet.impl.invalid.InvalidFacet;
 import com.intellij.facet.impl.invalid.InvalidFacetConfiguration;
@@ -11,18 +12,21 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ProjectLoadingErrorsNotifier;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.UnknownFeaturesCollector;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.text.StringUtil;
-import java.util.Collection;
-import java.util.Objects;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 import org.jetbrains.jps.model.serialization.facet.FacetState;
 
+import java.util.Collection;
+import java.util.Objects;
+
 @ApiStatus.Internal
 public abstract class FacetManagerBase extends FacetManager {
   private static final Logger LOG = Logger.getInstance(FacetManagerBase.class);
+  public static final String FEATURE_TYPE = "com.intellij.facetType";
 
   @Override
   @NotNull
@@ -68,7 +72,7 @@ public abstract class FacetManagerBase extends FacetManager {
 
   @Override
   public void facetConfigurationChanged(@NotNull Facet<?> facet) {
-    getModule().getMessageBus().syncPublisher(FacetManager.FACETS_TOPIC).facetConfigurationChanged(facet);
+    FacetEventsPublisher.getInstance(facet.getModule().getProject()).fireFacetConfigurationChanged(facet);
   }
 
   @Override
@@ -124,7 +128,7 @@ public abstract class FacetManagerBase extends FacetManager {
   @ApiStatus.Internal
   @NotNull
   public static InvalidFacet createInvalidFacet(@NotNull Module module, @NotNull FacetState state, @Nullable Facet<?> underlyingFacet,
-                                                @NotNull String errorMessage,
+                                                @NotNull @NlsContexts.DialogMessage String errorMessage,
                                                 boolean unknownType, boolean reportError) {
     Project project = module.getProject();
     final InvalidFacetType type = InvalidFacetType.getInstance();
@@ -136,7 +140,7 @@ public abstract class FacetManagerBase extends FacetManager {
         FacetLoadingErrorDescription description = new FacetLoadingErrorDescription(facet);
         ProjectLoadingErrorsNotifier.getInstance(project).registerError(description);
         if (unknownType) {
-          UnknownFeaturesCollector.getInstance(project).registerUnknownFeature("com.intellij.facetType", state.getFacetType(), "Facet");
+          UnknownFeaturesCollector.getInstance(project).registerUnknownFeature(FEATURE_TYPE, state.getFacetType(), "Facet");
         }
       }
     }

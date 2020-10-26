@@ -1,7 +1,6 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection;
 
-import com.google.common.collect.Lists;
 import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInsight.daemon.HighlightDisplayKey;
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
@@ -34,6 +33,7 @@ import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import gnu.trove.THashSet;
 import org.jdom.Element;
+import org.jdom.Verifier;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -52,16 +52,17 @@ import java.util.stream.Collectors;
 public class DefaultInspectionToolResultExporter implements InspectionToolResultExporter {
   protected static final Logger LOG = Logger.getInstance(DefaultInspectionToolResultExporter.class);
 
-  public static final String INSPECTION_RESULTS_PROBLEM_CLASS_ELEMENT = "problem_class";
-  public static final String INSPECTION_RESULTS_SEVERITY_ATTRIBUTE = "severity";
-  public static final String INSPECTION_RESULTS_ATTRIBUTE_KEY_ATTRIBUTE = "attribute_key";
-  public static final String INSPECTION_RESULTS_ID_ATTRIBUTE = "id";
-  public static final String INSPECTION_RESULTS_DESCRIPTION_ELEMENT = "description";
-  public static final String INSPECTION_RESULTS_HINTS_ELEMENT = "hints";
-  public static final String INSPECTION_RESULTS_HINT_ELEMENT = "hint";
-  public static final String INSPECTION_RESULTS_VALUE_ATTRIBUTE = "value";
-  @NotNull protected final InspectionToolWrapper myToolWrapper;
-  @NotNull protected final GlobalInspectionContextEx myContext;
+  public static final @NonNls String INSPECTION_RESULTS_PROBLEM_CLASS_ELEMENT = "problem_class";
+  public static final @NonNls String INSPECTION_RESULTS_SEVERITY_ATTRIBUTE = "severity";
+  public static final @NonNls String INSPECTION_RESULTS_ATTRIBUTE_KEY_ATTRIBUTE = "attribute_key";
+  public static final @NonNls String INSPECTION_RESULTS_ID_ATTRIBUTE = "id";
+  public static final @NonNls String INSPECTION_RESULTS_DESCRIPTION_ELEMENT = "description";
+  public static final @NonNls String INSPECTION_RESULTS_HINTS_ELEMENT = "hints";
+  public static final @NonNls String INSPECTION_RESULTS_HINT_ELEMENT = "hint";
+  public static final @NonNls String INSPECTION_RESULTS_VALUE_ATTRIBUTE = "value";
+  public static final @NonNls String INSPECTION_RESULTS_LANGUAGE = "language";
+  protected final @NotNull InspectionToolWrapper myToolWrapper;
+  protected final @NotNull GlobalInspectionContextEx myContext;
 
   private final SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor> myExcludedElements = createBidiMap();
 
@@ -121,7 +122,7 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
         catch (IOException e) {
           LOG.error(e);
         }
-      }, d -> false);
+      });
 
       writer.write('\n');
     }
@@ -156,6 +157,12 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
     }
   }
 
+  public void exportResults(final CommonProblemDescriptor @NotNull [] descriptors,
+                               @NotNull RefEntity refEntity,
+                               @NotNull Consumer<? super Element> problemSink) {
+    exportResults(descriptors, refEntity, problemSink, (problem) -> false);
+  }
+
   protected void exportResults(final CommonProblemDescriptor @NotNull [] descriptors,
                                @NotNull RefEntity refEntity,
                                @NotNull Consumer<? super Element> problemSink,
@@ -180,12 +187,11 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
   }
 
   private void exportResult(@NotNull RefEntity refEntity, @NotNull CommonProblemDescriptor descriptor, @NotNull Element element) {
+    final PsiElement psiElement = descriptor instanceof ProblemDescriptor ? ((ProblemDescriptor)descriptor).getPsiElement() : null;
     try {
-      final PsiElement psiElement = descriptor instanceof ProblemDescriptor ? ((ProblemDescriptor)descriptor).getPsiElement() : null;
-
       @NonNls Element problemClassElement = new Element(INSPECTION_RESULTS_PROBLEM_CLASS_ELEMENT);
       problemClassElement.setAttribute(INSPECTION_RESULTS_ID_ATTRIBUTE, myToolWrapper.getShortName());
-      problemClassElement.addContent(myToolWrapper.getDisplayName());
+      problemClassElement.addContent(sanitizeIllegalXmlChars(myToolWrapper.getDisplayName()));
 
       final HighlightSeverity severity = InspectionToolResultExporter.getSeverity(refEntity, psiElement, this);
 
@@ -208,7 +214,7 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
             final String hint = globalInspectionTool.getHint(fix);
             if (hint != null) {
               @NonNls Element hintElement = new Element(INSPECTION_RESULTS_HINT_ELEMENT);
-              hintElement.setAttribute(INSPECTION_RESULTS_VALUE_ATTRIBUTE, hint);
+              hintElement.setAttribute(INSPECTION_RESULTS_VALUE_ATTRIBUTE, sanitizeIllegalXmlChars(hint));
               hintsElement.addContent(hintElement);
             }
           }
@@ -220,12 +226,16 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
       @NonNls String problemText = StringUtil
         .replace(StringUtil.replace(template, "#ref", psiElement != null ? highlightedText : ""), " #loc ", " ");
       Element descriptionElement = new Element(INSPECTION_RESULTS_DESCRIPTION_ELEMENT);
-      descriptionElement.addContent(problemText);
+      descriptionElement.addContent(sanitizeIllegalXmlChars(problemText));
       element.addContent(descriptionElement);
 
       Element highLightedElement = new Element("highlighted_element");
-      highLightedElement.addContent(highlightedText);
+      highLightedElement.addContent(sanitizeIllegalXmlChars(highlightedText));
       element.addContent(highLightedElement);
+
+      Element language = new Element(INSPECTION_RESULTS_LANGUAGE);
+      language.addContent(psiElement != null ? psiElement.getLanguage().getID() : "");
+      element.addContent(language);
 
       if (descriptor instanceof ProblemDescriptorBase) {
         TextRange textRange = ((ProblemDescriptorBase)descriptor).getTextRangeForNavigation();
@@ -238,9 +248,19 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
       }
     }
     catch (RuntimeException e) {
-      e.printStackTrace();
-      LOG.info("Cannot save results for " + refEntity.getName() + ", inspection which caused problem: " + myToolWrapper.getShortName() + ", problem descriptor " + descriptor);
+      String message = "Cannot save results for " + refEntity.getName() + ", inspection which caused problem: " +
+                       myToolWrapper.getShortName() + ", problem descriptor " + descriptor;
+      if (psiElement != null) {
+        message += ", element class: " + psiElement.getClass() + ", containing file: " + psiElement.getContainingFile();
+      }
+      LOG.error(message, e);
     }
+  }
+
+  private static String sanitizeIllegalXmlChars(String text) {
+    if (Verifier.checkCharacterData(text) == null) return text;
+    return text.codePoints().map(cp -> Verifier.isXMLCharacter(cp) ? cp : '?')
+      .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
   }
 
   protected String getSeverityDelegateName() {
@@ -253,7 +273,7 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
   }
 
 
-  static SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor> createBidiMap() {
+  private static @NotNull SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor> createBidiMap() {
     return new SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor>() {
       @NotNull
       @Override
@@ -274,7 +294,7 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
         final Tools tools = context.getTools().get(shortName);
         if (tools != null) {
           for (ScopeToolState state : tools.getTools()) {
-            InspectionToolWrapper toolWrapper = state.getTool();
+            InspectionToolWrapper<?, ?> toolWrapper = state.getTool();
             if (toolWrapper == getToolWrapper()) {
               return context.getCurrentProfile().getErrorLevel(HighlightDisplayKey.find(shortName), psiElement).getSeverity();
             }
@@ -326,7 +346,10 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
 
   @Override
   public void suppressProblem(@NotNull CommonProblemDescriptor descriptor) {
-    mySuppressedElements.put(myProblemElements.removeValue(descriptor), descriptor);
+    RefEntity removed = myProblemElements.removeValue(descriptor);
+    if (removed != null) {
+      mySuppressedElements.put(removed, descriptor);
+    }
   }
 
   @Override
@@ -402,16 +425,20 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
         myProblemElements.put(refElement, descriptors);
       }
       else {
-        try {
-          writeOutput(descriptors, refElement);
-        }
-        catch (IOException e) {
-          LOG.error(e);
-        }
+       addLocalInspectionProblem(refElement, descriptors);
       }
     }
     else {
       myProblemElements.put(refElement, descriptors);
+    }
+  }
+
+  public void addLocalInspectionProblem(@NotNull RefEntity refElement, final CommonProblemDescriptor @NotNull[] descriptors) {
+    try {
+      writeOutput(descriptors, refElement);
+    }
+    catch (IOException e) {
+      LOG.error(e);
     }
   }
 
@@ -421,7 +448,7 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
     if (pointer == null) return;
     VirtualFile entityFile = ensureNotInjectedFile(pointer.getVirtualFile());
     if (entityFile == null) return;
-    Lists.newArrayList(descriptors).forEach(d -> {
+    for (CommonProblemDescriptor d : descriptors) {
       if (d instanceof ProblemDescriptorBase) {
         VirtualFile file = ((ProblemDescriptorBase)d).getContainingFile();
         if (file != null) {
@@ -429,7 +456,12 @@ public class DefaultInspectionToolResultExporter implements InspectionToolResult
                          "descriptor and containing entity files should be the same; descriptor: " + d.getDescriptionTemplate());
         }
       }
-    });
+    }
+  }
+
+  @Override
+  public RefEntity getElement(@NotNull CommonProblemDescriptor descriptor) {
+    return myProblemElements.getKeyFor(descriptor);
   }
 
   @Contract("null -> null")

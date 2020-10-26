@@ -5,13 +5,14 @@ import com.intellij.openapi.project.Project;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
 
+import java.nio.file.Path;
+
 /**
- * Reports some project lifecycle events. Note that these events are published on application-level {@link com.intellij.util.messages.MessageBus}.
- * They're also delivered for subscribers on project and module levels, but they will need to check that the events are relevant, i.e. the
- * {@code project} parameter is the project those subscribers are associated with.
+ * Reports some project lifecycle events.
  */
 public interface ProjectLifecycleListener {
-  Topic<ProjectLifecycleListener> TOPIC = Topic.create("Various stages of project lifecycle notifications", ProjectLifecycleListener.class);
+  @Topic.AppLevel
+  Topic<ProjectLifecycleListener> TOPIC = new Topic<>(ProjectLifecycleListener.class, Topic.BroadcastDirection.NONE);
 
   /**
    * @deprecated Do not use.
@@ -20,7 +21,19 @@ public interface ProjectLifecycleListener {
   default void projectComponentsInitialized(@NotNull Project project) {
   }
 
+  /**
+   * @deprecated Deprecated for performance and stability reasons. Please find another solution.
+   */
+  @Deprecated
   default void beforeProjectLoaded(@NotNull Project project) {
+  }
+
+  /**
+   * @deprecated Deprecated for performance and stability reasons. Please find another solution.
+   */
+  @Deprecated
+  default void beforeProjectLoaded(@NotNull Path projectPath, @NotNull Project project) {
+    beforeProjectLoaded(project);
   }
 
   /**

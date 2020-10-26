@@ -47,9 +47,13 @@ class JBNavigateCommandTest {
   @Rule
   val testName = TestName()
 
+  @JvmField
+  @Rule
+  val projectTrackingRule = ProjectTrackingRule()
+
   @Rule
   @JvmField
-  val busConnection = RecentProjectManagerListenerRule()
+  internal val busConnection = RecentProjectManagerListenerRule()
 
   fun getTestDataPath(): String {
     return "${PlatformTestUtil.getPlatformTestDataPath()}/commands/navigate/"
@@ -111,8 +115,6 @@ class JBNavigateCommandTest {
         assertThat(getCurrentElement(recentProject).name).isEqualTo("A.java")
       }
     }
-
-    ProjectRule.checkThatNoOpenProjects()
   }
 
   private fun configure(project: Project) {

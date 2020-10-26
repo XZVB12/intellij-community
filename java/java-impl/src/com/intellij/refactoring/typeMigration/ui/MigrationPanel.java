@@ -16,6 +16,7 @@ import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsActions;
 import com.intellij.openapi.vfs.ReadonlyStatusHandler;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
@@ -48,6 +49,7 @@ import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.TreeCellRenderer;
 import javax.swing.tree.TreePath;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -56,10 +58,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * @author anna
- */
-public class MigrationPanel extends JPanel implements Disposable {
+public final class MigrationPanel extends JPanel implements Disposable {
   @NonNls private static final String MIGRATION_USAGES = "migration.usages";
   private static final DataKey<TypeMigrationUsageInfo[]> MIGRATION_USAGES_KEYS = DataKey.create(MIGRATION_USAGES);
 
@@ -168,7 +167,7 @@ public class MigrationPanel extends JPanel implements Disposable {
           final Object userObject = ((DefaultMutableTreeNode)root).getUserObject();
           if (userObject instanceof MigrationRootNode) {
             ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
-              final HashSet<VirtualFile> files = new HashSet<>();
+              final Set<VirtualFile> files = new HashSet<>();
               final TypeMigrationUsageInfo[] usages = ReadAction.compute(() -> {
                   final Collection<? extends AbstractTreeNode<?>> children = ((MigrationRootNode)userObject).getChildren();
                   for (AbstractTreeNode child : children) {
@@ -235,7 +234,7 @@ public class MigrationPanel extends JPanel implements Disposable {
   }
 
   private void initTree(final Tree tree) {
-    final MigrationRootsTreeCellRenderer rootsTreeCellRenderer = new MigrationRootsTreeCellRenderer();
+    final TreeCellRenderer rootsTreeCellRenderer = new MigrationRootsTreeCellRenderer();
     tree.setCellRenderer(rootsTreeCellRenderer);
     tree.setRootVisible(false);
     tree.setShowsRootHandles(true);
@@ -245,7 +244,7 @@ public class MigrationPanel extends JPanel implements Disposable {
     SmartExpander.installOn(tree);
     EditSourceOnDoubleClickHandler.install(tree);
     new TreeSpeedSearch(tree);
-    PopupHandler.installUnknownPopupHandler(tree, createTreePopupActions(), ActionManager.getInstance());
+    PopupHandler.installUnknownPopupHandler(tree, createTreePopupActions());
   }
 
   private ActionGroup createTreePopupActions() {
@@ -270,11 +269,7 @@ public class MigrationPanel extends JPanel implements Disposable {
     Disposer.register(content, this);
   }
 
-  private static class MyTree extends Tree implements DataProvider {
-    private MyTree() {
-      super();
-    }
-
+  private static final class MyTree extends Tree implements DataProvider {
     @Override
     protected void paintComponent(final Graphics g) {
       DuplicateNodeRenderer.paintDuplicateNodesBackground(g, this);
@@ -353,7 +348,7 @@ public class MigrationPanel extends JPanel implements Disposable {
   private abstract class ExcludeIncludeActionBase extends AnAction {
     protected abstract void processUsage(TypeMigrationUsageInfo usageInfo);
 
-    ExcludeIncludeActionBase(final String text) {
+    ExcludeIncludeActionBase(final @NlsActions.ActionText String text) {
       super(text);
     }
 

@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.ide
 
 import com.intellij.ide.impl.ProjectUtil.focusProjectWindow
@@ -12,7 +12,6 @@ import com.intellij.openapi.project.guessProjectForContentFile
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.util.text.StringUtilRt
-import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.newvfs.ManagingFS
@@ -25,7 +24,6 @@ import io.netty.handler.codec.http.*
 import org.jetbrains.builtInWebServer.WebServerPathToFileManager
 import org.jetbrains.builtInWebServer.checkAccess
 import org.jetbrains.concurrency.*
-import org.jetbrains.io.orInSafeMode
 import org.jetbrains.io.send
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -33,6 +31,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.regex.Pattern
 import javax.swing.SwingUtilities
 
+@Suppress("HardCodedStringLiteral")
 private val NOT_FOUND = createError("not found")
 private val LINE_AND_COLUMN = Pattern.compile("^(.*?)(?::(\\d+))?(?::(\\d+))?$")
 
@@ -58,6 +57,7 @@ private val LINE_AND_COLUMN = Pattern.compile("^(.*?)(?::(\\d+))?(?::(\\d+))?$")
  * @apiExample {curl} Query parameters
  * curl http://localhost:63342/api/file?file=path/to/file.kt&line=100&column=34
  */
+@Suppress("HardCodedStringLiteral")
 internal class OpenFileHttpService : RestService() {
   @Volatile private var refreshSessionId: Long = 0
   private val requests = ConcurrentLinkedQueue<OpenFileTask>()
@@ -65,6 +65,8 @@ internal class OpenFileHttpService : RestService() {
   override fun getServiceName() = "file"
 
   override fun isMethodSupported(method: HttpMethod) = method === HttpMethod.GET || method === HttpMethod.POST
+
+  override fun isOriginAllowed(request: HttpRequest) = OriginCheckResult.ASK_CONFIRMATION
 
   override fun execute(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): String? {
     val keepAlive = HttpUtil.isKeepAlive(request)
@@ -171,8 +173,6 @@ internal class OpenFileHttpService : RestService() {
     session.launch()
     return mainTask.promise
   }
-
-  override fun isAccessible(request: HttpRequest) = true
 }
 
 internal class OpenFileRequest {
@@ -215,18 +215,6 @@ private fun openRelativePath(path: String, request: OpenFileRequest): Boolean {
     if (virtualFile != null) {
       project = openedProject
       break
-    }
-  }
-
-  if (virtualFile == null) {
-    for (openedProject in projects) {
-      for (vcsRoot in ProjectLevelVcsManager.getInstance(openedProject).allVcsRoots) {
-        virtualFile = vcsRoot.path.findFileByRelativePath(path)
-        if (virtualFile != null) {
-          project = openedProject
-          break
-        }
-      }
     }
   }
 

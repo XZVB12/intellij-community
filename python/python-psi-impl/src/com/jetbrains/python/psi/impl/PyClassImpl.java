@@ -471,7 +471,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
 
   @Override
   public PyFunction @NotNull [] getMethods() {
-    final TokenSet functionDeclarationTokens = PythonDialectsTokenSetProvider.INSTANCE.getFunctionDeclarationTokens();
+    final TokenSet functionDeclarationTokens = PythonDialectsTokenSetProvider.getInstance().getFunctionDeclarationTokens();
     return getClassChildren(functionDeclarationTokens, PyFunction.class, PyFunction.ARRAY_FACTORY);
   }
 
@@ -489,7 +489,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
 
   private <T extends StubBasedPsiElement<? extends StubElement<T>>> T @NotNull [] getClassChildren(@NotNull TokenSet elementTypes,
                                                                                                    @NotNull Class<T> childrenClass,
-                                                                                                   @NotNull ArrayFactory<T> factory) {
+                                                                                                   @NotNull ArrayFactory<? extends T> factory) {
     final List<T> result = new ArrayList<>();
     processClassLevelDeclarations(new PsiScopeProcessor() {
       @Override
@@ -652,7 +652,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
    * @return the first property that filter accepted.
    */
   @Nullable
-  private Property processPropertiesInClass(@Nullable Processor<Property> filter) {
+  private Property processPropertiesInClass(@Nullable Processor<? super Property> filter) {
     final Property decoratedProperty = processDecoratedProperties(filter);
     if (decoratedProperty != null) return decoratedProperty;
 
@@ -673,7 +673,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
   }
 
   @Nullable
-  private Property processDecoratedProperties(@Nullable Processor<Property> filter) {
+  private Property processDecoratedProperties(@Nullable Processor<? super Property> filter) {
     // look at @property decorators
     final MultiMap<String, PyFunction> grouped = new MultiMap<>();
     // group suitable same-named methods, each group defines a property
@@ -692,7 +692,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
             final QualifiedName qname = deco.getQualifiedName();
             if (qname != null) {
               String decoName = qname.toString();
-              for (PyKnownDecoratorProvider provider : PyUtil.KnownDecoratorProviderHolder.KNOWN_DECORATOR_PROVIDERS) {
+              for (PyKnownDecoratorProvider provider : PyKnownDecoratorProvider.EP_NAME.getExtensionList()) {
                 final String knownName = provider.toKnownDecorator(decoName);
                 if (knownName != null) {
                   decoName = knownName;
@@ -735,7 +735,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
   }
 
   @Nullable
-  private Property processStubProperties(@Nullable Processor<Property> filter) {
+  private Property processStubProperties(@Nullable Processor<? super Property> filter) {
     final PyClassStub stub = getStub();
     if (stub != null) {
       for (StubElement subStub : stub.getChildrenStubs()) {
@@ -768,8 +768,8 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
       return property;
     }
 
-    if (findMethodByName(name, false, null) != null ||
-        findClassAttribute(name, false, null) != null ||
+    if (findMethodByName(name, false, context) != null ||
+        findClassAttribute(name, false, context) != null ||
         ContainerUtil.notNullize(getOwnSlots()).contains(name)) {
       return null;
     }
@@ -820,12 +820,12 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
 
   @Nullable
   @Override
-  public Property scanProperties(@Nullable Processor<Property> filter, boolean inherited) {
+  public Property scanProperties(Processor<? super Property> filter, boolean inherited) {
     return processProperties(filter, inherited);
   }
 
   @Nullable
-  private Property processProperties(@Nullable Processor<Property> filter, boolean inherited) {
+  private Property processProperties(@Nullable Processor<? super Property> filter, boolean inherited) {
     PyPsiUtils.assertValid(this);
 
     final Property local = processPropertiesInClass(filter);
@@ -845,7 +845,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
     return null;
   }
 
-  private static class PropertyImpl extends PropertyBunch<PyCallable> implements Property {
+  private static final class PropertyImpl extends PropertyBunch<PyCallable> implements Property {
     private final String myName;
 
     private PropertyImpl(String name,
@@ -982,7 +982,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
   }
 
   @Override
-  public boolean visitMethods(Processor<PyFunction> processor, boolean inherited, @Nullable final TypeEvalContext context) {
+  public boolean visitMethods(Processor<? super PyFunction> processor, boolean inherited, @Nullable final TypeEvalContext context) {
     if (!ContainerUtil.process(getMethods(), processor)) return false;
     if (inherited) {
       for (PyClass ancestor : getAncestorClasses(context)) {
@@ -994,7 +994,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
     return true;
   }
 
-  public boolean visitNestedClasses(Processor<PyClass> processor, boolean inherited) {
+  public boolean visitNestedClasses(Processor<? super PyClass> processor, boolean inherited) {
     PyClass[] nestedClasses = getNestedClasses();
     if (!ContainerUtil.process(nestedClasses, processor)) return false;
     if (inherited) {
@@ -1008,7 +1008,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
   }
 
   @Override
-  public boolean visitClassAttributes(Processor<PyTargetExpression> processor, boolean inherited, @Nullable final TypeEvalContext context) {
+  public boolean visitClassAttributes(Processor<? super PyTargetExpression> processor, boolean inherited, @Nullable final TypeEvalContext context) {
     List<PyTargetExpression> methods = getClassAttributes();
     if (!ContainerUtil.process(methods, processor)) return false;
     if (inherited) {
@@ -1151,11 +1151,11 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
       final List<PyTargetExpression> result = new ArrayList<>();
       statementList.accept(new PyRecursiveElementVisitor() {
         @Override
-        public void visitPyClass(PyClass node) {
+        public void visitPyClass(@NotNull PyClass node) {
         }
 
         @Override
-        public void visitPyAssignmentStatement(final PyAssignmentStatement node) {
+        public void visitPyAssignmentStatement(final @NotNull PyAssignmentStatement node) {
           for (PyExpression expression : node.getTargets()) {
             if (expression instanceof PyTargetExpression) {
               result.add((PyTargetExpression)expression);
@@ -1164,7 +1164,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
         }
 
         @Override
-        public void visitPyWithStatement(PyWithStatement node) {
+        public void visitPyWithStatement(@NotNull PyWithStatement node) {
           StreamEx
             .of(node.getWithItems())
             .map(PyWithItem::getTarget)
@@ -1325,6 +1325,11 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
   @NotNull
   @Override
   public List<PyClassLikeType> getSuperClassTypes(@NotNull final TypeEvalContext context) {
+    return PyUtil.getParameterizedCachedValue(this, context, this::doGetSuperClassTypes);
+  }
+
+  @NotNull
+  private List<PyClassLikeType> doGetSuperClassTypes(@NotNull TypeEvalContext context) {
     final List<PyClassLikeType> result = new ArrayList<>();
 
     // In some cases stub may not provide all information, so we use stubs only if AST access id disabled
@@ -1376,7 +1381,7 @@ public class PyClassImpl extends PyBaseElementImpl<PyClassStub> implements PyCla
 
   private void fillSuperClassesNoSwitchToAst(@NotNull final TypeEvalContext context,
                                              @Nullable final PyClassStub stub,
-                                             @NotNull final List<PyClassLikeType> result) {
+                                             final @NotNull List<? super PyClassLikeType> result) {
     final Map<QualifiedName, QualifiedName> superClasses = stub != null
                                                            ? stub.getSuperClasses()
                                                            : PyClassElementType.getSuperClassQNames(this);

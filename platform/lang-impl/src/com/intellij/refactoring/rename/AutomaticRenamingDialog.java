@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.refactoring.rename;
 
 import com.intellij.openapi.actionSystem.*;
@@ -9,6 +9,7 @@ import com.intellij.openapi.ui.InputValidatorEx;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiNamedElement;
@@ -87,9 +88,7 @@ public class AutomaticRenamingDialog extends DialogWrapper {
 
     myShouldRename = new boolean[myRenames.length];
     if (renamer.isSelectedByDefault()) {
-      for (int i = 0; i < myShouldRename.length; i++) {
-        myShouldRename[i] = true;
-      }
+      Arrays.fill(myShouldRename, true);
     }
 
     myTableModel = new MyTableModel(renamer.allowChangeSuggestedName());
@@ -164,16 +163,12 @@ public class AutomaticRenamingDialog extends DialogWrapper {
     columnModel.getColumn(NEW_NAME_COLUMN).setCellEditor(new StringTableCellEditor(myProject));
 
     mySelectAllButton.addActionListener(e -> {
-      for (int i = 0; i < myShouldRename.length; i++) {
-        myShouldRename[i] = true;
-      }
+      Arrays.fill(myShouldRename, true);
       fireDataChanged();
     });
 
     myUnselectAllButton.addActionListener(e -> {
-      for (int i = 0; i < myShouldRename.length; i++) {
-        myShouldRename[i] = false;
-      }
+      Arrays.fill(myShouldRename, false);
       fireDataChanged();
     });
 
@@ -283,7 +278,7 @@ public class AutomaticRenamingDialog extends DialogWrapper {
     return mySearchTextOccurrences.isSelected();
   }
 
-  private class MyTableModel extends AbstractTableModel {
+  private final class MyTableModel extends AbstractTableModel {
     private final boolean myAllowRename;
 
     private MyTableModel(boolean allowRename) {
@@ -333,12 +328,11 @@ public class AutomaticRenamingDialog extends DialogWrapper {
     }
 
     @Override
-    public Class getColumnClass(int columnIndex) {
+    public Class<?> getColumnClass(int columnIndex) {
       switch (columnIndex) {
         case CHECK_COLUMN:
           return Boolean.class;
         case OLD_NAME_COLUMN:
-          return String.class;
         case NEW_NAME_COLUMN:
           return String.class;
         default:
@@ -350,7 +344,7 @@ public class AutomaticRenamingDialog extends DialogWrapper {
     public String getColumnName(int column) {
       switch (column) {
         case OLD_NAME_COLUMN:
-          return RefactoringBundle.message("automatic.renamer.enity.name.column", myRenamer.entityName());
+          return RefactoringBundle.message("automatic.renamer.entity.name.column", myRenamer.entityName());
         case NEW_NAME_COLUMN:
           return RefactoringBundle.message("automatic.renamer.rename.to.column");
         default:
@@ -411,10 +405,10 @@ public class AutomaticRenamingDialog extends DialogWrapper {
 
         @Nullable
         @Override
-        public String getErrorText(String inputString) {
+        public String getErrorText(@NlsSafe String inputString) {
           final int selectedRow = myTable.getSelectedRow();
           if (!isValidName(inputString, selectedRow)) {
-            return "Identifier \'" + inputString + "\' is invalid";
+            return RefactoringBundle.message("text.identifier.invalid", inputString);
           }
           return null;
         }

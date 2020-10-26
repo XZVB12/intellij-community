@@ -8,6 +8,8 @@ import gnu.trove.THashMap;
 import gnu.trove.TObjectHashingStrategy;
 import gnu.trove.TObjectObjectProcedure;
 import gnu.trove.TObjectProcedure;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -48,10 +50,12 @@ public class ObjectStubTree<T extends Stub> {
   }
 
   @Deprecated
+  @ApiStatus.Internal
   public @NotNull Map<StubIndexKey<?, ?>, Map<Object, int[]>> indexStubTree() {
     return indexStubTree(key -> ContainerUtil.canonicalStrategy());
   }
 
+  @ApiStatus.Internal
   public @NotNull Map<StubIndexKey<?, ?>, Map<Object, int[]>> indexStubTree(@NotNull Function<StubIndexKey<?, ?>, TObjectHashingStrategy<?>> keyHashingStrategyFunction) {
     StubIndexSink sink = new StubIndexSink(keyHashingStrategyFunction);
     final List<T> plainList = getPlainListFromAllRoots();
@@ -82,7 +86,7 @@ public class ObjectStubTree<T extends Stub> {
     }
   }
 
-  public void setDebugInfo(@NotNull String info) {
+  public void setDebugInfo(@NotNull @NonNls String info) {
     ObjectStubTree<?> ref = getStubTree(myRoot);
     if (ref != null) {
       assert ref == this;
@@ -95,7 +99,7 @@ public class ObjectStubTree<T extends Stub> {
     return root.getUserData(STUB_TO_TREE_REFERENCE);
   }
 
-  public String getDebugInfo() {
+  public @NonNls String getDebugInfo() {
     return myHasBackReference ? myDebugInfo + "; with backReference" : myDebugInfo;
   }
 
@@ -106,11 +110,11 @@ public class ObjectStubTree<T extends Stub> {
 
   private static final class StubIndexSink implements IndexSink, TObjectProcedure<Map<Object, int[]>>, TObjectObjectProcedure<Object,int[]> {
     private final THashMap<StubIndexKey<?, ?>, Map<Object, int[]>> myResult = new THashMap<>();
-    private final java.util.function.Function<StubIndexKey<?, ?>, TObjectHashingStrategy<?>> myHashingStrategyFunction;
+    private final Function<StubIndexKey<?, ?>, TObjectHashingStrategy<?>> myHashingStrategyFunction;
     private int myStubIdx;
     private Map<Object, int[]> myProcessingMap;
 
-    private StubIndexSink(@NotNull java.util.function.Function<StubIndexKey<?, ?>, TObjectHashingStrategy<?>> hashingStrategyFunction) {
+    private StubIndexSink(@NotNull Function<StubIndexKey<?, ?>, TObjectHashingStrategy<?>> hashingStrategyFunction) {
       myHashingStrategyFunction = hashingStrategyFunction;
     }
 

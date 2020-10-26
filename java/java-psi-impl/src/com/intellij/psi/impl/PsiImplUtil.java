@@ -45,7 +45,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-public class PsiImplUtil {
+public final class PsiImplUtil {
   private static final Logger LOG = Logger.getInstance(PsiImplUtil.class);
 
   private PsiImplUtil() { }
@@ -175,7 +175,14 @@ public class PsiImplUtil {
                                                     @NotNull final ResolveState state,
                                                     final PsiElement lastParent,
                                                     @NotNull final PsiElement place) {
-    final boolean fromBody = lastParent != null && lastParent == lambda.getBody();
+    boolean fromBody;
+    if (lastParent instanceof DummyHolder) {
+      PsiElement firstChild = lastParent.getFirstChild();
+      fromBody = firstChild instanceof PsiExpression || firstChild instanceof PsiCodeBlock;
+    }
+    else {
+      fromBody = lastParent != null && lastParent == lambda.getBody();
+    }
     return processDeclarationsInMethodLike(lambda, processor, state, place, fromBody, null);
   }
 
@@ -326,7 +333,6 @@ public class PsiImplUtil {
    */
   @Deprecated
   public static PsiType normalizeWildcardTypeByPosition(@NotNull PsiType type, @NotNull PsiExpression expression) {
-    PsiUtilCore.ensureValid(expression);
     PsiUtil.ensureValidType(type);
 
     PsiExpression topLevel = expression;
@@ -387,9 +393,18 @@ public class PsiImplUtil {
                                                  member.hasModifierProperty(PsiModifier.PUBLIC) &&
                                                  ((PsiMethod)member).findSuperMethods().length > 0)) {
       //member from anonymous class can be called from outside the class
-      PsiElement methodCallExpr = PsiUtil.isLanguageLevel8OrHigher(aClass) ? PsiTreeUtil.getTopmostParentOfType(aClass, PsiStatement.class)
-                                                                           : PsiTreeUtil.getParentOfType(aClass, PsiMethodCallExpression.class);
-      return new LocalSearchScope(methodCallExpr != null ? methodCallExpr : aClass);
+      PsiElement scope = PsiUtil.isLanguageLevel8OrHigher(aClass) ? PsiTreeUtil.getTopmostParentOfType(aClass, PsiStatement.class)
+                                                                  : PsiTreeUtil.getParentOfType(aClass, PsiMethodCallExpression.class);
+      if (scope instanceof PsiDeclarationStatement) {
+        PsiElement[] elements = ((PsiDeclarationStatement)scope).getDeclaredElements();
+        if (elements.length == 1 &&
+            elements[0] instanceof PsiLocalVariable &&
+            ((PsiLocalVariable)elements[0]).getTypeElement().isInferredType()) {
+          // Inferred type: can be used in the surrounding code block as well
+          scope = scope.getParent();
+        }
+      }
+      return new LocalSearchScope(scope != null ? scope : aClass);
     }
 
     PsiModifierList modifierList = member.getModifierList();
@@ -756,6 +771,11 @@ public class PsiImplUtil {
       return JavaResolveResult.EMPTY_ARRAY;
     }
     PsiFile psiFile = SharedImplUtil.getContainingFile(fileElement);
+    return multiResolveImpl(element, psiFile, incompleteCode, resolver);
+  }
+
+  public static <T extends PsiJavaCodeReferenceElement> @NotNull JavaResolveResult @NotNull [] multiResolveImpl(
+    @NotNull T element, PsiFile psiFile, boolean incompleteCode, ResolveCache.@NotNull PolyVariantContextResolver<? super T> resolver) {
     PsiManager manager = psiFile == null ? null : psiFile.getManager();
     if (manager == null) {
       PsiUtilCore.ensureValid(element);

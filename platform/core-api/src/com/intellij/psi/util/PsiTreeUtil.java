@@ -894,7 +894,7 @@ public class PsiTreeUtil {
    * @return {@code true} if processing was not cancelled ({@code Processor.execute()} method returned {@code true} for all elements).
    */
   @Contract("null, _ -> true")
-  public static boolean processElements(@Nullable PsiElement element, @NotNull PsiElementProcessor<PsiElement> processor) {
+  public static boolean processElements(@Nullable PsiElement element, @NotNull PsiElementProcessor<? super PsiElement> processor) {
     if (element == null) return true;
     if (element instanceof PsiCompiledElement || !element.isPhysical()) {
       // DummyHolders cannot be visited by walking visitors because children/parent relationship is broken there
@@ -921,7 +921,7 @@ public class PsiTreeUtil {
     return result[0];
   }
 
-  public static boolean processElements(@NotNull PsiElementProcessor<PsiElement> processor, PsiElement @Nullable ... elements) {
+  public static boolean processElements(@NotNull PsiElementProcessor<? super PsiElement> processor, PsiElement @Nullable ... elements) {
     if (elements == null || elements.length == 0) return true;
     for (PsiElement element : elements) {
       if (!processElements(element, processor)) return false;
@@ -1103,6 +1103,30 @@ public class PsiTreeUtil {
     return nextLeaf;
   }
 
+  /**
+   * @return closest leaf (not necessarily a sibling) before the given element
+   * which has non-empty range and is neither a whitespace nor a comment
+   */
+  public static @Nullable PsiElement prevCodeLeaf(@NotNull PsiElement element) {
+    PsiElement prevLeaf = prevLeaf(element, true);
+    while (prevLeaf != null && isNonCodeLeaf(prevLeaf)) prevLeaf = prevLeaf(prevLeaf, true);
+    return prevLeaf;
+  }
+
+  /**
+   * @return closest leaf (not necessarily a sibling) after the given element
+   * which has non-empty range and is neither a whitespace nor a comment
+   */
+  public static @Nullable PsiElement nextCodeLeaf(@NotNull PsiElement element) {
+    PsiElement nextLeaf = nextLeaf(element, true);
+    while (nextLeaf != null && isNonCodeLeaf(nextLeaf)) nextLeaf = nextLeaf(nextLeaf, true);
+    return nextLeaf;
+  }
+
+  private static boolean isNonCodeLeaf(PsiElement leaf) {
+    return StringUtil.isEmptyOrSpaces(leaf.getText()) || getNonStrictParentOfType(leaf, PsiComment.class) != null;
+  }
+
   public static @Nullable PsiElement nextLeaf(@NotNull PsiElement element, final boolean skipEmptyElements) {
     PsiElement nextLeaf = nextLeaf(element);
     while (skipEmptyElements && nextLeaf != null && nextLeaf.getTextLength() == 0) nextLeaf = nextLeaf(nextLeaf);
@@ -1271,9 +1295,6 @@ public class PsiTreeUtil {
     }
     if (!cur.getClass().equals(element.getClass())) {
       throw new IllegalStateException("File structure differs: " + cur.getClass() + " != " + element.getClass());
-    }
-    if (!cur.getTextRange().equals(element.getTextRange())) {
-      throw new IllegalStateException("File structure differs: " + cur.getTextRange() + " != " + element.getTextRange());
     }
     //noinspection unchecked
     return (T)cur;

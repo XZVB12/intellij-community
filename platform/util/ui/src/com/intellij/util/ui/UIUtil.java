@@ -10,12 +10,12 @@ import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.text.TextWithMnemonic;
 import com.intellij.ui.*;
 import com.intellij.ui.mac.foundation.Foundation;
 import com.intellij.ui.paint.LinePainter2D;
 import com.intellij.ui.paint.PaintUtil.RoundingMode;
 import com.intellij.ui.scale.JBUIScale;
-import com.intellij.ui.scale.ScaleContext;
 import com.intellij.util.*;
 import com.intellij.util.concurrency.Semaphore;
 import com.intellij.util.containers.ContainerUtil;
@@ -24,7 +24,6 @@ import com.intellij.util.containers.JBTreeTraverser;
 import org.intellij.lang.annotations.JdkConstants;
 import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.*;
-import sun.awt.HeadlessToolkit;
 
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
@@ -35,6 +34,7 @@ import javax.swing.border.AbstractBorder;
 import javax.swing.border.Border;
 import javax.swing.border.LineBorder;
 import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.event.UndoableEditListener;
 import javax.swing.plaf.ButtonUI;
 import javax.swing.plaf.ComboBoxUI;
@@ -67,7 +67,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.ref.WeakReference;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -82,8 +81,10 @@ public final class UIUtil {
     LoadingState.LAF_INITIALIZED.checkOccurred();
   }
 
-  public static final String BORDER_LINE = "<hr size=1 noshade>";
-  @NonNls public static final String BR = "<br/>";
+  public static final @NlsSafe String BORDER_LINE = "<hr size=1 noshade>";
+  @NlsSafe public static final String BR = "<br/>";
+  @NlsSafe public static final String HR = "<hr/>";
+  @NlsSafe public static final String LINE_SEPARATOR = "\n";
 
   public static final Key<Boolean> LAF_WITH_THEME_KEY = Key.create("Laf.with.ui.theme");
   public static final Key<String> PLUGGABLE_LAF_KEY = Key.create("Pluggable.laf.name");
@@ -99,8 +100,8 @@ public final class UIUtil {
     }
   }
 
-  public static void setCustomTitleBar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<Runnable> onDispose) {
-    if (!SystemInfo.isMac || !Registry.is("ide.mac.transparentTitleBarAppearance", false)) {
+  public static void setCustomTitleBar(@NotNull Window window, @NotNull JRootPane rootPane, java.util.function.Consumer<? super Runnable> onDispose) {
+    if (!SystemInfoRt.isMac || !Registry.is("ide.mac.transparentTitleBarAppearance", false)) {
       return;
     }
 
@@ -156,7 +157,7 @@ public final class UIUtil {
     };
     PropertyChangeListener propertyChangeListener = e -> rootPane.repaint();
     window.addPropertyChangeListener("title", propertyChangeListener);
-    onDispose.accept(() -> {
+    onDispose.accept((Runnable)() -> {
       window.removeWindowListener(windowAdapter);
       window.removePropertyChangeListener("title", propertyChangeListener);
     });
@@ -233,7 +234,7 @@ public final class UIUtil {
   }
 
   public static @NotNull Cursor getTextCursor(@NotNull Color backgroundColor) {
-    return SystemInfo.isMac && ColorUtil.isDark(backgroundColor) ?
+    return SystemInfoRt.isMac && ColorUtil.isDark(backgroundColor) ?
            MacUIUtil.getInvertedTextCursor() : Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR);
   }
 
@@ -359,7 +360,9 @@ public final class UIUtil {
   }
 
   public static void fixOSXEditorBackground(@NotNull JTable table) {
-    if (!SystemInfo.isMac) return;
+    if (!SystemInfoRt.isMac) {
+      return;
+    }
 
     if (table.isEditing()) {
       int column = table.getEditingColumn();
@@ -380,7 +383,7 @@ public final class UIUtil {
   public enum FontColor {NORMAL, BRIGHTER}
 
   public static final char MNEMONIC = BundleBase.MNEMONIC;
-  @NonNls public static final String HTML_MIME = "text/html";
+  @NlsSafe public static final String HTML_MIME = "text/html";
   @NonNls public static final String JSLIDER_ISFILLED = "JSlider.isFilled";
   @NonNls public static final String TABLE_FOCUS_CELL_BACKGROUND_PROPERTY = "Table.focusCellBackground";
   /**
@@ -407,7 +410,7 @@ public final class UIUtil {
    */
   public static final Key<Boolean> TEXT_COPY_ROOT = Key.create("TEXT_COPY_ROOT");
 
-  private static final AbstractAction REDO_ACTION = new AbstractAction() {
+  private static final Action REDO_ACTION = new AbstractAction() {
     @Override
     public void actionPerformed(@NotNull ActionEvent e) {
       UndoManager manager = getClientProperty(e.getSource(), UNDO_MANAGER);
@@ -416,7 +419,7 @@ public final class UIUtil {
       }
     }
   };
-  private static final AbstractAction UNDO_ACTION = new AbstractAction() {
+  private static final Action UNDO_ACTION = new AbstractAction() {
     @Override
     public void actionPerformed(@NotNull ActionEvent e) {
       UndoManager manager = getClientProperty(e.getSource(), UNDO_MANAGER);
@@ -455,7 +458,7 @@ public final class UIUtil {
   }
 
   public static boolean isRetina(@NotNull Graphics2D graphics) {
-    return SystemInfo.isMac ? DetectRetinaKit.isMacRetina(graphics) : isRetina();
+    return SystemInfoRt.isMac ? DetectRetinaKit.isMacRetina(graphics) : isRetina();
   }
 
   //public static boolean isMacRetina(Graphics2D g) {
@@ -525,7 +528,7 @@ public final class UIUtil {
    * @return {@code true} if the property of the specified component is set to {@code true}
    */
   public static boolean isClientPropertyTrue(Object component, @NotNull Object key) {
-    return Boolean.TRUE.equals(getClientProperty(component, key));
+    return Boolean.TRUE.equals(component instanceof JComponent ? ((JComponent)component).getClientProperty(key) : null);
   }
 
   /**
@@ -533,7 +536,7 @@ public final class UIUtil {
    * @param key       the client property key that specifies a return type
    * @return the property value from the specified component or {@code null}
    */
-  public static Object getClientProperty(Object component, @NotNull Object key) {
+  public static Object getClientProperty(Object component, @NotNull @NonNls Object key) {
     return component instanceof JComponent ? ((JComponent)component).getClientProperty(key) : null;
   }
 
@@ -559,6 +562,7 @@ public final class UIUtil {
     ComponentUtil.putClientProperty(component, key, value);
   }
 
+  @Contract(pure = true)
   public static @NotNull String getHtmlBody(@NotNull String text) {
     int htmlIndex = 6 + text.indexOf("<html>");
     if (htmlIndex < 6) {
@@ -579,7 +583,8 @@ public final class UIUtil {
     return text.substring(bodyIndex, Math.min(bodyCloseIndex, htmlCloseIndex));
   }
 
-  public static @NotNull String getHtmlBody(@NotNull Html html) {
+  @SuppressWarnings("HardCodedStringLiteral")
+  public static @NotNull @Nls String getHtmlBody(@NotNull Html html) {
     String result = getHtmlBody(html.getText());
     return html.isKeepFont() ? result : result.replaceAll("<font(.*?)>", "").replaceAll("</font>", "");
   }
@@ -685,7 +690,7 @@ public final class UIUtil {
 
   public static void setEnabled(@NotNull Component component, boolean enabled, boolean recursively, final boolean visibleOnly) {
     JBIterable<Component> all = recursively ? uiTraverser(component).expandAndFilter(
-      visibleOnly ? (Condition<Component>)Component::isVisible : Conditions.alwaysTrue()).traverse() : JBIterable.of(component);
+      visibleOnly ? Component::isVisible : Conditions.alwaysTrue()).traverse() : JBIterable.of(component);
     Color fg = enabled ? getLabelForeground() : getLabelDisabledForeground();
     for (Component c : all) {
       c.setEnabled(enabled);
@@ -762,13 +767,14 @@ public final class UIUtil {
     return ArrayUtilRt.toStringArray(lines);
   }
 
-  public static void setActionNameAndMnemonic(@NotNull String text, @NotNull Action action) {
+  public static void setActionNameAndMnemonic(@NotNull @Nls String text, @NotNull Action action) {
     assignMnemonic(text, action);
 
+    //noinspection HardCodedStringLiteral
     text = text.replaceAll("&", "");
     action.putValue(Action.NAME, text);
   }
-  public static void assignMnemonic(@NotNull String text, @NotNull Action action) {
+  public static void assignMnemonic(@NotNull @Nls String text, @NotNull Action action) {
     int mnemoPos = text.indexOf('&');
     if (mnemoPos >= 0 && mnemoPos < text.length() - 2) {
       String mnemoChar = text.substring(mnemoPos + 1, mnemoPos + 2).trim();
@@ -871,17 +877,8 @@ public final class UIUtil {
     return JBColor.namedColor("Label.infoForeground", new JBColor(Gray.x78, Gray.x8C));
   }
 
-  public static @NotNull String removeMnemonic(@NotNull String s) {
-    if (s.indexOf('&') != -1) {
-      s = StringUtil.replace(s, "&", "");
-    }
-    if (s.indexOf('_') != -1) {
-      s = StringUtil.replace(s, "_", "");
-    }
-    if (s.indexOf(MNEMONIC) != -1) {
-      s = StringUtil.replace(s, String.valueOf(MNEMONIC), "");
-    }
-    return s;
+  public static @Nls @NotNull String removeMnemonic(@Nls @NotNull String s) {
+    return TextWithMnemonic.parse(s).getText();
   }
 
   public static int getDisplayMnemonicIndex(@NotNull String s) {
@@ -894,7 +891,7 @@ public final class UIUtil {
     return -1;
   }
 
-  public static String replaceMnemonicAmpersand(final String value) {
+  public static @Nls String replaceMnemonicAmpersand(@Nls String value) {
     return BundleBase.replaceMnemonicAmpersand(value);
   }
 
@@ -1654,18 +1651,6 @@ public final class UIUtil {
   }
 
   /**
-   * @see #createImage(GraphicsConfiguration, double, double, int, RoundingMode)
-   * @throws IllegalArgumentException if {@code width} or {@code height} is not greater than 0
-   */
-  public static @NotNull BufferedImage createImage(ScaleContext ctx, double width, double height, int type, @NotNull RoundingMode rm) {
-    if (StartupUiUtil.isJreHiDPI(ctx)) {
-      return RetinaImage.create(ctx, width, height, type, rm);
-    }
-    //noinspection UndesirableClassUsage
-    return new BufferedImage(rm.round(width), rm.round(height), type);
-  }
-
-  /**
    * @deprecated Use {@link ImageUtil#createImage(Graphics, int, int, int)}
    */
   @Deprecated
@@ -1674,17 +1659,9 @@ public final class UIUtil {
   }
 
   /**
-   * @deprecated Use {@link ImageUtil#createImage(Graphics, double, double, int, RoundingMode)}
-   */
-  @Deprecated
-  public static @NotNull BufferedImage createImage(Graphics g, double width, double height, int type, @NotNull RoundingMode rm) {
-    return ImageUtil.createImage(g, width, height, type, rm);
-  }
-
-  /**
    * Creates a HiDPI-aware BufferedImage in the component scale.
    *
-   * @param comp the component associated with the target graphics device
+   * @param component the component associated with the target graphics device
    * @param width the width in user coordinate space
    * @param height the height in user coordinate space
    * @param type the type of the image
@@ -1692,10 +1669,8 @@ public final class UIUtil {
    * @return a HiDPI-aware BufferedImage in the component scale
    * @throws IllegalArgumentException if {@code width} or {@code height} is not greater than 0
    */
-  public static @NotNull BufferedImage createImage(Component comp, int width, int height, int type) {
-    return comp != null ?
-           ImageUtil.createImage(comp.getGraphicsConfiguration(), width, height, type) :
-           ImageUtil.createImage(width, height, type);
+  public static @NotNull BufferedImage createImage(@Nullable Component component, int width, int height, int type) {
+    return ImageUtil.createImage(component == null ? null : component.getGraphicsConfiguration(), width, height, type);
   }
 
   /**
@@ -1725,43 +1700,7 @@ public final class UIUtil {
    */
   @TestOnly
   public static void dispatchAllInvocationEvents() {
-    assert EdtInvocationManager.getInstance().isEventDispatchThread() : Thread.currentThread() + "; EDT: "+getEventQueueThread();
-    EventQueue eventQueue = Toolkit.getDefaultToolkit().getSystemEventQueue();
-    Method dispatchEventMethod =
-      Objects.requireNonNull(ReflectionUtil.getDeclaredMethod(eventQueue.getClass(), "dispatchEvent", AWTEvent.class));
-    for (int i = 1; ; i++) {
-      AWTEvent event = eventQueue.peekEvent();
-      if (event == null) break;
-      try {
-        event = eventQueue.getNextEvent();
-        if (event instanceof InvocationEvent) {
-          dispatchEventMethod.invoke(eventQueue, event);
-        }
-      }
-      catch (InvocationTargetException e) {
-        ExceptionUtil.rethrowAllAsUnchecked(e.getCause());
-      }
-      catch (Exception e) {
-        ExceptionUtil.rethrow(e);
-      }
-
-      if (i % 10000 == 0) {
-        //noinspection UseOfSystemOutOrSystemErr
-        System.out.println("Suspiciously many (" + i + ") AWT events, last dispatched " + event);
-      }
-    }
-  }
-
-  private static @NotNull Thread getEventQueueThread() {
-    EventQueue eventQueue = Toolkit.getDefaultToolkit().getSystemEventQueue();
-    try {
-      Method method = ReflectionUtil.getDeclaredMethod(EventQueue.class, "getDispatchThread");
-      //noinspection ConstantConditions
-      return (Thread)method.invoke(eventQueue);
-    }
-    catch (Exception e) {
-      throw new RuntimeException(e);
-    }
+    EdtInvocationManager.dispatchAllInvocationEvents();
   }
 
   public static void addAwtListener(final @NotNull AWTEventListener listener, long mask, @NotNull Disposable parent) {
@@ -1919,7 +1858,7 @@ public final class UIUtil {
     }
     if (component != null && component.getParent() instanceof JLayeredPane) { // Handle LoadingDecorator
       Component[] components = ((JLayeredPane)component.getParent()).getComponentsInLayer(JLayeredPane.DEFAULT_LAYER);
-      if (components.length == 1 && ArrayUtil.indexOf(components, component) == -1) {
+      if (components.length == 1 && ArrayUtilRt.indexOf(components, component, 0, components.length) == -1) {
         component = getDeepestComponentAtForComponent(parent, x, y, components[0]);
       }
     }
@@ -1935,16 +1874,16 @@ public final class UIUtil {
     if (!(component instanceof JComponent)) {
       return;
     }
-    forEachComponentInHierarchy(component, __ -> component.doLayout());
+    forEachComponentInHierarchy(component, Component::doLayout);
   }
 
   @Language("HTML")
-  public static @NotNull String getCssFontDeclaration(@NotNull Font font) {
+  public static @NlsSafe @NotNull String getCssFontDeclaration(@NotNull Font font) {
     return getCssFontDeclaration(font, getLabelForeground(), JBUI.CurrentTheme.Link.linkColor(), null);
   }
 
   @Language("HTML")
-  public static @NotNull String getCssFontDeclaration(@NotNull Font font, @Nullable Color fgColor, @Nullable Color linkColor, @Nullable String liImg) {
+  public static @NlsSafe @NotNull String getCssFontDeclaration(@NotNull Font font, @Nullable Color fgColor, @Nullable Color linkColor, @Nullable String liImg) {
     @Language("HTML")
     String familyAndSize = "font-family:'" + font.getFamily() + "'; font-size:" + font.getSize() + "pt;";
     return "<style>\n"
@@ -2107,7 +2046,7 @@ public final class UIUtil {
   }
 
   public static final class JBWordWrapHtmlEditorKit extends JBHtmlEditorKit {
-    private final HTMLFactory myFactory = new HTMLFactory() {
+    private final ViewFactory myFactory = new HTMLFactory() {
       @Override
       public View create(Element e) {
         View view = super.create(e);
@@ -2134,6 +2073,15 @@ public final class UIUtil {
     @Override
     public ViewFactory getViewFactory() {
       return myFactory;
+    }
+  }
+
+  public static @NotNull Font getFontWithFallbackIfNeeded(@NotNull Font font, @NotNull String text) {
+    if (!SystemInfo.isMac /* 'getFontWithFallback' does nothing on macOS */ && font.canDisplayUpTo(text) != -1) {
+      return getFontWithFallback(font);
+    }
+    else {
+      return font;
     }
   }
 
@@ -2183,20 +2131,19 @@ public final class UIUtil {
     }
   }
 
-  public static @NotNull String toHtml(@NotNull String html) {
+  public static @NotNull @NlsSafe String toHtml(@NotNull @Nls String html) {
     return toHtml(html, 0);
   }
 
-  @NonNls
-  public static @NotNull String toHtml(@NotNull String html, final int hPadding) {
-    html = CLOSE_TAG_PATTERN.matcher(html).replaceAll("<$1$2></$1>");
+  public static @NotNull @NlsSafe String toHtml(@NotNull @Nls String html, final int hPadding) {
+    @NlsSafe final String withClosedTag = CLOSE_TAG_PATTERN.matcher(html).replaceAll("<$1$2></$1>");
     Font font = StartupUiUtil.getLabelFont();
     @NonNls String family = font != null ? font.getFamily() : "Tahoma";
     int size = font != null ? font.getSize() : JBUIScale.scale(11);
     return "<html><style>body { font-family: "
            + family + "; font-size: "
            + size + ";} ul li {list-style-type:circle;}</style>"
-           + addPadding(html, hPadding) + "</html>";
+           + addPadding(withClosedTag, hPadding) + "</html>";
   }
 
   public static @NotNull String addPadding(@NotNull String html, int hPadding) {
@@ -2235,13 +2182,7 @@ public final class UIUtil {
    * On AWT thread, invoked runnable immediately, otherwise do {@link SwingUtilities#invokeLater(Runnable)} on it.
    */
   public static void invokeLaterIfNeeded(@NotNull Runnable runnable) {
-    EdtInvocationManager edtInvocationManager = EdtInvocationManager.getInstance();
-    if (edtInvocationManager.isEventDispatchThread()) {
-      runnable.run();
-    }
-    else {
-      edtInvocationManager.invokeLater(runnable);
-    }
+    EdtInvocationManager.invokeLaterIfNeeded(runnable);
   }
 
   /**
@@ -2257,7 +2198,7 @@ public final class UIUtil {
    * @see #invokeAndWaitIfNeeded(ThrowableRunnable)
    */
   public static void invokeAndWaitIfNeeded(@NotNull Runnable runnable) {
-    EdtInvocationManager.getInstance().invokeAndWaitIfNeeded(runnable);
+    EdtInvocationManager.invokeAndWaitIfNeeded(runnable);
   }
 
   /**
@@ -2341,9 +2282,13 @@ public final class UIUtil {
 
   public static void fixFormattedField(@NotNull JFormattedTextField field) {
     if (SystemInfo.isMac) {
-      final Toolkit toolkit = Toolkit.getDefaultToolkit();
-      if (toolkit instanceof HeadlessToolkit) return;
-      final int commandKeyMask = toolkit.getMenuShortcutKeyMask();
+      final int commandKeyMask;
+      try {
+        commandKeyMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMask();
+      }
+      catch (HeadlessException e) {
+        return;
+      }
       final InputMap inputMap = field.getInputMap();
       final KeyStroke copyKeyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_C, commandKeyMask);
       inputMap.put(copyKeyStroke, "copy-to-clipboard");
@@ -2501,7 +2446,7 @@ public final class UIUtil {
   }
 
   public static @NotNull <T extends JComponent> List<T> findComponentsOfType(JComponent parent, @NotNull Class<? extends T> cls) {
-    final ArrayList<T> result = new ArrayList<>();
+    List<T> result = new ArrayList<>();
     findComponentsOfType(parent, cls, result);
     return result;
   }
@@ -2706,18 +2651,26 @@ public final class UIUtil {
   }
 
   public static void setNotOpaqueRecursively(@NotNull Component component) {
+    setOpaqueRecursively(component, false);
+  }
+
+  public static void setOpaqueRecursively(@NotNull Component component, boolean opaque) {
     if (!(component instanceof JComponent)) {
       return;
     }
     forEachComponentInHierarchy(component, c -> {
       if (c instanceof JComponent) {
-        ((JComponent)c).setOpaque(false);
+        ((JComponent)c).setOpaque(opaque);
       }
     });
   }
 
   public static void setBackgroundRecursively(@NotNull Component component, @NotNull Color bg) {
     forEachComponentInHierarchy(component, c -> c.setBackground(bg));
+  }
+
+  public static void setForegroundRecursively(@NotNull Component component, @NotNull Color bg) {
+    forEachComponentInHierarchy(component, c -> c.setForeground(bg));
   }
 
   private static void forEachComponentInHierarchy(@NotNull Component component, @NotNull Consumer<? super Component> action) {
@@ -2827,7 +2780,7 @@ public final class UIUtil {
   }
 
   public static void setAutoRequestFocus(@NotNull Window window, boolean value) {
-    if (!SystemInfo.isMac) {
+    if (!SystemInfoRt.isMac) {
       window.setAutoRequestFocus(value);
     }
   }
@@ -2894,7 +2847,7 @@ public final class UIUtil {
     }
   }
 
-  private static final DocumentAdapter SET_TEXT_CHECKER = new DocumentAdapter() {
+  private static final DocumentListener SET_TEXT_CHECKER = new DocumentAdapter() {
     @Override
     protected void textChanged(@NotNull DocumentEvent e) {
       Document document = e.getDocument();
@@ -2920,14 +2873,15 @@ public final class UIUtil {
     if (textComponent.getClientProperty(UNDO_MANAGER) instanceof UndoManager) {
       return;
     }
+
     UndoManager undoManager = new UndoManager();
     textComponent.putClientProperty(UNDO_MANAGER, undoManager);
     textComponent.getDocument().addUndoableEditListener(undoManager);
     textComponent.getDocument().addDocumentListener(SET_TEXT_CHECKER);
-    textComponent.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_Z, SystemInfo.isMac ? InputEvent.META_MASK : InputEvent.CTRL_MASK), "undoKeystroke");
+    textComponent.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_Z, SystemInfoRt.isMac ? Event.META_MASK : Event.CTRL_MASK), "undoKeystroke");
     textComponent.getActionMap().put("undoKeystroke", UNDO_ACTION);
     textComponent.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_Z, (SystemInfo.isMac
-                                                                           ? InputEvent.META_MASK : InputEvent.CTRL_MASK) | InputEvent.SHIFT_MASK), "redoKeystroke");
+                                                                           ? Event.META_MASK : Event.CTRL_MASK) | Event.SHIFT_MASK), "redoKeystroke");
     textComponent.getActionMap().put("redoKeystroke", REDO_ACTION);
   }
 
@@ -2966,14 +2920,17 @@ public final class UIUtil {
     }, "play sound").start();
   }
 
+  @NlsSafe
   public static @NotNull String leftArrow() {
     return FontUtil.leftArrow(StartupUiUtil.getLabelFont());
   }
 
+  @NlsSafe
   public static @NotNull String rightArrow() {
     return FontUtil.rightArrow(StartupUiUtil.getLabelFont());
   }
 
+  @NlsSafe
   public static @NotNull String upArrow(@NotNull String defaultValue) {
     return FontUtil.upArrow(StartupUiUtil.getLabelFont(), defaultValue);
   }
@@ -3114,8 +3071,9 @@ public final class UIUtil {
 
   public static void setCursor(@NotNull Component component, Cursor cursor) {
     // cursor is updated by native code even if component has the same cursor, causing performance problems (IDEA-167733)
-    if(component.isCursorSet() && component.getCursor() == cursor) return;
-    component.setCursor(cursor);
+    if (!component.isCursorSet() || component.getCursor() != cursor) {
+      component.setCursor(cursor);
+    }
   }
 
   public static boolean haveCommonOwner(Component c1, Component c2) {
@@ -3189,6 +3147,20 @@ public final class UIUtil {
     private static final Color TABLE_BACKGROUND = JBColor.namedColor("Table.selectionInactiveBackground", BACKGROUND);
   }
 
+  private static final class FocusedHover {
+    private static final Color BACKGROUND = new JBColor(0xEDF5FC, 0x464A4D);
+    private static final Color LIST_BACKGROUND = JBColor.namedColor("List.hoverBackground", BACKGROUND);
+    private static final Color TREE_BACKGROUND = JBColor.namedColor("Tree.hoverBackground", BACKGROUND);
+    private static final Color TABLE_BACKGROUND = JBColor.namedColor("Table.hoverBackground", BACKGROUND);
+  }
+
+  private static final class UnfocusedHover {
+    private static final Color BACKGROUND = new JBColor(0xF5F5F5, 0x464A4D);
+    private static final Color LIST_BACKGROUND = JBColor.namedColor("List.hoverInactiveBackground", BACKGROUND);
+    private static final Color TREE_BACKGROUND = JBColor.namedColor("Tree.hoverInactiveBackground", BACKGROUND);
+    private static final Color TABLE_BACKGROUND = JBColor.namedColor("Table.hoverInactiveBackground", BACKGROUND);
+  }
+
 
   // List
 
@@ -3246,6 +3218,11 @@ public final class UIUtil {
     return getListSelectionBackground(false);
   }
 
+  @ApiStatus.Experimental
+  public static @NotNull Color getListHoverBackground(boolean focused) {
+    return focused ? FocusedHover.LIST_BACKGROUND : UnfocusedHover.LIST_BACKGROUND;
+  }
+
   // foreground
 
   public static @NotNull Color getListForeground() {
@@ -3277,7 +3254,6 @@ public final class UIUtil {
   public static @NotNull Color getListSelectionForeground() {
     return getListSelectionForeground(true);
   }
-
 
   // Tree
 
@@ -3314,6 +3290,11 @@ public final class UIUtil {
   @Deprecated
   public static @NotNull Color getTreeUnfocusedSelectionBackground() {
     return getTreeSelectionBackground(false);
+  }
+
+  @ApiStatus.Experimental
+  public static @NotNull Color getTreeHoverBackground(boolean focused) {
+    return focused ? FocusedHover.TREE_BACKGROUND : UnfocusedHover.TREE_BACKGROUND;
   }
 
   // foreground
@@ -3373,6 +3354,11 @@ public final class UIUtil {
   @Deprecated
   public static @NotNull Color getTableUnfocusedSelectionBackground() {
     return getTableSelectionBackground(false);
+  }
+
+  @ApiStatus.Experimental
+  public static @NotNull Color getTableHoverBackground(boolean focused) {
+    return focused ? FocusedHover.TABLE_BACKGROUND : UnfocusedHover.TABLE_BACKGROUND;
   }
 
   // foreground
@@ -3467,7 +3453,7 @@ public final class UIUtil {
   /**
    * This method (as opposed to {@link JEditorPane#scrollToReference}) supports also targets using {@code id} HTML attribute.
    */
-  public static void scrollToReference(@NotNull JEditorPane editor, @NotNull String reference) {
+  public static void scrollToReference(@NotNull JEditorPane editor, @NotNull @NonNls String reference) {
     Document document = editor.getDocument();
     if (document instanceof HTMLDocument) {
       Element elementById = ((HTMLDocument) document).getElement(reference);

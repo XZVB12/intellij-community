@@ -43,7 +43,7 @@ internal class IntentionPreviewModel {
       })
     }
 
-    fun createEditors(project: Project, originalFile: PsiFile, result: IntentionPreviewResult?): List<EditorEx> {
+    fun createEditors(project: Project, result: IntentionPreviewResult?): List<EditorEx> {
       if (result == null) return emptyList()
 
       val psiFileCopy: PsiFile? = result.psiFile
@@ -54,7 +54,7 @@ internal class IntentionPreviewModel {
       lines.forEach { lineFragment -> reformatRange(project, psiFileCopy, lineFragment) }
 
       val fileText = psiFileCopy.text
-      val origText = originalFile.text
+      val origText = result.origFile.text
       val diff = ComparisonManager.getInstance().compareLines(origText, fileText,
                                                               ComparisonPolicy.TRIM_WHITESPACES, DumbProgressIndicator.INSTANCE)
       var diffs = diff.mapNotNull { fragment ->
@@ -71,24 +71,26 @@ internal class IntentionPreviewModel {
           if (start >= end) return@mapNotNull null
           text = origText.substring(start, end).trimStart('\n').trimEnd('\n').trimIndent()
           if (text.isBlank()) return@mapNotNull null
+          return@mapNotNull DiffInfo(text, fragment.startLine1, fragment.endLine1 - fragment.startLine1, true)
         }
 
-        return@mapNotNull DiffInfo(text, fragment.startLine1, fragment.endLine1, deleted)
+        return@mapNotNull DiffInfo(text, fragment.startLine1, fragment.endLine2 - fragment.startLine2, false)
       }
       if (diffs.any { info -> !info.deleted }) {
         // Do not display deleted fragments if anything is added
         diffs = diffs.filter { info -> !info.deleted }
       }
       if (diffs.isNotEmpty()) {
-        val maxLine = diffs.last().endLine - 1
-        return diffs.map { it.createEditor(project, originalFile.fileType, maxLine) }
+        val last = diffs.last()
+        val maxLine = last.startLine + last.length
+        return diffs.map { it.createEditor(project, result.origFile.fileType, maxLine) }
       }
       return emptyList()
     }
 
     private data class DiffInfo(val fileText: String,
                                 val startLine: Int,
-                                val endLine: Int,
+                                val length: Int,
                                 val deleted: Boolean) {
       fun createEditor(project: Project,
                        fileType: FileType,

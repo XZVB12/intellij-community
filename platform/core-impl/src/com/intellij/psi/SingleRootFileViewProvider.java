@@ -198,7 +198,7 @@ public class SingleRootFileViewProvider extends AbstractFileViewProvider impleme
   }
 
   public static boolean fileSizeIsGreaterThan(@NotNull VirtualFile vFile, final long maxBytes) {
-    if (vFile instanceof LightVirtualFile) {
+    if (vFile instanceof LightVirtualFile && !vFile.getFileType().isBinary()) {
       // This is optimization in order to avoid conversion of [large] file contents to bytes
       int lengthInChars = ((LightVirtualFile)vFile).getContent().length();
       if (lengthInChars < maxBytes / 2) {
@@ -242,7 +242,7 @@ public class SingleRootFileViewProvider extends AbstractFileViewProvider impleme
       // jdk 6 doesn't have getAndSet()
       if (myPsiFileUpdater.compareAndSet(this, prev, psiFile)) {
         if (prev != psiFile && prev instanceof PsiFileEx) {
-          ((PsiFileEx)prev).markInvalidated();
+          DebugUtil.performPsiModification(getClass().getName() + " PSI change", () -> ((PsiFileEx)prev).markInvalidated());
         }
         break;
       }

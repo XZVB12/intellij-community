@@ -17,7 +17,9 @@ import com.intellij.remote.RemoteSdkAdditionalData;
 import com.intellij.remote.RemoteSdkProperties;
 import com.intellij.util.PathMapper;
 import com.intellij.util.PathMappingSettings;
+import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.extensions.python.ProgressManagerExtKt;
+import com.jetbrains.python.PyBundle;
 import com.jetbrains.python.PythonHelpersLocator;
 import com.jetbrains.python.console.PyConsoleProcessHandler;
 import com.jetbrains.python.console.PydevConsoleCommunication;
@@ -45,12 +47,7 @@ public abstract class PythonRemoteInterpreterManager {
 
   @Nullable
   public static PythonRemoteInterpreterManager getInstance() {
-    if (EP_NAME.getExtensions().length > 0) {
-      return EP_NAME.getExtensions()[0];
-    }
-    else {
-      return null;
-    }
+    return ContainerUtil.getFirstItem(EP_NAME.getExtensionList());
   }
 
   public static void addUnbuffered(@NotNull ParamsGroup exeGroup) {
@@ -90,13 +87,14 @@ public abstract class PythonRemoteInterpreterManager {
 
       for (PathMappingProvider mappingProvider : PathMappingProvider.getSuitableMappingProviders(data)) {
         PathMappingSettings settings =
-          ProgressManagerExtKt.runUnderProgress(ProgressManager.getInstance(), "Accessing remote interpreter...",
-                                                new Function0<PathMappingSettings>() {
-            @Override
-            public PathMappingSettings invoke() { //Path mapping may require external process with WSL
-              return mappingProvider.getPathMappingSettings(project, data);
-            }
-          });
+          ProgressManagerExtKt.runUnderProgress(ProgressManager.getInstance(),
+                                                PyBundle.message("remote.interpreter.accessing.remote.interpreter.progress.title"),
+                                                new Function0<>() {
+                                                  @Override
+                                                  public PathMappingSettings invoke() { //Path mapping may require external process with WSL
+                                                    return mappingProvider.getPathMappingSettings(project, data);
+                                                  }
+                                                });
         newPathMapper.addAll(settings.getPathMappings(), PyRemotePathMapper.PyPathMappingType.REPLICATED_FOLDER);
       }
     }

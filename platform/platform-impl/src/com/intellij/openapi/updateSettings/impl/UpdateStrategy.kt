@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.updateSettings.impl
 
 import com.intellij.openapi.updateSettings.UpdateStrategyCustomization
@@ -6,8 +6,10 @@ import com.intellij.openapi.util.BuildNumber
 import com.intellij.util.containers.MultiMap
 import com.intellij.util.graph.GraphAlgorithms
 import com.intellij.util.graph.InboundSemiGraph
+import org.jetbrains.annotations.NonNls
 import java.util.*
 
+@NonNls
 private val NUMBER = Regex("\\d+")
 
 class UpdateStrategy(private val currentBuild: BuildNumber, private val updates: UpdatesInfo, private val settings: UpdateSettings) {
@@ -27,12 +29,13 @@ class UpdateStrategy(private val currentBuild: BuildNumber, private val updates:
     val selectedChannel = settings.selectedChannelStatus
     val ignoredBuilds = settings.ignoredBuildNumbers.toSet()
 
+    val customization = UpdateStrategyCustomization.getInstance()
     val result = product.channels.asSequence()
       .filter { ch -> ch.status >= selectedChannel }                                      // filters out inapplicable channels
       .sortedBy { ch -> ch.status }                                                       // reorders channels (EAPs first)
       .flatMap { ch -> ch.builds.asSequence().map { build -> build to ch } }              // maps into a sequence of <build, channel> pairs
-      .filter { p -> isApplicable(p.first, ignoredBuilds) }                               // filters out inapplicable builds
-      .maxWith(Comparator { p1, p2 -> compareBuilds(p1.first.number, p2.first.number) })  // a build with the max number, preferring the same baseline
+      .filter { p -> isApplicable(customization, p.first, ignoredBuilds) }                               // filters out inapplicable builds
+      .maxWithOrNull(Comparator { p1, p2 -> compareBuilds(p1.first.number, p2.first.number) })  // a build with the max number, preferring the same baseline
 
     val newBuild = result?.first
     val updatedChannel = result?.second
@@ -40,8 +43,7 @@ class UpdateStrategy(private val currentBuild: BuildNumber, private val updates:
     return CheckForUpdateResult(newBuild, updatedChannel, patches)
   }
 
-  private fun isApplicable(candidate: BuildInfo, ignoredBuilds: Set<String>): Boolean {
-    val customization = UpdateStrategyCustomization.getInstance()
+  private fun isApplicable(customization: UpdateStrategyCustomization, candidate: BuildInfo, ignoredBuilds: Set<String>): Boolean {
     return customization.isNewerVersion(candidate.number, currentBuild) &&
            candidate.number.asStringWithoutProductCode() !in ignoredBuilds &&
            candidate.target?.inRange(currentBuild) ?: true

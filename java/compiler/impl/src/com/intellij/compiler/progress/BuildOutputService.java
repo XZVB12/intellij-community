@@ -20,35 +20,33 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ex.ProgressIndicatorEx;
 import com.intellij.pom.Navigatable;
 import com.intellij.util.SmartList;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Nls;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import com.intellij.util.containers.Stack;
+import org.jetbrains.annotations.*;
 
 import java.io.File;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
-import static com.intellij.compiler.impl.CompileDriver.CLASSES_UP_TO_DATE_CHECK;
 import static com.intellij.execution.filters.RegexpFilter.*;
 import static com.intellij.openapi.util.text.StringUtil.*;
 import static com.intellij.openapi.vfs.VfsUtilCore.virtualToIoFile;
 
 @ApiStatus.Internal
 public class BuildOutputService implements BuildViewService {
-  private static final String ANSI_RESET = "\u001B[0m"; //NON-NLS
-  private static final String ANSI_RED = "\u001B[31m"; //NON-NLS
-  private static final String ANSI_YELLOW = "\u001B[33m"; //NON-NLS
-  private static final String ANSI_BOLD = "\u001b[1m"; //NON-NLS
+  private static final @NonNls String ANSI_RESET = "\u001B[0m";
+  private static final @NonNls String ANSI_RED = "\u001B[31m";
+  private static final @NonNls String ANSI_YELLOW = "\u001B[33m";
+  private static final @NonNls String ANSI_BOLD = "\u001b[1m";
   private final @NotNull Project myProject;
   private final @NotNull BuildProgress<BuildProgressDescriptor> myBuildProgress;
-  private final @NotNull String myContentName;
+  private final @NotNull @NlsContexts.TabTitle String myContentName;
 
-  public BuildOutputService(@NotNull Project project, @NotNull String contentName) {
+  public BuildOutputService(@NotNull Project project, @NotNull @NlsContexts.TabTitle String contentName) {
     myProject = project;
     myContentName = contentName;
     myBuildProgress = BuildViewManager.createBuildProgress(project);
@@ -128,7 +126,7 @@ public class BuildOutputService implements BuildViewService {
     }
     else {
       boolean isUpToDate = exitStatus == ExitStatus.UP_TO_DATE;
-      if (CLASSES_UP_TO_DATE_CHECK.equals(myContentName)) {
+      if (JavaCompilerBundle.message("classes.up.to.date.check").equals(myContentName)) {
         if (isUpToDate) {
           myBuildProgress.output(JavaCompilerBundle.message("compiler.build.messages.classes.check.uptodate"), true);
         }
@@ -166,18 +164,26 @@ public class BuildOutputService implements BuildViewService {
         String title = getMessageTitle(compilerMessage);
         myBuildProgress.message(title, compilerMessage.getMessage(), kind, navigatable);
       }
-      String color;
-      if (kind == MessageEvent.Kind.ERROR) {
-        color = ANSI_RED;
-      }
-      else if (kind == MessageEvent.Kind.WARNING) {
-        color = ANSI_YELLOW;
-      }
-      else {
-        color = ANSI_BOLD;
-      }
-      myBuildProgress.output(color + compilerMessage.getMessage() + ANSI_RESET + '\n', kind != MessageEvent.Kind.ERROR);
+      myBuildProgress.output(wrapWithAnsiColor(kind, compilerMessage.getMessage()) + '\n', kind != MessageEvent.Kind.ERROR);
     }
+  }
+
+  @Nls
+  private static String wrapWithAnsiColor(MessageEvent.Kind kind, @Nls String message) {
+    @NlsSafe
+    String color;
+    if (kind == MessageEvent.Kind.ERROR) {
+      color = ANSI_RED;
+    }
+    else if (kind == MessageEvent.Kind.WARNING) {
+      color = ANSI_YELLOW;
+    }
+    else {
+      color = ANSI_BOLD;
+    }
+    @NlsSafe
+    final String ansiReset = ANSI_RESET;
+    return color + message + ansiReset;
   }
 
   @NotNull
@@ -219,18 +225,53 @@ public class BuildOutputService implements BuildViewService {
       return;
     }
     ((ProgressIndicatorEx)indicator).addStateDelegate(new CompilerMessagesService.DummyProgressIndicator() {
+      private final Map<String, Set<String>> mySeenMessages = new HashMap<>();
+      @NlsSafe
       private String lastMessage = null;
+      private Stack<String> myTextStack;
 
       @Override
       public void setText(@Nls(capitalization = Nls.Capitalization.Sentence) String text) {
-        if (isEmptyOrSpaces(text) || text.equals(lastMessage)) return;
-        lastMessage = text;
-        myBuildProgress.output(text + '\n', true);
+        addIndicatorNewMessagesAsBuildOutput(text);
+      }
+
+      @Override
+      public void pushState() {
+        getTextStack().push(indicator.getText());
       }
 
       @Override
       public void setFraction(double fraction) {
         myBuildProgress.progress(lastMessage, 100, (long)(fraction * 100), "%");
+      }
+
+      @NotNull
+      private Stack<String> getTextStack() {
+        Stack<String> stack = myTextStack;
+        if (stack == null) myTextStack = stack = new Stack<>(2);
+        return stack;
+      }
+
+      private void addIndicatorNewMessagesAsBuildOutput(@Nls String msg) {
+        Stack<String> textStack = getTextStack();
+        if (!textStack.isEmpty() && msg.equals(textStack.peek())) {
+          textStack.pop();
+          return;
+        }
+        if (isEmptyOrSpaces(msg) || msg.equals(lastMessage)) return;
+        lastMessage = msg;
+
+        int start = msg.indexOf("[");
+        if (start >= 1) {
+          int end = msg.indexOf(']', start + 1);
+          if (end != -1) {
+            String buildTargetNameCandidate = msg.substring(start + 1, end);
+            Set<String> targets = mySeenMessages.computeIfAbsent(buildTargetNameCandidate, unused -> new HashSet<>());
+            boolean isSeenMessage = !targets.add(msg.substring(0, start));
+            if (isSeenMessage) return;
+          }
+        }
+        myBuildProgress.output(msg + '\n', true);
       }
     });
   }
@@ -246,6 +287,7 @@ public class BuildOutputService implements BuildViewService {
     return contextActions;
   }
 
+  @Nls
   private static String getMessageTitle(@NotNull CompilerMessage compilerMessage) {
     String message = null;
     String[] messages = splitByLines(compilerMessage.getMessage());

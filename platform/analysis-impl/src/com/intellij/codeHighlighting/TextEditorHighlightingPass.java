@@ -1,14 +1,16 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeHighlighting;
 
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInspection.ex.GlobalInspectionContextBase;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Condition;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiModificationTracker;
@@ -22,8 +24,10 @@ import java.util.List;
 
 public abstract class TextEditorHighlightingPass implements HighlightingPass {
   public static final TextEditorHighlightingPass[] EMPTY_ARRAY = new TextEditorHighlightingPass[0];
-  @Nullable protected final Document myDocument;
-  @NotNull protected final Project myProject;
+  @NotNull
+  protected final Document myDocument;
+  @NotNull
+  protected final Project myProject;
   private final boolean myRunIntentionPassAfter;
   private final long myInitialDocStamp;
   private final long myInitialPsiStamp;
@@ -33,14 +37,14 @@ public abstract class TextEditorHighlightingPass implements HighlightingPass {
   private volatile boolean myDumb;
   private EditorColorsScheme myColorsScheme;
 
-  protected TextEditorHighlightingPass(@NotNull final Project project, @Nullable final Document document, boolean runIntentionPassAfter) {
+  protected TextEditorHighlightingPass(@NotNull final Project project, @NotNull final Document document, boolean runIntentionPassAfter) {
     myDocument = document;
     myProject = project;
     myRunIntentionPassAfter = runIntentionPassAfter;
-    myInitialDocStamp = document == null ? 0 : document.getModificationStamp();
+    myInitialDocStamp = document.getModificationStamp();
     myInitialPsiStamp = PsiModificationTracker.SERVICE.getInstance(myProject).getModificationCount();
   }
-  protected TextEditorHighlightingPass(@NotNull final Project project, @Nullable final Document document) {
+  protected TextEditorHighlightingPass(@NotNull final Project project, @NotNull Document document) {
     this(project, document, true);
   }
 
@@ -65,7 +69,15 @@ public abstract class TextEditorHighlightingPass implements HighlightingPass {
     return myDumb;
   }
 
+  @Override
+  public Condition<?> getExpiredCondition() {
+    return (Condition<Object>)o -> ReadAction.compute(() -> !isValid());
+  }
+
   protected boolean isValid() {
+    if (myProject.isDisposed()) {
+      return false;
+    }
     if (isDumbMode() && !DumbService.isDumbAware(this)) {
       return false;
     }
@@ -74,13 +86,9 @@ public abstract class TextEditorHighlightingPass implements HighlightingPass {
       return false;
     }
 
-    if (myDocument != null) {
-      if (myDocument.getModificationStamp() != myInitialDocStamp) return false;
-      PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(myDocument);
-      return file != null && file.isValid();
-    }
-
-    return true;
+    if (myDocument.getModificationStamp() != myInitialDocStamp) return false;
+    PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(myDocument);
+    return file != null && file.isValid();
   }
 
   @Override
@@ -88,7 +96,7 @@ public abstract class TextEditorHighlightingPass implements HighlightingPass {
     if (!isValid()) return; // Document has changed.
     if (DumbService.getInstance(myProject).isDumb() && !DumbService.isDumbAware(this)) {
       Document document = getDocument();
-      PsiFile file = document == null ? null : PsiDocumentManager.getInstance(myProject).getPsiFile(document);
+      PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(document);
       if (file != null) {
         DaemonCodeAnalyzerEx.getInstanceEx(myProject).getFileStatusMap().markFileUpToDate(getDocument(), getId());
       }
@@ -121,7 +129,7 @@ public abstract class TextEditorHighlightingPass implements HighlightingPass {
     myCompletionPredecessorIds = completionPredecessorIds;
   }
 
-  @Nullable
+  @NotNull
   public Document getDocument() {
     return myDocument;
   }

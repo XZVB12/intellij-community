@@ -108,9 +108,9 @@ public abstract class MouseDragHelper extends MouseAdapter implements MouseMotio
     if (myGlassPane != null) {
       Disposer.dispose(myGlassPaneListenersDisposable);
       myGlassPaneListenersDisposable = Disposer.newDisposable();
-      KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(this);
       myGlassPane = null;
     }
+    KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(this);
   }
 
   @Override
@@ -137,6 +137,13 @@ public abstract class MouseDragHelper extends MouseAdapter implements MouseMotio
   @Override
   public void mouseReleased(final MouseEvent e) {
     if (myCancelled) {
+      myCancelled = false;
+      return;
+    }
+    if (myDraggingNow && !canFinishDragging(e)) {
+      cancelDragging();
+      e.consume();
+      myPressedOnScreenPoint = null;
       myCancelled = false;
       return;
     }
@@ -221,6 +228,17 @@ public abstract class MouseDragHelper extends MouseAdapter implements MouseMotio
     return true;
   }
 
+  private boolean canFinishDragging(@NotNull MouseEvent me) {
+    if (!myDragComponent.isShowing()) return false;
+    Component component = me.getComponent();
+    if (NullableComponent.Check.isNullOrHidden(component)) return false;
+    return canFinishDragging(myDragComponent, new RelativePoint(me));
+  }
+
+  protected boolean canFinishDragging(@NotNull JComponent component, @NotNull RelativePoint point) {
+    return true;
+  }
+
   protected void processMousePressed(@NotNull MouseEvent event) {
   }
 
@@ -262,17 +280,22 @@ public abstract class MouseDragHelper extends MouseAdapter implements MouseMotio
 
   @Override
   public boolean dispatchKeyEvent(@NotNull KeyEvent e) {
-    if (e.getKeyCode() == KeyEvent.VK_ESCAPE && e.getID() == KeyEvent.KEY_PRESSED && myDraggingNow) {
-      myCancelled = true;
-      if (myDetachingMode) {
-        processDragOutCancel();
-      }
-      else {
-        processDragCancel();
-      }
-      resetDragState();
-      return true;
+    if (e.getKeyCode() == KeyEvent.VK_ESCAPE && e.getID() == KeyEvent.KEY_PRESSED) {
+      return cancelDragging();
     }
     return false;
+  }
+
+  public boolean cancelDragging() {
+    if (!myDraggingNow) return false;
+    myCancelled = true;
+    if (myDetachingMode) {
+      processDragOutCancel();
+    }
+    else {
+      processDragCancel();
+    }
+    resetDragState();
+    return true;
   }
 }

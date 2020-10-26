@@ -8,9 +8,7 @@ import org.jdom.JDOMException;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 
@@ -19,7 +17,8 @@ import java.nio.file.Path;
  */
 @ApiStatus.NonExtendable
 public abstract class ProjectManager {
-  public static final Topic<ProjectManagerListener> TOPIC = new Topic<>("Project open and close events", ProjectManagerListener.class);
+  @Topic.AppLevel
+  public static final Topic<ProjectManagerListener> TOPIC = new Topic<>(ProjectManagerListener.class);
 
   /**
    * @return {@code ProjectManager} instance
@@ -100,21 +99,16 @@ public abstract class ProjectManager {
    */
   public abstract @Nullable Project loadAndOpenProject(@NotNull String filePath) throws IOException, JDOMException;
 
-  @ApiStatus.Experimental
-  @TestOnly
-  public @Nullable Project loadAndOpenProject(@NotNull File file) throws IOException, JDOMException {
-    return loadAndOpenProject(file.toPath());
-  }
-
-  @ApiStatus.Experimental
-  public abstract @Nullable Project loadAndOpenProject(@NotNull Path file) throws IOException, JDOMException;
+  /**
+   * Save, close and dispose project. Please note that only the project will be saved, but not the application.
+   * @return true on success
+   */
+  public abstract boolean closeAndDispose(@NotNull Project project);
 
   /**
-   * Closes the specified project, but does not dispose it.
-   *
-   * @param project the project to close.
-   * @return true if the project was closed successfully, false if the closing was disallowed by the close listeners.
+   * @deprecated Use {@link #closeAndDispose}
    */
+  @Deprecated
   public abstract boolean closeProject(@NotNull Project project);
 
   /**
@@ -126,12 +120,8 @@ public abstract class ProjectManager {
   public abstract void reloadProject(@NotNull Project project);
 
   /**
-   * Create new project in given location.
-   *
-   * @param name project name
-   * @param path project location
-   *
-   * @return newly crated project
+   * @deprecated Use {@link com.intellij.openapi.project.ex.ProjectManagerEx#newProject(Path, com.intellij.ide.impl.OpenProjectTask)}
    */
+  @Deprecated
   public abstract @Nullable Project createProject(@Nullable String name, @NotNull String path);
 }

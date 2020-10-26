@@ -42,11 +42,11 @@ public class ProjectListBuilder extends AbstractListBuilder {
     myUpdateAlarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD, myProject);
 
     myPsiTreeChangeListener = new MyPsiTreeChangeListener();
-    PsiManager.getInstance(myProject).addPsiTreeChangeListener(myPsiTreeChangeListener);
+    PsiManager.getInstance(myProject).addPsiTreeChangeListener(myPsiTreeChangeListener, this);
     myFileStatusListener = new MyFileStatusListener();
-    FileStatusManager.getInstance(myProject).addFileStatusListener(myFileStatusListener);
+    FileStatusManager.getInstance(myProject).addFileStatusListener(myFileStatusListener, this);
     myCopyPasteListener = new MyCopyPasteListener();
-    CopyPasteManager.getInstance().addContentChangedListener(myCopyPasteListener);
+    CopyPasteManager.getInstance().addContentChangedListener(myCopyPasteListener, this);
     buildRoot();
   }
 
@@ -83,14 +83,6 @@ public class ProjectListBuilder extends AbstractListBuilder {
     }
 
     return result;
-  }
-
-  @Override
-  public void dispose() {
-    super.dispose();
-    PsiManager.getInstance(myProject).removePsiTreeChangeListener(myPsiTreeChangeListener);
-    FileStatusManager.getInstance(myProject).removeFileStatusListener(myFileStatusListener);
-    CopyPasteManager.getInstance().removeContentChangedListener(myCopyPasteListener);
   }
 
   public void addUpdateRequest() {
@@ -136,7 +128,7 @@ public class ProjectListBuilder extends AbstractListBuilder {
 
     private MyPsiTreeChangeListener() {
       myModificationTracker = PsiManager.getInstance(myProject).getModificationTracker();
-      myOutOfCodeBlockModificationCount = myModificationTracker.getOutOfCodeBlockModificationCount();
+      myOutOfCodeBlockModificationCount = myModificationTracker.getModificationCount();
     }
 
     @Override
@@ -172,7 +164,7 @@ public class ProjectListBuilder extends AbstractListBuilder {
     }
 
     private void childrenChanged() {
-      long newModificationCount = myModificationTracker.getOutOfCodeBlockModificationCount();
+      long newModificationCount = myModificationTracker.getModificationCount();
       if (newModificationCount == myOutOfCodeBlockModificationCount) return;
       myOutOfCodeBlockModificationCount = newModificationCount;
       addUpdateRequest();

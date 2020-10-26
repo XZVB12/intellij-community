@@ -1,8 +1,8 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.actions;
 
 import com.intellij.icons.AllIcons;
-import com.intellij.internal.statistic.eventLog.EventPair;
+import com.intellij.internal.statistic.eventLog.events.EventPair;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
@@ -14,11 +14,13 @@ import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.openapi.wm.WindowInfo;
 import com.intellij.ui.UIBundle;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public final class ToolWindowMoveAction extends DumbAwareAction implements FusAwareAction {
@@ -26,6 +28,7 @@ public final class ToolWindowMoveAction extends DumbAwareAction implements FusAw
     LeftTop, LeftBottom, BottomLeft, BottomRight, RightBottom, RightTop, TopRight, TopLeft;
 
     @Override
+    @Nls
     public String toString() {
       String top = UIBundle.message("tool.window.move.to.top.action.name");
       String left = UIBundle.message("tool.window.move.to.left.action.name");
@@ -49,7 +52,7 @@ public final class ToolWindowMoveAction extends DumbAwareAction implements FusAw
         case TopLeft:
           return top + " " + left;
       }
-      return super.toString();
+      throw new IllegalStateException("Should not be invoked");
     }
 
     @NotNull
@@ -166,11 +169,12 @@ public final class ToolWindowMoveAction extends DumbAwareAction implements FusAw
   }
 
   @Override
-  public void addAdditionalUsageData(@NotNull AnActionEvent event, @NotNull List<EventPair> data) {
+  public @NotNull List<EventPair<?>> getAdditionalUsageData(@NotNull AnActionEvent event) {
     ToolWindow toolWindow = getToolWindow(event);
     if (toolWindow != null) {
-      data.add(ToolwindowFusEventFields.TOOLWINDOW.with(toolWindow.getId()));
+      return Collections.singletonList(ToolwindowFusEventFields.TOOLWINDOW.with(toolWindow.getId()));
     }
+    return Collections.emptyList();
   }
 
   public static final class Group extends DefaultActionGroup {

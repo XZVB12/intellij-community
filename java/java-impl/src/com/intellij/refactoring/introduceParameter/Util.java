@@ -1,22 +1,11 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.refactoring.introduceParameter;
 
 import com.intellij.codeInsight.generation.GenerateMembersUtil;
+import com.intellij.java.JavaBundle;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.*;
 import com.intellij.psi.search.searches.OverridingMethodsSearch;
@@ -34,7 +23,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-public class Util {
+public final class Util {
 
   public static void analyzeExpression(PsiExpression expr,
                                        List<? super UsageInfo> localVars,
@@ -116,9 +105,6 @@ public class Util {
     final PsiParameter[] parameters = method.getParameterList().getParameters();
     if (parameters.length == 0) return new TIntArrayList();
 
-    PsiMethod[] overridingMethods = OverridingMethodsSearch.search(method).toArray(PsiMethod.EMPTY_ARRAY);
-    final PsiMethod[] allMethods = ArrayUtil.append(overridingMethods, method);
-
     final TIntHashSet suspects = new TIntHashSet();
     expr.accept(new JavaRecursiveElementWalkingVisitor() {
       @Override public void visitReferenceExpression(final PsiReferenceExpression expression) {
@@ -133,36 +119,48 @@ public class Util {
       }
     });
 
-    final TIntIterator iterator = suspects.iterator();
-    while(iterator.hasNext()) {
-      final int paramNum = iterator.next();
-      for (PsiMethod psiMethod : allMethods) {
-        PsiParameter[] psiParameters = psiMethod.getParameterList().getParameters();
-        if (paramNum >= psiParameters.length) continue;
-        PsiParameter parameter = psiParameters[paramNum];
-        if (!ReferencesSearch.search(parameter, parameter.getResolveScope(), false).forEach(reference -> {
-          PsiElement element = reference.getElement();
-          boolean stillCanBeRemoved = false;
-          if (element != null) {
-            stillCanBeRemoved = isAncestor(expr, element, false) || PsiUtil.isInsideJavadocComment(getPhysical(element));
-            if (!stillCanBeRemoved && occurences != null) {
-              for (PsiExpression occurence : occurences) {
-                if (isAncestor(occurence, element, false)) {
-                  stillCanBeRemoved = true;
-                  break;
-                }
-              }
-            }
-          }
-          if (!stillCanBeRemoved) {
-            iterator.remove();
-            return false;
-          }
-         return true;
-        })) break;
-      }
+    removeUsed(method, expr, occurences, suspects);
+
+    if (suspects.isEmpty()) return new TIntArrayList();
+
+    if (!ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
+      OverridingMethodsSearch.search(method).forEach(psiMethod -> {
+        ReadAction.run(() -> removeUsed(psiMethod, expr, occurences, suspects));
+        return !suspects.isEmpty();
+      });
+    }, JavaBundle.message("progress.title.search.for.overriding.methods"), true, method.getProject())) {
+      return new TIntArrayList();
     }
 
     return new TIntArrayList(suspects.toArray());
+  }
+
+  private static void removeUsed(PsiMethod containingMethod, @NotNull PsiExpression expr,
+                                 PsiExpression @Nullable [] occurences,
+                                 TIntHashSet suspects) {
+    final TIntIterator iterator = suspects.iterator();
+    while (iterator.hasNext()) {
+      final int paramNum = iterator.next();
+      PsiParameter[] psiParameters = containingMethod.getParameterList().getParameters();
+      if (paramNum >= psiParameters.length) continue;
+      PsiParameter parameter = psiParameters[paramNum];
+      ReferencesSearch.search(parameter, parameter.getResolveScope(), false).forEach(reference -> {
+        PsiElement element = reference.getElement();
+        boolean stillCanBeRemoved = isAncestor(expr, element, false) || PsiUtil.isInsideJavadocComment(getPhysical(element));
+        if (!stillCanBeRemoved && occurences != null) {
+          for (PsiExpression occurence : occurences) {
+            if (isAncestor(occurence, element, false)) {
+              stillCanBeRemoved = true;
+              break;
+            }
+          }
+        }
+        if (!stillCanBeRemoved) {
+          iterator.remove();
+          return false;
+        }
+        return true;
+      });
+    }
   }
 }

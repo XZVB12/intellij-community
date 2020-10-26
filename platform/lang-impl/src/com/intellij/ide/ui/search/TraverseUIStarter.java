@@ -25,12 +25,14 @@ import com.intellij.openapi.options.UnnamedConfigurable;
 import com.intellij.openapi.options.ex.ConfigurableWrapper;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.util.JDOMUtil;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.PathUtil;
 import com.intellij.util.io.URLUtil;
 import org.jdom.Document;
 import org.jdom.Element;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -48,14 +50,14 @@ import java.util.*;
  */
 @SuppressWarnings({"CallToPrintStackTrace", "UseOfSystemOutOrSystemErr"})
 public final class TraverseUIStarter implements ApplicationStarter {
-  private static final String OPTIONS = "options";
-  private static final String CONFIGURABLE = "configurable";
-  private static final String ID = "id";
-  private static final String CONFIGURABLE_NAME = "configurable_name";
-  private static final String OPTION = "option";
-  private static final String NAME = "name";
-  private static final String PATH = "path";
-  private static final String HIT = "hit";
+  private static final @NonNls String OPTIONS = "options";
+  private static final @NonNls String CONFIGURABLE = "configurable";
+  private static final @NonNls String ID = "id";
+  private static final @NonNls String CONFIGURABLE_NAME = "configurable_name";
+  private static final @NonNls String OPTION = "option";
+  private static final @NonNls String NAME = "name";
+  private static final @NonNls String PATH = "path";
+  private static final @NonNls String HIT = "hit";
 
   private static final String ROOT_ACTION_MODULE = "intellij.platform.ide";
 
@@ -70,7 +72,7 @@ public final class TraverseUIStarter implements ApplicationStarter {
   @Override
   public void premain(@NotNull List<String> args) {
     OUTPUT_PATH = args.get(1);
-    SPLIT_BY_RESOURCE_PATH = args.size() > 2 && Boolean.valueOf(args.get(2));
+    SPLIT_BY_RESOURCE_PATH = args.size() > 2 && Boolean.parseBoolean(args.get(2));
   }
 
   @Override
@@ -211,7 +213,7 @@ public final class TraverseUIStarter implements ApplicationStarter {
   }
 
   private static void collectOptions(SearchableOptionsRegistrar registrar, Set<? super OptionDescription> options, @NotNull String text, String path) {
-    for (String word : registrar.getProcessedWordsWithoutStemming(text)) {
+    for (@NlsSafe String word : registrar.getProcessedWordsWithoutStemming(text)) {
       options.add(new OptionDescription(word, text, path));
     }
   }
@@ -234,7 +236,7 @@ public final class TraverseUIStarter implements ApplicationStarter {
     SearchableOptionsRegistrar registrar = SearchableOptionsRegistrar.getInstance();
     Set<OptionDescription> result = new TreeSet<>();
     for (String opt : optionsPath) {
-      for (String word : registrar.getProcessedWordsWithoutStemming(opt)) {
+      for (@NlsSafe String word : registrar.getProcessedWordsWithoutStemming(opt)) {
         if (word != null) {
           result.add(new OptionDescription(word, opt, path));
         }
@@ -272,10 +274,10 @@ public final class TraverseUIStarter implements ApplicationStarter {
 
   @NotNull
   private static Map<String, PluginId> getActionToPluginId() {
-    final ActionManagerEx actionManager = ActionManagerEx.getInstanceEx();
-    final Map<String, PluginId> actionToPluginId = new HashMap<>();
-    for (final PluginId id : PluginId.getRegisteredIds().values()) {
-      for (final String action : actionManager.getPluginActions(id)) {
+    ActionManagerEx actionManager = ActionManagerEx.getInstanceEx();
+    Map<String, PluginId> actionToPluginId = new HashMap<>();
+    for (PluginId id : PluginId.getRegisteredIdList()) {
+      for (String action : actionManager.getPluginActions(id)) {
         actionToPluginId.put(action, id);
       }
     }
@@ -301,7 +303,7 @@ public final class TraverseUIStarter implements ApplicationStarter {
     if (id != null) {
       final IdeaPluginDescriptor plugin = PluginManagerCore.getPlugin(id);
       if (plugin != null && !plugin.getName().equals("IDEA CORE")) {
-        return PathUtil.getFileName(plugin.getPath().getPath());
+        return PathUtil.getFileName(plugin.getPluginPath().toString());
       }
     }
     return ROOT_ACTION_MODULE;

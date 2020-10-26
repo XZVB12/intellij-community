@@ -22,6 +22,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.refactoring.extractMethod.ExtractMethodHandler;
 import com.intellij.refactoring.extractMethod.ExtractMethodProcessor;
 import com.intellij.refactoring.extractMethod.PrepareFailedException;
+import com.intellij.refactoring.extractMethod.newImpl.ExtractException;
 import com.intellij.refactoring.extractMethod.newImpl.MethodExtractor;
 import com.intellij.refactoring.introduceVariable.IntroduceVariableBase;
 import com.intellij.refactoring.util.duplicates.Match;
@@ -212,6 +213,14 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
     doTest();
   }
 
+  public void testFieldGroupAnchor() throws Exception {
+    doTest();
+  }
+
+  public void testFieldGroupAnchor2() throws Exception {
+    doTest();
+  }
+
   public void testSCR27887() throws Exception {
     doTest();
   }
@@ -226,6 +235,38 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
 
   public void testExtractFromTryFinally() throws Exception {
     doTest();
+  }
+
+  public void testInferredReturnType1() throws Exception {
+    doTest();
+  }
+
+  public void testInferredReturnType2() throws Exception {
+    doTest();
+  }
+
+  public void testInferredReturnType3() throws Exception {
+    doTest();
+  }
+
+  public void testInferredReturnType4() throws Exception {
+    doTest();
+  }
+
+  public void testInferredReturnType5() throws Exception {
+    doTest();
+  }
+
+  public void testInferredReturnType6() throws Exception {
+    doTest();
+  }
+
+  public void testNotPassedStaticField() throws Exception {
+    doTestPassFieldsAsParams();
+  }
+
+  public void testNotPassedStaticField2() throws Exception {
+    doTestPassFieldsAsParams();
   }
 
   public void testExtractAssignmentExpression() throws Exception {
@@ -483,11 +524,15 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
   }
 
   public void testLocalClass() throws Exception {
-    doPrepareErrorTest("Cannot extract method because the selected code fragment uses local classes defined outside of the fragment");
+    doPrepareErrorTest("Local class is defined out of the selected block.");
   }
 
   public void testLocalClassUsage() throws Exception {
-    doPrepareErrorTest("Cannot extract method because the selected code fragment defines local classes used outside of the fragment");
+    doPrepareErrorTest("Local class is used out of the selected block.");
+  }
+
+  public void testLocalClassScope() throws Exception {
+    doTest();
   }
 
   public void testStaticImport() throws Exception {
@@ -515,7 +560,7 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
   }
 
   public void testLocalClassDefinedInMethodWhichIsUsedLater() throws Exception {
-    doPrepareErrorTest("Cannot extract method because the selected code fragment defines variable of local class type used outside of the fragment");
+    doPrepareErrorTest("Local class is used out of the selected block.");
   }
 
   public void testForceBraces() throws Exception {
@@ -1155,6 +1200,10 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
     doTestWithJava17();
   }
 
+  public void testNonPhysicalSubexpression() throws Exception {
+    doTest();
+  }
+
   public void testCopyParamAnnotations() throws Exception {
     doTest();
   }
@@ -1210,7 +1259,16 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
   public void testCantPassFieldAsParameter() {
     try {
       doTestPassFieldsAsParams();
-      fail("Field was modified inside. Make static should be disabled");
+      fail("Field was modified inside. Make static should be disabled.");
+    }
+    catch (PrepareFailedException ignore) {
+    }
+  }
+
+  public void testCantMakeStatic() {
+    try {
+      doTestPassFieldsAsParams();
+      fail("Local method is used. Make static should be disabled.");
     }
     catch (PrepareFailedException ignore) {
     }
@@ -1378,6 +1436,29 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
     boolean success =
       performExtractMethod(true, true, getEditor(), getFile(), getProject(), false, null, false, null, psiClass.getContainingClass(), null);
     assertTrue(success);
+    checkResultByFile(BASE_PATH + getTestName(false) + "_after.java");
+  }
+
+  public void testNoStaticForInnerClass() {
+    try {
+      configureByFile(BASE_PATH + getTestName(false) + ".java");
+      performExtractMethod(true, true, getEditor(), getFile(), getProject(), false, null, true, null, null, null);
+      fail("Static modifier is forbidden inside inner classes");
+    } catch (PrepareFailedException e){
+    }
+  }
+
+  public void testStaticForNestedClass() throws Exception {
+    configureByFile(BASE_PATH + getTestName(false) + ".java");
+    performExtractMethod(true, true, getEditor(), getFile(), getProject(), false, null, true, null, null, null);
+    checkResultByFile(BASE_PATH + getTestName(false) + "_after.java");
+  }
+
+  public void testStaticForOuterClass() throws Exception {
+    configureByFile(BASE_PATH + getTestName(false) + ".java");
+    final int caret = getEditor().getSelectionModel().getLeadSelectionOffset();
+    final PsiClass outerClass = PsiTreeUtil.getParentOfType(getFile().findElementAt(caret), PsiClass.class).getContainingClass();
+    performExtractMethod(true, true, getEditor(), getFile(), getProject(), false, null, true, null, outerClass, null);
     checkResultByFile(BASE_PATH + getTestName(false) + "_after.java");
   }
 
@@ -1604,6 +1685,14 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
     }
   }
 
+  public void testExtractConditionFromSimpleIf() throws Exception {
+    doTest();
+  }
+
+  public void testExtractConditionFromSimpleIf1() throws Exception {
+    doTest();
+  }
+
   private void doTestDisabledParam() throws PrepareFailedException {
     final CommonCodeStyleSettings settings = CodeStyleSettingsManager.getSettings(getProject()).getCommonSettings(JavaLanguage.INSTANCE);
     settings.ELSE_ON_NEW_LINE = true;
@@ -1769,8 +1858,12 @@ public class ExtractMethodNewTest extends LightJavaCodeInsightTestCase {
     processor.setChainedConstructor(extractChainedConstructor);
 
     if (ExtractMethodHandler.canUseNewImpl(project, file, elements)) {
-      return new MethodExtractor().doTestExtract(true, editor, extractChainedConstructor, makeStatic, returnType,
-                                                 newNameOfFirstParam, targetClass, methodVisibility, disabledParams);
+      try {
+        return new MethodExtractor().doTestExtract(true, editor, extractChainedConstructor, makeStatic, returnType,
+                                                   newNameOfFirstParam, targetClass, methodVisibility, disabledParams);
+      } catch (ExtractException e) {
+        throw new PrepareFailedException(e.getMessage(), file);
+      }
     }
 
     if (!processor.prepare()) {

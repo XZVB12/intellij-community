@@ -2,17 +2,15 @@
 package com.intellij.util.lang;
 
 import com.intellij.openapi.diagnostic.LoggerRt;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.io.FileUtilRt;
-import com.intellij.reference.SoftReference;
-import gnu.trove.TIntHashSet;
+import com.intellij.util.lang.fastutil.StrippedIntOpenHashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.ref.SoftReference;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,16 +20,14 @@ import java.util.jar.Manifest;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-import static com.intellij.openapi.util.Pair.pair;
-
 class JarLoader extends Loader {
-  private static final List<Pair<Resource.Attribute, Attributes.Name>> PACKAGE_FIELDS = Arrays.asList(
-    pair(Resource.Attribute.SPEC_TITLE, Attributes.Name.SPECIFICATION_TITLE),
-    pair(Resource.Attribute.SPEC_VERSION, Attributes.Name.SPECIFICATION_VERSION),
-    pair(Resource.Attribute.SPEC_VENDOR, Attributes.Name.SPECIFICATION_VENDOR),
-    pair(Resource.Attribute.IMPL_TITLE, Attributes.Name.IMPLEMENTATION_TITLE),
-    pair(Resource.Attribute.IMPL_VERSION, Attributes.Name.IMPLEMENTATION_VERSION),
-    pair(Resource.Attribute.IMPL_VENDOR, Attributes.Name.IMPLEMENTATION_VENDOR));
+  private static final List<Map.Entry<Resource.Attribute, Attributes.Name>> PACKAGE_FIELDS = Arrays.<Map.Entry<Resource.Attribute, Attributes.Name>>asList(
+    new AbstractMap.SimpleImmutableEntry<Resource.Attribute, Attributes.Name>(Resource.Attribute.SPEC_TITLE, Attributes.Name.SPECIFICATION_TITLE),
+    new AbstractMap.SimpleImmutableEntry<Resource.Attribute, Attributes.Name>(Resource.Attribute.SPEC_VERSION, Attributes.Name.SPECIFICATION_VERSION),
+    new AbstractMap.SimpleImmutableEntry<Resource.Attribute, Attributes.Name>(Resource.Attribute.SPEC_VENDOR, Attributes.Name.SPECIFICATION_VENDOR),
+    new AbstractMap.SimpleImmutableEntry<Resource.Attribute, Attributes.Name>(Resource.Attribute.IMPL_TITLE, Attributes.Name.IMPLEMENTATION_TITLE),
+    new AbstractMap.SimpleImmutableEntry<Resource.Attribute, Attributes.Name>(Resource.Attribute.IMPL_VERSION, Attributes.Name.IMPLEMENTATION_VERSION),
+    new AbstractMap.SimpleImmutableEntry<Resource.Attribute, Attributes.Name>(Resource.Attribute.IMPL_VENDOR, Attributes.Name.IMPLEMENTATION_VENDOR));
 
   private static final String NULL_STRING = "<null>";
 
@@ -43,10 +39,10 @@ class JarLoader extends Loader {
   private volatile Map<Resource.Attribute, String> myAttributes;
   private volatile String myClassPathManifestAttribute;
 
-  JarLoader(@NotNull URL url, @NotNull File file, int index, @NotNull ClassPath configuration) throws IOException {
+  JarLoader(@NotNull URL url, @NotNull String filePath, int index, @NotNull ClassPath configuration) throws IOException {
     super(new URL("jar", "", -1, url + "!/"), index);
 
-    myFilePath = file.getPath();
+    myFilePath = filePath;
     myConfiguration = configuration;
     myUrl = url;
 
@@ -83,11 +79,13 @@ class JarLoader extends Loader {
     if (attributes == null) return null;
     Map<Resource.Attribute, String> map = null;
 
-    for (Pair<Resource.Attribute, Attributes.Name> p : PACKAGE_FIELDS) {
-      String value = attributes.getValue(p.second);
+    for (Map.Entry<Resource.Attribute, Attributes.Name> p : PACKAGE_FIELDS) {
+      String value = attributes.getValue(p.getValue());
       if (value != null) {
-        if (map == null) map = new EnumMap<Resource.Attribute, String>(Resource.Attribute.class);
-        map.put(p.first, value);
+        if (map == null) {
+          map = new EnumMap<Resource.Attribute, String>(Resource.Attribute.class);
+        }
+        map.put(p.getKey(), value);
       }
     }
 
@@ -144,7 +142,7 @@ class JarLoader extends Loader {
     try {
       ClasspathCache.LoaderDataBuilder loaderDataBuilder = new ClasspathCache.LoaderDataBuilder();
       Enumeration<? extends ZipEntry> entries = zipFile.entries();
-      
+
       while (entries.hasMoreElements()) {
         ZipEntry entry = entries.nextElement();
         String name = entry.getName();
@@ -166,15 +164,15 @@ class JarLoader extends Loader {
   }
 
   private final AtomicInteger myNumberOfRequests = new AtomicInteger();
-  private volatile TIntHashSet myPackageHashesInside;
+  private volatile StrippedIntOpenHashSet myPackageHashesInside;
 
-  @NotNull
-  private TIntHashSet buildPackageHashes() {
+  private @NotNull
+  StrippedIntOpenHashSet buildPackageHashes() {
     try {
       ZipFile zipFile = getZipFile();
       try {
         Enumeration<? extends ZipEntry> entries = zipFile.entries();
-        TIntHashSet result = new TIntHashSet();
+        StrippedIntOpenHashSet result = new StrippedIntOpenHashSet();
 
         while (entries.hasMoreElements()) {
           ZipEntry entry = entries.nextElement();
@@ -189,7 +187,7 @@ class JarLoader extends Loader {
     }
     catch (Exception e) {
       error("url: " + myFilePath, e);
-      return new TIntHashSet(0);
+      return new StrippedIntOpenHashSet(0);
     }
   }
 
@@ -198,7 +196,7 @@ class JarLoader extends Loader {
   Resource getResource(@NotNull String name) {
     if (myConfiguration.myLazyClassloadingCaches) {
       int numberOfHits = myNumberOfRequests.incrementAndGet();
-      TIntHashSet packagesInside = myPackageHashesInside;
+      StrippedIntOpenHashSet packagesInside = myPackageHashesInside;
 
       if (numberOfHits > ClasspathCache.NUMBER_OF_ACCESSES_FOR_LAZY_CACHING && packagesInside == null) {
         myPackageHashesInside = packagesInside = buildPackageHashes();
@@ -293,17 +291,22 @@ class JarLoader extends Loader {
 
   private static final Object ourLock = new Object();
 
-  @NotNull
-  protected ZipFile getZipFile() throws IOException {
+  protected @NotNull ZipFile getZipFile() throws IOException {
     // This code is executed at least 100K times (O(number of classes needed to load)) and it takes considerable time to open ZipFile's
     // such number of times so we store reference to ZipFile if we allowed to lock the file (assume it isn't changed)
     if (myConfiguration.myCanLockJars) {
-      ZipFile zipFile = SoftReference.dereference(myZipFileSoftReference);
-      if (zipFile != null) return zipFile;
+      SoftReference<ZipFile> ref = myZipFileSoftReference;
+      ZipFile zipFile = ref == null ? null : ref.get();
+      if (zipFile != null) {
+        return zipFile;
+      }
 
       synchronized (ourLock) {
-        zipFile = SoftReference.dereference(myZipFileSoftReference);
-        if (zipFile != null) return zipFile;
+        ref = myZipFileSoftReference;
+        zipFile = ref == null ? null : ref.get();
+        if (zipFile != null) {
+          return zipFile;
+        }
 
         // ZipFile's native implementation (ZipFile.c, zip_util.c) has path -> file descriptor cache
         zipFile = createZipFile(myFilePath);

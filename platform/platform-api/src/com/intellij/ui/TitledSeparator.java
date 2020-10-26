@@ -13,9 +13,6 @@ import javax.swing.*;
 import javax.swing.border.Border;
 import java.awt.*;
 
-/**
- * @author cdr
- */
 public class TitledSeparator extends JPanel {
   public static final int TOP_INSET = 7;
   public static final int BOTTOM_INSET = 5;
@@ -32,7 +29,7 @@ public class TitledSeparator extends JPanel {
 
   protected final JBLabel myLabel = new JBLabel();
   protected final JSeparator mySeparator = new JSeparator(SwingConstants.HORIZONTAL);
-  private String originalText;
+  private @NlsContexts.Separator String originalText;
 
   public TitledSeparator() {
     this("");
@@ -56,7 +53,7 @@ public class TitledSeparator extends JPanel {
     setOpaque(false);
   }
 
-  public String getText() {
+  public @NlsContexts.Separator String getText() {
     return originalText;
   }
 

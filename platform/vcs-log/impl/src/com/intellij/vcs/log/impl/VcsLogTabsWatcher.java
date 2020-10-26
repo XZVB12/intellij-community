@@ -13,10 +13,7 @@ import com.intellij.openapi.vcs.changes.ui.ChangesViewContentManager;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener;
-import com.intellij.ui.content.Content;
-import com.intellij.ui.content.ContentManagerEvent;
-import com.intellij.ui.content.ContentManagerListener;
-import com.intellij.ui.content.TabbedContent;
+import com.intellij.ui.content.*;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.vcs.log.impl.PostponableLogRefresher.VcsLogWindow;
@@ -100,10 +97,8 @@ public final class VcsLogTabsWatcher implements Disposable {
     }
 
     List<String> editorTabs = getEditorTabsToClose();
-    for (String tabId : editorTabs) {
-      boolean closed = VcsLogEditorUtilKt.closeLogTab(myProject, tabId);
-      LOG.assertTrue(closed, "Could not find editor for tab " + tabId + "\nTabs to close: " + editorTabs);
-    }
+    boolean closed = VcsLogEditorUtilKt.closeLogTabs(myProject, editorTabs);
+    LOG.assertTrue(closed, "Could not close tabs: " + editorTabs);
   }
 
   private @NotNull List<String> getToolWindowTabsToClose() {
@@ -148,11 +143,14 @@ public final class VcsLogTabsWatcher implements Disposable {
     return VcsLogEditorUtilKt.findSelectedLogIds(project);
   }
 
-  private static void addContentManagerListener(@NotNull ToolWindow window, @NotNull ContentManagerListener listener, @NotNull Disposable disposable) {
-    window.getContentManager().addContentManagerListener(listener);
+  private static void addContentManagerListener(@NotNull ToolWindow window,
+                                                @NotNull ContentManagerListener listener,
+                                                @NotNull Disposable disposable) {
+    window.addContentManagerListener(listener);
     Disposer.register(disposable, () -> {
       if (!window.isDisposed()) {
-        window.getContentManager().removeContentManagerListener(listener);
+        ContentManager contentManager = window.getContentManagerIfCreated();
+        if (contentManager != null) contentManager.removeContentManagerListener(listener);
       }
     });
   }
@@ -196,7 +194,7 @@ public final class VcsLogTabsWatcher implements Disposable {
 
   private final class MyToolWindowManagerListener implements ToolWindowManagerListener {
     @Override
-    public void toolWindowsRegistered(@NotNull List<String> ids) {
+    public void toolWindowsRegistered(@NotNull List<String> ids, @NotNull ToolWindowManager toolWindowManager) {
       if (ids.contains(ChangesViewContentManager.TOOLWINDOW_ID)) {
         installContentListeners();
       }
@@ -215,15 +213,14 @@ public final class VcsLogTabsWatcher implements Disposable {
     public void selectionChanged(@NotNull FileEditorManagerEvent e) {
       FileEditor editor = e.getNewEditor();
       if (editor != null) {
-        String tabId = VcsLogEditorUtilKt.getLogId(editor);
-        if (tabId != null) {
+        for (String tabId : VcsLogEditorUtilKt.getLogIds(editor)) {
           VcsLogTabsWatcher.this.selectionChanged(tabId);
         }
       }
     }
   }
 
-  private class MyRefreshPostponedEventsListener extends VcsLogTabsListener {
+  private final class MyRefreshPostponedEventsListener extends VcsLogTabsListener {
     private MyRefreshPostponedEventsListener(@NotNull ToolWindow toolWindow) {
       super(myProject, toolWindow, myListenersDisposable);
     }
@@ -237,11 +234,9 @@ public final class VcsLogTabsWatcher implements Disposable {
   private abstract static class VcsLogTabsListener
     implements ToolWindowManagerListener, PropertyChangeListener, ContentManagerListener {
     private final @NotNull ToolWindow myToolWindow;
-    private boolean myIsVisible;
 
     private VcsLogTabsListener(@NotNull Project project, @NotNull ToolWindow toolWindow, @NotNull Disposable disposable) {
       myToolWindow = toolWindow;
-      myIsVisible = toolWindow.isVisible();
 
       project.getMessageBus().connect(disposable).subscribe(ToolWindowManagerListener.TOPIC, this);
       Disposer.register(disposable, () -> {
@@ -289,11 +284,8 @@ public final class VcsLogTabsWatcher implements Disposable {
     }
 
     @Override
-    public void stateChanged(@NotNull ToolWindowManager toolWindowManager) {
-      if (myIsVisible != myToolWindow.isVisible()) {
-        myIsVisible = myToolWindow.isVisible();
-        selectionChanged();
-      }
+    public void toolWindowShown(@NotNull ToolWindow toolWindow) {
+      if (myToolWindow == toolWindow) selectionChanged();
     }
 
     @Override

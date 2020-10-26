@@ -2,6 +2,7 @@
 package org.jetbrains.plugins.github.pullrequest.ui
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.util.Disposer
 import com.intellij.util.EventDispatcher
 import java.util.*
 
@@ -24,6 +25,24 @@ interface SimpleEventListener : EventListener {
           listener()
         }
       })
+    }
+
+    fun addAndInvokeListener(dispatcher: EventDispatcher<SimpleEventListener>, listener: () -> Unit) {
+      dispatcher.addListener(object : SimpleEventListener {
+        override fun eventOccurred() {
+          listener()
+        }
+      })
+      listener()
+    }
+
+    fun addAndInvokeListener(dispatcher: EventDispatcher<SimpleEventListener>, disposable: Disposable, listener: () -> Unit) {
+      dispatcher.addListener(object : SimpleEventListener {
+        override fun eventOccurred() {
+          listener()
+        }
+      }, disposable)
+      if (!Disposer.isDisposed(disposable)) listener()
     }
   }
 }

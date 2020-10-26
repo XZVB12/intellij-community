@@ -21,8 +21,12 @@ import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Alarm;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.concurrency.annotations.RequiresBackgroundThread;
 import com.intellij.util.messages.Topic;
-import org.jetbrains.annotations.*;
+import org.jetbrains.annotations.CalledInAny;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -37,8 +41,10 @@ public final class VcsRepositoryManager implements Disposable {
 
   private static final Logger LOG = Logger.getInstance(VcsRepositoryManager.class);
 
-  public static final Topic<VcsRepositoryMappingListener> VCS_REPOSITORY_MAPPING_UPDATED =
-    Topic.create("VCS repository mapping updated", VcsRepositoryMappingListener.class);
+  /**
+   * VCS repository mapping updated. Project level.
+   */
+  public static final Topic<VcsRepositoryMappingListener> VCS_REPOSITORY_MAPPING_UPDATED = new Topic<>(VcsRepositoryMappingListener.class, Topic.BroadcastDirection.NONE);
 
   private final @NotNull Project myProject;
   private final @NotNull ProjectLevelVcsManager myVcsManager;
@@ -59,7 +65,7 @@ public final class VcsRepositoryManager implements Disposable {
   public VcsRepositoryManager(@NotNull Project project) {
     myProject = project;
     myVcsManager = ProjectLevelVcsManager.getInstance(project);
-    project.getMessageBus().connect().subscribe(ProjectLevelVcsManager.VCS_CONFIGURATION_CHANGED, this::scheduleUpdate);
+    project.getMessageBus().connect(this).subscribe(ProjectLevelVcsManager.VCS_CONFIGURATION_CHANGED, this::scheduleUpdate);
 
     EP_NAME.addChangeListener(() -> {
       disposeAllRepositories(false);
@@ -112,7 +118,7 @@ public final class VcsRepositoryManager implements Disposable {
     myUpdateAlarm.addRequest(() -> checkAndUpdateRepositoriesCollection(null), 0);
   }
 
-  @CalledInBackground
+  @RequiresBackgroundThread
   public @Nullable Repository getRepositoryForFile(@NotNull VirtualFile file) {
     return getRepositoryForFile(file, false);
   }

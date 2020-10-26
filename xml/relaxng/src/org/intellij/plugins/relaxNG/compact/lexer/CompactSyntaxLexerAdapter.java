@@ -23,7 +23,8 @@ import com.intellij.psi.TokenType;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.util.text.CharArrayCharSequence;
 import com.intellij.util.text.CharArrayUtil;
-import gnu.trove.TIntIntHashMap;
+import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import org.intellij.plugins.relaxNG.compact.RncTokenTypes;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -44,7 +45,7 @@ import java.util.LinkedList;
  *
  * Not sure if it was easier to write this than hacking my own lexer...
  */
-public class CompactSyntaxLexerAdapter extends LexerBase {
+public final class CompactSyntaxLexerAdapter extends LexerBase {
   private static final Logger LOG = Logger.getInstance(CompactSyntaxLexerAdapter.class.getName());
 
   private static final Field myStateField;
@@ -69,14 +70,14 @@ public class CompactSyntaxLexerAdapter extends LexerBase {
   private IElementType myCurrentTokenType;
   private CharSequence myBuffer;
   private int myEndOffset;
-  private TIntIntHashMap myLengthMap;
+  private Int2IntMap myLengthMap;
 
   @Override
   public void advance() {
     try {
       myCurrentToken = nextToken();
       myCurrentOffset = myCurrentEnd;
-      
+
       if (myCurrentToken != null) {
 
         myCurrentEnd = myCurrentOffset + myCurrentToken.image.length();
@@ -190,7 +191,7 @@ public class CompactSyntaxLexerAdapter extends LexerBase {
 
   private void init(int startOffset, int endOffset, Reader reader, int initialState) {
     myEndOffset = endOffset;
-    myLengthMap = new TIntIntHashMap();
+    myLengthMap = new Int2IntOpenHashMap();
 
     myLexer = createTokenManager(initialState, new EscapePreprocessor(reader, startOffset, myLengthMap));
 

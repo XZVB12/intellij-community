@@ -1,7 +1,7 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.indexing;
 
-import gnu.trove.TIntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import org.jetbrains.annotations.NotNull;
 
 public final class ProjectIndexableFilesFilter extends IdFilter {
@@ -12,25 +12,25 @@ public final class ProjectIndexableFilesFilter extends IdFilter {
   private final int myMinId;
   private final int myMaxId;
 
-  ProjectIndexableFilesFilter(@NotNull TIntArrayList set, int modificationCount) {
+  ProjectIndexableFilesFilter(@NotNull IntList set, int modificationCount) {
     myModificationCount = modificationCount;
     final int[] minMax = new int[2];
     if (!set.isEmpty()) {
-      minMax[0] = minMax[1] = set.get(0);
+      minMax[0] = minMax[1] = set.getInt(0);
     }
-    set.forEach(value -> {
+
+    for (int i = 0, n = set.size(); i < n; i++) {
+      int value = set.getInt(i);
       minMax[0] = Math.min(minMax[0], value);
       minMax[1] = Math.max(minMax[1], value);
-      return true;
-    });
+    }
     myMaxId = minMax[1];
     myMinId = minMax[0];
     myBitMask = new long[((myMaxId - myMinId) >> SHIFT) + 1];
-    set.forEach(value -> {
-      value -= myMinId;
+    for (int i = 0, n = set.size(); i < n; i++) {
+      int value = set.getInt(i) - myMinId;
       myBitMask[value >> SHIFT] |= (1L << (value & MASK));
-      return true;
-    });
+    }
   }
 
   @Override
@@ -43,5 +43,11 @@ public final class ProjectIndexableFilesFilter extends IdFilter {
 
   public int getModificationCount() {
     return myModificationCount;
+  }
+
+  @NotNull
+  @Override
+  public FilterScopeType getFilteringScopeType() {
+    return FilterScopeType.PROJECT_AND_LIBRARIES;
   }
 }

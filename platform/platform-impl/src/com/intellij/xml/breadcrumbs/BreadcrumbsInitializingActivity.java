@@ -25,7 +25,7 @@ import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 
-final class BreadcrumbsInitializingActivity implements StartupActivity.DumbAware {
+public final class BreadcrumbsInitializingActivity implements StartupActivity.DumbAware {
   @Override
   public void runActivity(@NotNull Project project) {
     if (project.isDefault() || ApplicationManager.getApplication().isUnitTestMode() || project.isDisposed()) {
@@ -40,6 +40,7 @@ final class BreadcrumbsInitializingActivity implements StartupActivity.DumbAware
         reinitBreadcrumbsInAllEditors(project);
       }
     });
+    FileBreadcrumbsCollector.EP_NAME.getPoint(project).addChangeListener(() -> reinitBreadcrumbsInAllEditors(project), project);
 
     VirtualFileManager.getInstance().addVirtualFileListener(new MyVirtualFileListener(project), project);
     connection.subscribe(UISettingsListener.TOPIC, uiSettings -> reinitBreadcrumbsInAllEditors(project));
@@ -73,7 +74,7 @@ final class BreadcrumbsInitializingActivity implements StartupActivity.DumbAware
     }
   }
 
-  private static void reinitBreadcrumbsInAllEditors(@NotNull Project project) {
+  public static void reinitBreadcrumbsInAllEditors(@NotNull Project project) {
     if (project.isDisposed()) return;
     FileEditorManager fileEditorManager = FileEditorManager.getInstance(project);
     for (VirtualFile virtualFile : fileEditorManager.getOpenFiles()) {

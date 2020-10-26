@@ -4,6 +4,7 @@ package com.intellij.java.refactoring;
 import com.intellij.JavaTestUtil;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.CommonClassNames;
 import com.intellij.psi.PsiElement;
@@ -17,6 +18,8 @@ import com.intellij.refactoring.introduceVariable.IntroduceVariableHandler;
 import com.intellij.refactoring.introduceVariable.IntroduceVariableSettings;
 import com.intellij.refactoring.ui.TypeSelectorManagerImpl;
 import com.intellij.testFramework.LightJavaCodeInsightTestCase;
+import com.intellij.ui.ChooserInterceptor;
+import com.intellij.ui.UiInterceptors;
 import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NotNull;
 
@@ -55,7 +58,10 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   public void testFunctionalExpressionInSwitch() { doTest("p", true, true, true, "java.util.function.Predicate<java.lang.String>"); }
   public void testParenthesizedOccurrence1() { doTest("empty", true, true, true, "boolean"); }
   public void testParenthesizedOccurrence2() { doTest("s", true, true, true, JAVA_LANG_STRING); }
-  public void testAfterSemicolon() { doTest("s", true, true, true, CommonClassNames.JAVA_LANG_RUNNABLE); }
+  public void testAfterSemicolon() {
+    UiInterceptors.register(new ChooserInterceptor(null, StringUtil.escapeToRegexp("new Runnable() {...}")));
+    doTest("s", true, true, true, CommonClassNames.JAVA_LANG_RUNNABLE); 
+  }
   public void testConflictingField() { doTest("name", true, false, true, JAVA_LANG_STRING); }
   public void testConflictingFieldInExpression() { doTest("name", false, false, true, "int"); }
   public void testStaticConflictingField() { doTest("name", false, false, true, "int"); }
@@ -149,6 +155,7 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   public void testReturnOrAndChain() { doTest("temp", true, false, false, JAVA_LANG_STRING); }
   public void testReturnTernary() { doTest("temp", true, false, false, JAVA_LANG_STRING); }
   public void testFieldInitializer() { doTest("temp", true, false, false, JAVA_LANG_STRING); }
+  public void testFieldInitializerDenormalized() { doTest("temp", true, false, false, "int"); }
   public void testAssignTernary() { doTest("temp", true, false, false, JAVA_LANG_STRING); }
   public void testEnsureCodeBlockAroundBreakStatement() { doTest("temp", true, false, false, JAVA_LANG_STRING); }
   public void testEnsureCodeBlockForThrows() { doTest("temp", true, false, false, JAVA_LANG_STRING); }
@@ -156,6 +163,10 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
 
   public void testVarTypeExtractedJava10() {
     doTestWithVarType(new MockIntroduceVariableHandler("temp", true, false, false, "java.util.ArrayList<java.lang.String>"));
+  }
+
+  public void testTypeContainingVarJava11() {
+    doTest("temp", true, false, false, "var.X");
   }
 
   public void testDeclareTernary() { doTest("temp", true, false, false, JAVA_LANG_STRING); }
@@ -175,14 +186,7 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   public void testSubLiteral1() { doTest("str", false, false, false, JAVA_LANG_STRING); }
 
   public void testSubLiteralFailure() {
-    try {
-      doTest("str", false, false, false, "int");
-    }
-    catch (Exception e) {
-      assertEquals("Error message:Cannot perform refactoring.\nSelected block should represent an expression", e.getMessage());
-      return;
-    }
-    fail("Should not be able to perform refactoring");
+    doTestWithFailure("str", "int");
   }
 
   public void testSubLiteralFromExpression() { doTest("str", false, false, false, JAVA_LANG_STRING); }
@@ -195,30 +199,20 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   public void testFromFinalFieldOnAssignment() { doTest("strings", false, false, false, JAVA_LANG_STRING); }
 
   public void testNoArrayFromVarargs() {
-    try {
-      doTest("strings", false, false, false, "java.lang.String[]");
-    }
-    catch (Exception e) {
-      assertEquals("Error message:Cannot perform refactoring.\nSelected block should represent an expression", e.getMessage());
-      return;
-    }
-    fail("Should not be able to perform refactoring");
+    doTestWithFailure("strings", "java.lang.String[]");
   }
 
    public void testNoArrayFromVarargs1() {
-     try {
-       doTest("strings", false, false, false, "java.lang.String[]");
-     }
-    catch (Exception e) {
-      assertEquals("Error message:Cannot perform refactoring.\nSelected block should represent an expression", e.getMessage());
-      return;
-    }
-    fail("Should not be able to perform refactoring");
-  }
+     doTestWithFailure("strings", "java.lang.String[]");
+   }
 
   public void testNoArrayFromVarargsUntilComma() {
+    doTestWithFailure("strings", "java.lang.String[]");
+  }
+
+  public void doTestWithFailure(String newName, String expectedType) {
     try {
-      doTest("strings", false, false, false, "java.lang.String[]");
+      doTest(newName, false, false, false, expectedType);
     }
     catch (Exception e) {
       assertEquals("Error message:Cannot perform refactoring.\nSelected block should represent an expression", e.getMessage());
@@ -242,7 +236,8 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   public void testPolyadic() { doTest("b1", true, true, true, "boolean"); }
   public void testAssignmentToUnresolvedReference() { doTest("collection", true, true, true, "java.util.List<? extends java.util.Collection<?>>"); }
   public void testSubstringInSwitch() { doTest("ba", false, false, false, JAVA_LANG_STRING);}
-
+  public void testEnumValues() { doTest("vs", false, false, false, "E[]"); }
+  
   public void testNameSuggestion() {
     String expectedTypeName = "Path";
     doTest(new MockIntroduceVariableHandler("path", true, false, false, expectedTypeName) {
@@ -291,25 +286,15 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   }
 
   public void testIncorrectExpressionSelected() {
-    try {
-      doTest("toString", false, false, false, JAVA_LANG_STRING);
-    }
-    catch (Exception e) {
-      assertEquals("Error message:Cannot perform refactoring.\nSelected block should represent an expression", e.getMessage());
-      return;
-    }
-    fail("Should not be able to perform refactoring");
+    doTestWithFailure("toString", JAVA_LANG_STRING);
   }
 
   public void testIncompatibleTypesForSelectionSubExpression() {
-    try {
-      doTest("s", false, false, false, JAVA_LANG_STRING);
-    }
-    catch (Exception e) {
-      assertEquals("Error message:Cannot perform refactoring.\nSelected block should represent an expression", e.getMessage());
-      return;
-    }
-    fail("Should not be able to perform refactoring");
+    doTestWithFailure("s", JAVA_LANG_STRING);
+  }
+
+  public void testClassSelectionInStaticMethodCall() {
+    doTestWithFailure("Foo", "Foo");
   }
 
   public void testMultiCatchSimple() { doTest("e", true, true, false, "java.lang.Exception", true); }
@@ -395,6 +380,14 @@ public class IntroduceVariableTest extends LightJavaCodeInsightTestCase {
   public void testTooPopularNameOfTheFollowingCall() { doTest("l", false, false, false, "java.util.List<java.lang.String>"); }
   public void testChooseTypeExpressionWhenNotDenotable() { doTest("m", false, false, false, "Foo"); }
   public void testChooseTypeExpressionWhenNotDenotable1() { doTest("m", false, false, false, "Foo<?>"); }
+
+  public void testNullabilityAnnotationConflict() {
+    doTest("x", true, false, false, "java.lang.@org.eclipse.jdt.annotation.Nullable String"); 
+  }
+
+  public void testNullabilityAnnotationNoConflict() {
+    doTest("x", true, false, false, "java.lang.@org.eclipse.jdt.annotation.NonNull String"); 
+  }
 
   private void doTestWithVarType(IntroduceVariableBase testMe) {
     Boolean asVarType = JavaRefactoringSettings.getInstance().INTRODUCE_LOCAL_CREATE_VAR_TYPE;

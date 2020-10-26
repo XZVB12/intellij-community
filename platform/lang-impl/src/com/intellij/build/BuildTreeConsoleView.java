@@ -22,6 +22,7 @@ import com.intellij.ide.util.treeView.AbstractTreeStructure;
 import com.intellij.ide.util.treeView.NodeDescriptor;
 import com.intellij.ide.util.treeView.NodeRenderer;
 import com.intellij.idea.ActionsBundle;
+import com.intellij.lang.LangBundle;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
@@ -48,11 +49,13 @@ import com.intellij.ui.*;
 import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.ui.tree.AsyncTreeModel;
 import com.intellij.ui.tree.StructureTreeModel;
+import com.intellij.ui.tree.TreePathUtil;
 import com.intellij.ui.tree.TreeVisitor;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.EditSourceOnDoubleClickHandler;
 import com.intellij.util.EditSourceOnEnterKeyHandler;
 import com.intellij.util.ObjectUtils;
+import com.intellij.util.SystemProperties;
 import com.intellij.util.concurrency.Invoker;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.SmartHashSet;
@@ -67,6 +70,9 @@ import javax.swing.event.TreeModelListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreePath;
 import java.awt.*;
+import java.io.File;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -82,6 +88,7 @@ import static com.intellij.openapi.util.text.StringUtil.isEmpty;
 import static com.intellij.ui.AnimatedIcon.ANIMATION_IN_RENDERER_ALLOWED;
 import static com.intellij.ui.SimpleTextAttributes.GRAYED_ATTRIBUTES;
 import static com.intellij.ui.render.RenderingHelper.SHRINK_LONG_RENDERER;
+import static com.intellij.ui.tree.ui.DefaultTreeUI.AUTO_EXPAND_ALLOWED;
 import static com.intellij.util.ObjectUtils.chooseNotNull;
 import static com.intellij.util.containers.ContainerUtil.addIfNotNull;
 import static com.intellij.util.ui.UIUtil.*;
@@ -104,12 +111,13 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
   private final AtomicBoolean myFinishedBuildEventReceived = new AtomicBoolean();
   private final AtomicBoolean myDisposed = new AtomicBoolean();
   private final AtomicBoolean myShownFirstError = new AtomicBoolean();
-  private final boolean myFocusFirstError;
+  private final AtomicBoolean myExpandedFirstMessage = new AtomicBoolean();
+  private final boolean myNavigateToTheFirstErrorLocation;
   private final StructureTreeModel<AbstractTreeStructure> myTreeModel;
   private final Tree myTree;
   private final ExecutionNode myRootNode;
   private final ExecutionNode myBuildProgressRootNode;
-  private final Set<Predicate<ExecutionNode>> myNodeFilters;
+  private final Set<Predicate<? super ExecutionNode>> myNodeFilters;
   private final ProblemOccurrenceNavigatorSupport myOccurrenceNavigatorSupport;
   private final Set<BuildEvent> myDeferredEvents = ContainerUtil.newConcurrentSet();
 
@@ -123,8 +131,7 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
                         : new DefaultBuildDescriptor(buildDescriptor);
     myNodeFilters = ContainerUtil.newConcurrentSet();
     myWorkingDir = FileUtil.toSystemIndependentName(buildDescriptor.getWorkingDir());
-    myFocusFirstError = !(buildDescriptor instanceof DefaultBuildDescriptor) ||
-                        ((DefaultBuildDescriptor)buildDescriptor).isActivateToolWindowWhenFailed();
+    myNavigateToTheFirstErrorLocation = project.getService(BuildWorkspaceConfiguration.class).isShowFirstErrorInEditor();
 
     myRootNode = new ExecutionNode(myProject, null, true, this::isCorrectThread);
     myBuildProgressRootNode = new ExecutionNode(myProject, myRootNode, true, this::isCorrectThread);
@@ -233,19 +240,19 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
   }
 
   @Override
-  public void addFilter(@NotNull Predicate<ExecutionNode> executionTreeFilter) {
+  public void addFilter(@NotNull Predicate<? super ExecutionNode> executionTreeFilter) {
     myNodeFilters.add(executionTreeFilter);
     updateFilter();
   }
 
   @Override
-  public void removeFilter(@NotNull Predicate<ExecutionNode> filter) {
+  public void removeFilter(@NotNull Predicate<? super ExecutionNode> filter) {
     myNodeFilters.remove(filter);
     updateFilter();
   }
 
   @Override
-  public boolean contains(@NotNull Predicate<ExecutionNode> filter) {
+  public boolean contains(@NotNull Predicate<? super ExecutionNode> filter) {
     return myNodeFilters.contains(filter);
   }
 
@@ -287,7 +294,8 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
     ExecutionNode currentNode = nodesMap.get(eventId);
     ExecutionNode buildProgressRootNode = getBuildProgressRootNode();
     Runnable selectErrorNodeTask = null;
-    if (event instanceof StartEvent || event instanceof MessageEvent) {
+    boolean isMessageEvent = event instanceof MessageEvent;
+    if (event instanceof StartEvent || isMessageEvent) {
       if (currentNode == null) {
         if (event instanceof DuplicateMessageAware) {
           if (myFinishedBuildEventReceived.get()) {
@@ -307,9 +315,10 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
           currentNode.setTitle(myBuildDescriptor.getTitle());
         }
         else {
-          currentNode = new ExecutionNode(myProject, parentNode, parentNode == buildProgressRootNode, this::isCorrectThread);
+          currentNode = new ExecutionNode(myProject, parentNode, false, this::isCorrectThread);
 
-          if (event instanceof MessageEvent) {
+          if (isMessageEvent) {
+            currentNode.setAlwaysLeaf(event instanceof FileMessageEvent);
             MessageEvent messageEvent = (MessageEvent)event;
             currentNode.setStartTime(messageEvent.getEventTime());
             addIfNotNull(structureChanged, currentNode.setEndTime(messageEvent.getEventTime()));
@@ -408,7 +417,9 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
       myFinishedBuildEventReceived.set(true);
       String aHint = event.getHint();
       String time = DateFormatUtil.formatDateTime(event.getEventTime());
-      aHint = aHint == null ? "at " + time : aHint + " at " + time;
+      aHint = aHint == null ?
+              LangBundle.message("build.event.message.at", time) :
+              LangBundle.message("build.event.message.0.at.1", aHint, time);
       currentNode.setHint(aHint);
       myDeferredEvents.forEach(buildEvent -> onEventInternal(buildId, buildEvent));
       if (myConsoleViewHandler.myExecutionNode == null) {
@@ -425,8 +436,17 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
       }
     }
     if (selectErrorNodeTask != null) {
+      myExpandedFirstMessage.set(true);
       Runnable finalSelectErrorTask = selectErrorNodeTask;
       myTreeModel.invalidate(getRootElement(), true).onProcessed(p -> finalSelectErrorTask.run());
+    }
+    else {
+      if (isMessageEvent && myExpandedFirstMessage.compareAndSet(false, true)) {
+        ExecutionNode finalCurrentNode = currentNode;
+        myTreeModel.invalidate(getRootElement(), false).onProcessed(p -> {
+          TreeUtil.promiseMakeVisible(myTree, visitor(finalCurrentNode));
+        });
+      }
     }
   }
 
@@ -477,7 +497,7 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
     if (myShownFirstError.compareAndSet(false, true)) {
       return () -> {
         TreeUtil.promiseSelect(myTree, visitor(node));
-        if (myFocusFirstError && navigatable != null && navigatable != NonNavigatable.INSTANCE) {
+        if (myNavigateToTheFirstErrorLocation && navigatable != null && navigatable != NonNavigatable.INSTANCE) {
           ApplicationManager.getApplication()
             .invokeLater(() -> navigatable.navigate(true), ModalityState.defaultModalityState(), myProject.getDisposed());
         }
@@ -517,11 +537,8 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
   }
 
   private static @NotNull TreeVisitor visitor(@NotNull ExecutionNode executionNode) {
-    return path -> {
-      Object object = ((DefaultMutableTreeNode)path.getLastPathComponent()).getUserObject();
-      if (executionNode == object) return TreeVisitor.Action.INTERRUPT;
-      return TreeVisitor.Action.CONTINUE;
-    };
+    TreePath treePath = TreePathUtil.pathToCustomNode(executionNode, node -> node.getParent());
+    return new TreeVisitor.ByTreePath<>(treePath, o -> (ExecutionNode)TreeUtil.getUserObject(o));
   }
 
   private @Nullable Runnable addChildFailureNode(@NotNull ExecutionNode parentNode,
@@ -584,7 +601,7 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
   }
 
   @Override
-  public void attachToProcess(ProcessHandler processHandler) {
+  public void attachToProcess(@NotNull ProcessHandler processHandler) {
   }
 
   @Override
@@ -679,11 +696,28 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
         if (relativePath.equals(".")) {
           return parentNode;
         }
-        parentsPath = myWorkingDir;
+        if (!relativePath.startsWith("../../")) {
+          parentsPath = myWorkingDir;
+        }
       }
 
-      relativePath = isEmpty(parentsPath) ? filePath : FileUtil.getRelativePath(parentsPath, filePath, '/');
-      parentNode = getOrCreateMessagesNode(messageEvent, filePath, parentNode, relativePath,
+      if (isEmpty(parentsPath)) {
+        File userHomeDir = new File(SystemProperties.getUserHome());
+        if (FileUtil.isAncestor(userHomeDir, new File(filePath), true)) {
+          relativePath = FileUtil.getLocationRelativeToUserHome(filePath, false);
+        }
+        else {
+          relativePath = filePath;
+        }
+      }
+      else {
+        relativePath = getRelativePath(parentsPath, filePath);
+      }
+      Path path = Paths.get(relativePath);
+      String nodeName = path.getFileName().toString();
+      Path pathParent = path.getParent();
+      String pathHint = pathParent == null ? null : pathParent.toString();
+      parentNode = getOrCreateMessagesNode(messageEvent, filePath, parentNode, nodeName, pathHint,
                                            () -> {
                                              VirtualFile file = VfsUtil.findFileByIoFile(filePosition.getFile(), false);
                                              if (file != null) {
@@ -693,6 +727,15 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
                                            }, messageEvent.getNavigatable(myProject), nodesMap, myProject);
     }
     return parentNode;
+  }
+
+  private static String getRelativePath(@NotNull String basePath, @NotNull String filePath) {
+    String path = ObjectUtils.notNull(FileUtil.getRelativePath(basePath, filePath, '/'), filePath);
+    File userHomeDir = new File(SystemProperties.getUserHome());
+    if (path.startsWith("..") && FileUtil.isAncestor(userHomeDir, new File(filePath), true)) {
+      return FileUtil.getLocationRelativeToUserHome(filePath, false);
+    }
+    return path;
   }
 
   public void hideRootNode() {
@@ -753,9 +796,10 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
     Tree tree = new Tree(model);
     tree.setLargeModel(true);
     ComponentUtil.putClientProperty(tree, ANIMATION_IN_RENDERER_ALLOWED, true);
+    ComponentUtil.putClientProperty(tree, AUTO_EXPAND_ALLOWED, false);
     tree.setRootVisible(false);
     EditSourceOnDoubleClickHandler.install(tree);
-    EditSourceOnEnterKeyHandler.install(tree, null);
+    EditSourceOnEnterKeyHandler.install(tree);
     new TreeSpeedSearch(tree).setComparator(new SpeedSearchComparator(false));
     TreeUtil.installActions(tree);
     tree.setCellRenderer(new MyNodeRenderer());
@@ -767,14 +811,18 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
                                                          String nodeId,
                                                          ExecutionNode parentNode,
                                                          String nodeName,
+                                                         @Nullable @BuildEventsNls.Hint String hint,
                                                          @Nullable Supplier<? extends Icon> iconProvider,
                                                          @Nullable Navigatable navigatable,
                                                          Map<Object, ExecutionNode> nodesMap,
                                                          Project project) {
     ExecutionNode node = nodesMap.get(nodeId);
     if (node == null) {
-      node = new ExecutionNode(project, parentNode, true, this::isCorrectThread);
+      node = new ExecutionNode(project, parentNode, false, this::isCorrectThread);
       node.setName(nodeName);
+      if (hint != null) {
+        node.setHint(hint);
+      }
       node.setStartTime(messageEvent.getEventTime());
       node.setEndTime(messageEvent.getEventTime());
       if (iconProvider != null) {
@@ -800,7 +848,7 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
     private final JPanel myPanel;
     private final CompositeView<ExecutionConsole> myView;
     private final AtomicReference<String> myNodeConsoleViewName = new AtomicReference<>();
-    private final Map<String, List<Consumer<BuildTextConsoleView>>> deferredNodeOutput = new ConcurrentHashMap<>();
+    private final Map<String, List<Consumer<? super BuildTextConsoleView>>> deferredNodeOutput = new ConcurrentHashMap<>();
     private final @NotNull BuildViewSettingsProvider myViewSettingsProvider;
     private @Nullable ExecutionNode myExecutionNode;
     private @NotNull final List<Filter> myExecutionConsoleFilters;
@@ -819,7 +867,7 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
       myViewSettingsProvider = buildViewSettingsProvider;
       myExecutionConsoleFilters = executionConsoleFilters;
       Disposer.register(parentDisposable, this);
-      myView = new CompositeView<ExecutionConsole>(null) {
+      myView = new CompositeView<>(null) {
         @Override
         public void addView(@NotNull ExecutionConsole view, @NotNull String viewName) {
           super.addView(view, viewName);
@@ -827,16 +875,13 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
         }
       };
       Disposer.register(this, myView);
-      if (executionConsole != null && buildViewSettingsProvider.isSideBySideView()) {
+      if (executionConsole != null) {
         String nodeConsoleViewName = getNodeConsoleViewName(buildProgressRootNode);
         myView.addViewAndShowIfNeeded(executionConsole, nodeConsoleViewName, true);
         myNodeConsoleViewName.set(nodeConsoleViewName);
       }
       ConsoleView emptyConsole = new ConsoleViewImpl(project, GlobalSearchScope.EMPTY_SCOPE, true, false);
       myView.addView(emptyConsole, EMPTY_CONSOLE_NAME);
-      if (!buildViewSettingsProvider.isSideBySideView()) {
-        myPanel.setVisible(false);
-      }
       JComponent consoleComponent = emptyConsole.getComponent();
       consoleComponent.setFocusable(true);
       myPanel.add(myView.getComponent(), BorderLayout.CENTER);
@@ -883,7 +928,7 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
       myNodeConsoleViewName.set(nodeConsoleViewName);
       ExecutionConsole view = myView.getView(nodeConsoleViewName);
       if (view != null) {
-        List<Consumer<BuildTextConsoleView>> deferredOutput = deferredNodeOutput.get(nodeConsoleViewName);
+        List<Consumer<? super BuildTextConsoleView>> deferredOutput = deferredNodeOutput.get(nodeConsoleViewName);
         if (view instanceof BuildTextConsoleView && deferredOutput != null && !deferredOutput.isEmpty()) {
           deferredNodeOutput.remove(nodeConsoleViewName);
           deferredOutput.forEach(consumer -> consumer.accept((BuildTextConsoleView)view));
@@ -893,7 +938,7 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
         return true;
       }
 
-      List<Consumer<BuildTextConsoleView>> deferredOutput = deferredNodeOutput.get(nodeConsoleViewName);
+      List<Consumer<? super BuildTextConsoleView>> deferredOutput = deferredNodeOutput.get(nodeConsoleViewName);
       if (deferredOutput != null && !deferredOutput.isEmpty()) {
         BuildTextConsoleView textConsoleView = new BuildTextConsoleView(myProject, true, myExecutionConsoleFilters);
         deferredNodeOutput.remove(nodeConsoleViewName);
@@ -901,21 +946,9 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
         myView.addView(textConsoleView, nodeConsoleViewName);
         myView.showView(nodeConsoleViewName, false);
       }
-      else if (myViewSettingsProvider.isSideBySideView()) {
+      else {
         myView.showView(EMPTY_CONSOLE_NAME, false);
         return true;
-      }
-
-      if (!myViewSettingsProvider.isSideBySideView()) {
-        EventResult eventResult = node.getResult();
-        BuildTextConsoleView taskOutputView = new BuildTextConsoleView(myProject, true, myExecutionConsoleFilters);
-        boolean hasChanged = taskOutputView.appendEventResult(eventResult);
-        if (!hasChanged) return false;
-
-        taskOutputView.scrollTo(0);
-        myView.addView(taskOutputView, nodeConsoleViewName);
-        myView.showView(nodeConsoleViewName, false);
-        myPanel.setVisible(true);
       }
       return true;
     }
@@ -932,8 +965,7 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
       addOutput(node, view -> view.append(failure));
     }
 
-    private void addOutput(@NotNull ExecutionNode node, Consumer<BuildTextConsoleView> consumer) {
-      if (!myViewSettingsProvider.isSideBySideView()) return;
+    private void addOutput(@NotNull ExecutionNode node, Consumer<? super BuildTextConsoleView> consumer) {
       String nodeConsoleViewName = getNodeConsoleViewName(node);
       ExecutionConsole viewView = myView.getView(nodeConsoleViewName);
       if (viewView instanceof BuildTextConsoleView) {
@@ -1140,6 +1172,11 @@ public class BuildTreeConsoleView implements ConsoleView, DataProvider, BuildCon
     @Override
     public boolean hasSomethingToCommit() {
       return false;
+    }
+
+    @Override
+    public boolean isAlwaysLeaf(@NotNull Object element) {
+      return ((ExecutionNode)element).isAlwaysLeaf();
     }
   }
 

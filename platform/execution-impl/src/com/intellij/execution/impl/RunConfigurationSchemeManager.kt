@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.impl
 
 import com.intellij.configurationStore.LazySchemeProcessor
@@ -13,7 +13,6 @@ import com.intellij.openapi.diagnostic.runAndLogException
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.util.InvalidDataException
 import com.intellij.openapi.util.JDOMUtil
-import gnu.trove.THashMap
 import org.jdom.Element
 import java.util.function.Function
 
@@ -21,10 +20,6 @@ private val LOG = logger<RunConfigurationSchemeManager>()
 
 internal class RunConfigurationSchemeManager(private val manager: RunManagerImpl, private val templateDifferenceHelper: TemplateDifferenceHelper, private val isShared: Boolean, private val isWrapSchemeIntoComponentElement: Boolean) :
   LazySchemeProcessor<RunnerAndConfigurationSettingsImpl, RunnerAndConfigurationSettingsImpl>(), SchemeContentChangedHandler<RunnerAndConfigurationSettingsImpl> {
-
-  private val converters by lazy {
-    ConfigurationType.CONFIGURATION_TYPE_EP.extensionList.filterIsInstance(RunConfigurationConverter::class.java)
-  }
 
   override fun getSchemeKey(scheme: RunnerAndConfigurationSettingsImpl): String {
     // here only isShared, because for workspace `workspaceSchemeManagerProvider.load` is used (see RunManagerImpl.loadState)
@@ -57,7 +52,7 @@ internal class RunConfigurationSchemeManager(private val manager: RunManagerImpl
       element = element.getChild("configuration") ?: throw RuntimeException("Unexpected element: " + JDOMUtil.write(element))
     }
 
-    converters.any {
+    ConfigurationType.CONFIGURATION_TYPE_EP.extensionList.filterIsInstance<RunConfigurationConverter>().any {
       LOG.runAndLogException { it.convertRunConfigurationOnDemand(element) } ?: false
     }
 
@@ -119,7 +114,7 @@ internal class RunConfigurationSchemeManager(private val manager: RunManagerImpl
   }
 
   override fun onSchemeDeleted(scheme: RunnerAndConfigurationSettingsImpl) {
-    manager.removeConfiguration(scheme)
+    manager.removeConfigurations(listOf(scheme), onSchemeManagerDeleteEvent = true)
   }
 
   override fun writeScheme(scheme: RunnerAndConfigurationSettingsImpl): Element? {
@@ -140,10 +135,10 @@ internal class RunConfigurationSchemeManager(private val manager: RunManagerImpl
 }
 
 internal class TemplateDifferenceHelper(private val manager: RunManagerImpl) {
-  private val cachedSerializedTemplateIdToData = THashMap<ConfigurationFactory, Element>()
+  private val cachedSerializedTemplateIdToData = HashMap<String, Element>()
 
   fun isTemplateModified(serialized: Element, factory: ConfigurationFactory): Boolean {
-    val originalTemplate = cachedSerializedTemplateIdToData.getOrPut(factory) {
+    val originalTemplate = cachedSerializedTemplateIdToData.getOrPut(factory.id) {
       JDOMUtil.internElement(manager.createTemplateSettings(factory).writeScheme())
     }
     return !JDOMUtil.areElementsEqual(serialized, originalTemplate)

@@ -3,6 +3,7 @@ package com.intellij.sh.run;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
@@ -29,7 +30,10 @@ final class ShTerminalRunner extends ShRunner {
   }
 
   @Override
-  public void run(@NotNull String command, @NotNull String workingDirectory, @NotNull String title) {
+  public void run(@NotNull String command,
+                  @NotNull String workingDirectory,
+                  @NotNull @NlsContexts.TabTitle String title,
+                  boolean activateToolWindow) {
     TerminalView terminalView = TerminalView.getInstance(myProject);
     ToolWindow window = ToolWindowManager.getInstance(myProject).getToolWindow(TerminalToolWindowFactory.TOOL_WINDOW_ID);
     if (window == null) return;
@@ -38,10 +42,12 @@ final class ShTerminalRunner extends ShRunner {
     Pair<Content, ShellTerminalWidget> pair = getSuitableProcess(contentManager, workingDirectory);
     try {
       if (pair == null) {
-        terminalView.createLocalShellWidget(workingDirectory, title).executeCommand(command);
+        terminalView.createLocalShellWidget(workingDirectory, title, activateToolWindow).executeCommand(command);
         return;
       }
-      window.activate(null);
+      if (activateToolWindow) {
+        window.activate(null);
+      }
       pair.first.setDisplayName(title);
       contentManager.setSelectedContent(pair.first);
       pair.second.executeCommand(command);

@@ -9,7 +9,7 @@ import com.intellij.diagnostic.StartUpMeasurer.Activities
 import com.intellij.diagnostic.StartUpPerformanceService
 import com.intellij.ide.plugins.IdeaPluginDescriptorImpl
 import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.ide.plugins.cl.PluginClassLoader
+import com.intellij.ide.plugins.cl.PluginAwareClassLoader
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ex.ApplicationInfoEx
 import com.intellij.openapi.diagnostic.logger
@@ -17,12 +17,13 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.StartupActivity
 import com.intellij.util.SystemProperties
 import com.intellij.util.concurrency.NonUrgentExecutor
-import com.intellij.util.containers.ObjectIntHashMap
-import com.intellij.util.containers.ObjectLongHashMap
+import com.intellij.util.containers.CollectionFactory
 import com.intellij.util.io.jackson.IntelliJPrettyPrinter
 import com.intellij.util.io.outputStream
 import com.intellij.util.io.write
-import gnu.trove.THashMap
+import it.unimi.dsi.fastutil.objects.Object2IntMap
+import it.unimi.dsi.fastutil.objects.Object2LongMap
+import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap
 import java.nio.ByteBuffer
 import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicInteger
@@ -32,15 +33,15 @@ import kotlin.Comparator
 class StartUpPerformanceReporter : StartupActivity, StartUpPerformanceService {
   private var startUpFinishedCounter = AtomicInteger()
 
-  private var pluginCostMap: Map<String, ObjectLongHashMap<String>>? = null
+  private var pluginCostMap: Map<String, Object2LongMap<String>>? = null
 
   private var lastReport: ByteBuffer? = null
-  private var lastMetrics: ObjectIntHashMap<String>? = null
+  private var lastMetrics: Object2IntMap<String>? = null
 
   companion object {
     internal val LOG = logger<StartUpMeasurer>()
 
-    internal const val VERSION = "21"
+    internal const val VERSION = "24"
 
     internal fun sortItems(items: MutableList<ActivityImpl>) {
       items.sortWith(Comparator { o1, o2 ->
@@ -62,11 +63,11 @@ class StartUpPerformanceReporter : StartupActivity, StartUpPerformanceService {
     private fun doLogStats(projectName: String): StartUpPerformanceReporterValues? {
       val items = mutableListOf<ActivityImpl>()
       val instantEvents = mutableListOf<ActivityImpl>()
-      val activities = THashMap<String, MutableList<ActivityImpl>>()
-      val serviceActivities = THashMap<String, MutableList<ActivityImpl>>()
+      val activities = CollectionFactory.createSmallMemoryFootprintMap<String, MutableList<ActivityImpl>>()
+      val serviceActivities = CollectionFactory.createSmallMemoryFootprintMap<String, MutableList<ActivityImpl>>()
       val services = mutableListOf<ActivityImpl>()
 
-      val threadNameManager = ThreadNameManager()
+      val threadNameManager = IdeThreadNameManager()
 
       var end = -1L
 
@@ -109,7 +110,7 @@ class StartUpPerformanceReporter : StartupActivity, StartUpPerformanceService {
 
       val pluginCostMap = computePluginCostMap()
 
-      val w = IdeaFormatWriter(activities, pluginCostMap, threadNameManager)
+      val w = IdeIdeaFormatWriter(activities, pluginCostMap, threadNameManager)
       val startTime = items.first().start
       for (item in items) {
         val pluginId = item.pluginId ?: continue
@@ -228,21 +229,25 @@ class StartUpPerformanceReporter : StartupActivity, StartUpPerformanceService {
   }
 }
 
-private class StartUpPerformanceReporterValues(val pluginCostMap: MutableMap<String, ObjectLongHashMap<String>>,
+private class StartUpPerformanceReporterValues(val pluginCostMap: MutableMap<String, Object2LongMap<String>>,
                                                val lastReport: ByteBuffer,
-                                               val lastMetrics: ObjectIntHashMap<String>)
+                                               val lastMetrics: Object2IntMap<String>)
 
-private fun computePluginCostMap(): MutableMap<String, ObjectLongHashMap<String>> {
-  var result: MutableMap<String, ObjectLongHashMap<String>>
+private fun computePluginCostMap(): MutableMap<String, Object2LongMap<String>> {
+  var result: MutableMap<String, Object2LongMap<String>>
   synchronized(StartUpMeasurer.pluginCostMap) {
-    result = THashMap(StartUpMeasurer.pluginCostMap)
+    result = CollectionFactory.createSmallMemoryFootprintMap(StartUpMeasurer.pluginCostMap)
     StartUpMeasurer.pluginCostMap.clear()
   }
 
   for (plugin in PluginManagerCore.getLoadedPlugins()) {
     val id = plugin.pluginId.idString
-    val classLoader = (plugin as IdeaPluginDescriptorImpl).pluginClassLoader as? PluginClassLoader ?: continue
-    val costPerPhaseMap = result.getOrPut(id) { ObjectLongHashMap() }
+    val classLoader = (plugin as IdeaPluginDescriptorImpl).pluginClassLoader as? PluginAwareClassLoader ?: continue
+    val costPerPhaseMap = result.getOrPut(id) {
+      val m = Object2LongOpenHashMap<String>()
+      m.defaultReturnValue(-1)
+      m
+    }
     costPerPhaseMap.put("classloading (EDT)", classLoader.edtTime)
     costPerPhaseMap.put("classloading (background)", classLoader.backgroundTime)
   }

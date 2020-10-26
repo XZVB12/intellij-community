@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.compiler;
 
 import com.intellij.execution.configurations.RunConfiguration;
@@ -84,24 +84,29 @@ public abstract class CompilerManager {
    * Registers the type as a compilable type so that Compile action will be enabled on files of this type.
    *
    * @param type the type for which the Compile action is enabled.
+   * @deprecated use {@link CompilableFileTypesProvider} extension point to register compilable file types
    */
+  @Deprecated
   public abstract void addCompilableFileType(@NotNull FileType type);
 
   /**
    * Unregisters the type as a compilable type so that Compile action will be disabled on files of this type.
    *
    * @param type the type for which the Compile action is disabled.
+   * @deprecated use {@link CompilableFileTypesProvider} extension point to register compilable file types
    */
+  @Deprecated
   public abstract void removeCompilableFileType(@NotNull FileType type);
 
   /**
    * Checks if files of the specified type can be compiled by one of registered compilers.
    * If the compiler can process files of certain type, it should register this file type within
    * the CompilerManager as a compilable file type.
+   * Preferably register compilable file types with the CompilableFileTypesProvider extension point
    *
    * @param type the type to check.
    * @return true if the file type is compilable, false otherwise.
-   * @see com.intellij.openapi.compiler.CompilerManager#addCompilableFileType(FileType)
+   * @see CompilableFileTypesProvider#getCompilableFileTypes()
    */
   public abstract boolean isCompilableFileType(@NotNull FileType type);
 
@@ -214,6 +219,7 @@ public abstract class CompilerManager {
    * @return true if make on the scope specified wouldn't do anything or false if something is to be compiled or deleted
    */
   public abstract boolean isUpToDate(@NotNull CompileScope scope);
+
   /**
    * Rebuild the whole project from scratch. Compiler excludes are honored.
    *

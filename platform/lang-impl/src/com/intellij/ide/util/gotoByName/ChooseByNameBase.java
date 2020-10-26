@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.ide.util.gotoByName;
 
@@ -16,7 +16,6 @@ import com.intellij.ide.actions.GotoFileAction;
 import com.intellij.ide.ui.laf.darcula.ui.DarculaTextBorder;
 import com.intellij.ide.ui.laf.darcula.ui.DarculaTextFieldUI;
 import com.intellij.lang.LangBundle;
-import com.intellij.openapi.MnemonicHelper;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
@@ -38,8 +37,12 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.*;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.util.text.HtmlBuilder;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.ToolWindow;
@@ -67,9 +70,12 @@ import com.intellij.util.ArrayUtil;
 import com.intellij.util.AstLoadingFilter;
 import com.intellij.util.Consumer;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.indexing.DumbModeAccessType;
+import com.intellij.util.indexing.FileBasedIndex;
 import com.intellij.util.text.Matcher;
 import com.intellij.util.text.MatcherHolder;
 import com.intellij.util.ui.*;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -94,7 +100,7 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
   protected final ChooseByNameModel myModel;
   @NotNull
   protected ChooseByNameItemProvider myProvider;
-  final String myInitialText;
+  final @NlsSafe String myInitialText;
   private boolean mySearchInAnyPlace;
 
   Component myPreviouslyFocusedComponent;
@@ -113,8 +119,8 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
   JScrollPane myListScrollPane; // Located in the layered pane
   private final SmartPointerListModel<Object> myListModel = new SmartPointerListModel<>();
   protected final JList<Object> myList = new JBList<>(myListModel);
-  private final List<Pair<String, Integer>> myHistory = new ArrayList<>();
-  private final List<Pair<String, Integer>> myFuture = new ArrayList<>();
+  private final List<Pair<@NlsSafe String, Integer>> myHistory = new ArrayList<>();
+  private final List<Pair<@NlsSafe String, Integer>> myFuture = new ArrayList<>();
 
   protected ChooseByNamePopupComponent.Callback myActionListener;
 
@@ -139,7 +145,7 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
 
   private boolean myClosedByShiftEnter;
   final int myInitialIndex;
-  private String myFindUsagesTitle;
+  @Nls private String myFindUsagesTitle;
   private ShortcutSet myCheckBoxShortcut;
   private final boolean myInitIsDone;
   private boolean myAlwaysHasMore;
@@ -234,7 +240,7 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
     myToolArea = toolArea;
   }
 
-  public void setFindUsagesTitle(@Nullable String findUsagesTitle) {
+  public void setFindUsagesTitle(@Nullable @Nls String findUsagesTitle) {
     myFindUsagesTitle = findUsagesTitle;
   }
 
@@ -375,15 +381,19 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
     String checkBoxName = myModel.getCheckBoxName();
     Color fg = UIUtil.getLabelDisabledForeground();
     Color color = StartupUiUtil.isUnderDarcula() ? ColorUtil.shift(fg, 1.2) : ColorUtil.shift(fg, 0.7);
-    String text = checkBoxName == null
-                  ? ""
-                  : "<html>" + checkBoxName +
-                    (myCheckBoxShortcut != null && myCheckBoxShortcut.getShortcuts().length > 0
-                     ? " <b color='" + ColorUtil.toHex(color) + "'>" +
-                       KeymapUtil.getShortcutsText(myCheckBoxShortcut.getShortcuts()) +
-                       "</b>"
-                     : "") +
-                    "</html>";
+    String text;
+    if (checkBoxName == null) {
+      text = "";
+    }
+    else {
+      HtmlBuilder builder = new HtmlBuilder().append(checkBoxName);
+      if (myCheckBoxShortcut != null && myCheckBoxShortcut.getShortcuts().length > 0) {
+        builder.append(" ")
+          .append(HtmlChunk.tag("b")
+                    .attr("color", ColorUtil.toHex(color)).addText(KeymapUtil.getShortcutsText(myCheckBoxShortcut.getShortcuts())));
+      }
+      text = builder.wrapWith("html").toString();
+    }
     myCheckBox.setText(text);
     myCheckBox.setAlignmentX(SwingConstants.RIGHT);
     myCheckBox.setBorder(null);
@@ -432,7 +442,7 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
     toolbarComponent.setBorder(null);
 
     if (myToolArea == null) {
-      myToolArea = new JLabel(JBUI.scale(EmptyIcon.create(1, 24)));
+      myToolArea = new JLabel(JBUIScale.scaleIcon(EmptyIcon.create(1, 24)));
     }
     else {
       myToolArea.setBorder(JBUI.Borders.emptyLeft(6)); // space between checkbox and filter/show all in view buttons
@@ -668,7 +678,7 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
            SwingUtilities.isDescendingFrom(component, toolWindowComponent);
   }
 
-  private void addCard(@NotNull JComponent comp, @NotNull String cardId) {
+  private void addCard(@NotNull JComponent comp, @NotNull @NonNls String cardId) {
     JPanel wrapper = new JPanel(new BorderLayout());
     wrapper.add(comp, BorderLayout.EAST);
     myCardContainer.add(wrapper, cardId);
@@ -754,6 +764,7 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
   }
 
   @NotNull
+  @NlsSafe
   public String getTrimmedText() {
     return StringUtil.trimLeading(StringUtil.notNullize(myTextField.getText()));
   }
@@ -838,7 +849,6 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
     myTextPopup.setSize(bounds.getSize());
     myTextPopup.setLocation(bounds.getLocation());
 
-    MnemonicHelper.init(myTextFieldPanel);
     if (myProject != null && !myProject.isDefault()) {
       DaemonCodeAnalyzer.getInstance(myProject).disableUpdateByTimer(myTextPopup);
     }
@@ -1342,7 +1352,8 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
       Set<Object> elements = Collections.synchronizedSet(new LinkedHashSet<>());
       scheduleIncrementalListUpdate(elements, 0);
 
-      boolean scopeExpanded = populateElements(elements);
+      boolean scopeExpanded =
+        FileBasedIndex.getInstance().ignoreDumbMode(DumbModeAccessType.RELIABLE_DATA_ONLY, () -> populateElements(elements));
       final String cardToShow = elements.isEmpty() ? NOT_FOUND_CARD : scopeExpanded ? NOT_FOUND_IN_PROJECT_CARD : CHECK_BOX_CARD;
 
       AnchoredSet resultSet = new AnchoredSet(filter(elements));
@@ -1472,7 +1483,8 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
   }
 
   @NotNull
-  private static String patternToLowerCase(@NotNull String pattern) {
+  @NlsSafe
+  private static String patternToLowerCase(@NotNull @NlsSafe String pattern) {
     return StringUtil.toLowerCase(pattern);
   }
 
@@ -1490,8 +1502,8 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
     return NameUtil.buildMatcher(pattern, NameUtil.MatchingCaseSensitivity.NONE);
   }
 
-  private static class HintLabel extends JLabel {
-    private HintLabel(@NotNull String text) {
+  private static final class HintLabel extends JLabel {
+    private HintLabel(@NlsContexts.Label @NotNull String text) {
       super(text, RIGHT);
       setForeground(JBColor.DARK_GRAY);
     }
@@ -1519,11 +1531,9 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
     myAlwaysHasMore = enabled;
   }
 
-  private static final String ACTION_NAME = "Show All in View";
-
   private abstract class ShowFindUsagesAction extends DumbAwareAction {
     ShowFindUsagesAction() {
-      super(ACTION_NAME, ACTION_NAME, AllIcons.General.Pin_tab);
+      super(LangBundle.messagePointer("action.show.all.in.view.text"), AllIcons.General.Pin_tab);
     }
 
     @Override
@@ -1532,12 +1542,12 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
 
       final UsageViewPresentation presentation = new UsageViewPresentation();
       final String text = getTrimmedText();
-      final String prefixPattern = myFindUsagesTitle + " \'" + text + "\'";
+      final String prefixPattern = myFindUsagesTitle + " '" + text + "'";
       presentation.setCodeUsagesString(prefixPattern);
-      presentation.setUsagesInGeneratedCodeString(prefixPattern + " in generated code");
+      presentation.setUsagesInGeneratedCodeString(LangBundle.message("list.item.in.generated.code", prefixPattern));
       presentation.setTabName(prefixPattern);
       presentation.setTabText(prefixPattern);
-      presentation.setTargetsNodeText("Unsorted " + StringUtil.toLowerCase(patternToLowerCase(prefixPattern)));
+      presentation.setTargetsNodeText(LangBundle.message("list.item.unsorted", StringUtil.toLowerCase(patternToLowerCase(prefixPattern))));
       PsiElement[] elements = getElements();
       final List<PsiElement> targets = new ArrayList<>();
       final Set<Usage> usages = new LinkedHashSet<>();
@@ -1558,8 +1568,7 @@ public abstract class ChooseByNameBase implements ChooseByNameViewModel {
               protected boolean isOverflow(@NotNull Set<Object> elementsArray) {
                 tooManyUsagesStatus.pauseProcessingIfTooManyUsages();
                 if (elementsArray.size() > UsageLimitUtil.USAGES_LIMIT - myMaximumListSizeLimit && tooManyUsagesStatus.switchTooManyUsagesStatus()) {
-                  int usageCount = elementsArray.size() + myMaximumListSizeLimit;
-                  UsageViewManagerImpl.showTooManyUsagesWarningLater(getProject(), tooManyUsagesStatus, indicator, presentation, usageCount, null);
+                  UsageViewManagerImpl.showTooManyUsagesWarningLater(getProject(), tooManyUsagesStatus, indicator, null);
                 }
                 return false;
               }

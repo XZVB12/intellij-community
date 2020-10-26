@@ -15,7 +15,6 @@ import com.intellij.psi.impl.source.resolve.ResolveCache;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.PlatformIcons;
-import com.intellij.util.ProcessingContext;
 import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.PyNames;
 import com.jetbrains.python.codeInsight.controlflow.ControlFlowCache;
@@ -26,7 +25,6 @@ import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.*;
 import com.jetbrains.python.psi.resolve.*;
 import com.jetbrains.python.psi.types.PyModuleType;
-import com.jetbrains.python.psi.types.PyType;
 import com.jetbrains.python.psi.types.TypeEvalContext;
 import com.jetbrains.python.pyi.PyiUtil;
 import com.jetbrains.python.refactoring.PyDefUseUtil;
@@ -118,7 +116,7 @@ public class PyReferenceImpl implements PsiReferenceEx, PsiPolyVariantReference 
         final PsiElement element = rrr.getElement();
         if (element instanceof PyClass) {
           final PyClass cls = (PyClass)element;
-          final TypeEvalContext context = TypeEvalContext.codeInsightFallback(myElement.getProject());
+          final TypeEvalContext context = myContext.getTypeEvalContext();
           final Collection<? extends PsiElement> constructors = PyCallExpressionHelper.resolveConstructors(cls, myElement, context, false);
           if (!constructors.isEmpty()) {
             iterator.remove();
@@ -563,7 +561,7 @@ public class PyReferenceImpl implements PsiReferenceEx, PsiPolyVariantReference 
     final PsiElement ourContainer = findContainer(getElement());
     final PsiElement theirContainer = findContainer(element);
     if (ourContainer != null) {
-      if (ourContainer == theirContainer) {
+      if (ourContainer == theirContainer && ourScopeOwner == theirScopeOwner) {
         return true;
       }
       if (PsiTreeUtil.isAncestor(theirContainer, ourContainer, true)) {
@@ -662,7 +660,6 @@ public class PyReferenceImpl implements PsiReferenceEx, PsiPolyVariantReference 
     // Use real context here to enable correct completion and resolve in case of PyExpressionCodeFragment!!!
     final PyQualifiedExpression originalElement = CompletionUtilCoreImpl.getOriginalElement(myElement);
     final PyQualifiedExpression element = originalElement != null ? originalElement : myElement;
-    final PsiElement realContext = PyPsiUtils.getRealContext(element);
 
     final PyBuiltinCache builtinCache = PyBuiltinCache.getInstance(element);
     final LanguageLevel languageLevel = LanguageLevel.forElement(myElement);
@@ -688,10 +685,8 @@ public class PyReferenceImpl implements PsiReferenceEx, PsiPolyVariantReference 
       }
       return true;
     }, null);
-    final ScopeOwner owner = realContext instanceof ScopeOwner ? (ScopeOwner)realContext : ScopeUtil.getScopeOwner(realContext);
-    if (owner != null) {
-      PyResolveUtil.scopeCrawlUp(processor, owner, null, null);
-    }
+
+    PyResolveUtil.scopeCrawlUp(processor, element, null, null);
 
     // This method is probably called for completion, so use appropriate context here
     // in a call, include function's arg names
@@ -705,7 +700,7 @@ public class PyReferenceImpl implements PsiReferenceEx, PsiPolyVariantReference 
 
     if (PyUtil.getInitialUnderscores(element.getName()) >= 2) {
       // if we're a normal module, add module's attrs
-      if (realContext.getContainingFile() instanceof PyFile) {
+      if (PyPsiUtils.getRealContext(element).getContainingFile() instanceof PyFile) {
         for (String name : PyModuleType.getPossibleInstanceMembers()) {
           ret.add(LookupElementBuilder.create(name).withIcon(PlatformIcons.FIELD_ICON));
         }
@@ -800,11 +795,5 @@ public class PyReferenceImpl implements PsiReferenceEx, PsiPolyVariantReference 
   @Override
   public int hashCode() {
     return myElement.hashCode();
-  }
-
-  protected static Object[] getTypeCompletionVariants(PyExpression pyExpression, PyType type) {
-    ProcessingContext context = new ProcessingContext();
-    context.put(PyType.CTX_NAMES, new HashSet<>());
-    return type.getCompletionVariants(pyExpression.getName(), pyExpression, context);
   }
 }

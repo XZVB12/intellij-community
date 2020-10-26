@@ -15,6 +15,7 @@ import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.*;
 import com.intellij.psi.impl.light.LightTypeElement;
@@ -38,7 +39,7 @@ import org.jetbrains.java.generate.template.TemplatesManager;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class GenerateMembersUtil {
+public final class GenerateMembersUtil {
   private static final Logger LOG = Logger.getInstance(GenerateMembersUtil.class);
 
   private GenerateMembersUtil() {
@@ -446,7 +447,8 @@ public class GenerateMembersUtil {
       generator.addExistingName(paramName);
       PsiType expressionType = GenericsUtil.getVariableTypeByExpressionType(substituted);
       if (expressionType instanceof PsiArrayType && substituted instanceof PsiEllipsisType) {
-        expressionType = new PsiEllipsisType(((PsiArrayType)expressionType).getComponentType());
+        expressionType = new PsiEllipsisType(((PsiArrayType)expressionType).getComponentType())
+          .annotate(expressionType.getAnnotationProvider());
       }
       result[i] = factory.createParameter(paramName, expressionType, target);
     }
@@ -640,52 +642,52 @@ public class GenerateMembersUtil {
   }
 
   //custom getters/setters
-  public static String suggestGetterName(PsiField field) {
+  public static @NotNull String suggestGetterName(PsiField field) {
     return generateGetterPrototype(field).getName();
   }
 
-  public static String suggestGetterName(String name, PsiType type, Project project) {
+  public static @NotNull String suggestGetterName(String name, PsiType type, Project project) {
     if (type instanceof PsiEllipsisType) {
       type = ((PsiEllipsisType)type).toArrayType();
     }
     return suggestGetterName(JavaPsiFacade.getElementFactory(project).createField(name, type));
   }
 
-  public static String suggestSetterName(PsiField field) {
+  public static @NotNull String suggestSetterName(PsiField field) {
     return generateSetterPrototype(field).getName();
   }
 
-  public static String suggestSetterName(String name, PsiType type, Project project) {
+  public static @NotNull String suggestSetterName(String name, PsiType type, Project project) {
     if (type instanceof PsiEllipsisType) {
       type = ((PsiEllipsisType)type).toArrayType();
     }
     return suggestSetterName(JavaPsiFacade.getElementFactory(project).createField(name, type));
   }
 
-  public static PsiMethod generateGetterPrototype(@NotNull PsiField field) {
+  public static @NotNull PsiMethod generateGetterPrototype(@NotNull PsiField field) {
     return generateGetterPrototype(field, true);
   }
 
-  public static PsiMethod generateSetterPrototype(@NotNull PsiField field) {
+  public static @NotNull PsiMethod generateSetterPrototype(@NotNull PsiField field) {
     return generateSetterPrototype(field, true);
   }
 
-  public static PsiMethod generateSetterPrototype(@NotNull PsiField field, PsiClass aClass) {
+  public static @NotNull PsiMethod generateSetterPrototype(@NotNull PsiField field, PsiClass aClass) {
     return generatePrototype(field, aClass, true, SetterTemplatesManager.getInstance());
   }
 
-  static PsiMethod generateGetterPrototype(@NotNull PsiField field, boolean ignoreInvalidTemplate) {
+  static @NotNull PsiMethod generateGetterPrototype(@NotNull PsiField field, boolean ignoreInvalidTemplate) {
     return generatePrototype(field, field.getContainingClass(), ignoreInvalidTemplate, GetterTemplatesManager.getInstance());
   }
 
-  static PsiMethod generateSetterPrototype(@NotNull PsiField field, boolean ignoreInvalidTemplate) {
+  static @NotNull PsiMethod generateSetterPrototype(@NotNull PsiField field, boolean ignoreInvalidTemplate) {
     return generatePrototype(field, field.getContainingClass(), ignoreInvalidTemplate, SetterTemplatesManager.getInstance());
   }
 
-  private static PsiMethod generatePrototype(@NotNull PsiField field,
-                                             PsiClass psiClass,
-                                             boolean ignoreInvalidTemplate,
-                                             TemplatesManager templatesManager) {
+  private static @NotNull PsiMethod generatePrototype(@NotNull PsiField field,
+                                                      PsiClass psiClass,
+                                                      boolean ignoreInvalidTemplate,
+                                                      @NotNull TemplatesManager templatesManager) {
     Project project = field.getProject();
     PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
     String template = templatesManager.getDefaultTemplate().getTemplate();
@@ -775,6 +777,11 @@ public class GenerateMembersUtil {
       PsiMethod superMethod = targetClass.findMethodBySignature(generated, true);
       if (superMethod != null && superMethod.getContainingClass() != targetClass && PsiUtil.isAccessible(superMethod, targetClass, null)) {
         OverrideImplementUtil.annotateOnOverrideImplement(generated, targetClass, superMethod, true);
+      }
+      if (JavaPsiRecordUtil.getRecordComponentForAccessor(generated) != null &&
+          PsiUtil.getLanguageLevel(targetClass) != LanguageLevel.JDK_14_PREVIEW) {
+        AddAnnotationPsiFix
+          .addPhysicalAnnotationIfAbsent(CommonClassNames.JAVA_LANG_OVERRIDE, PsiNameValuePair.EMPTY_ARRAY, generated.getModifierList());
       }
     }
     return generated;

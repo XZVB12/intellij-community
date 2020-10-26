@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight;
 
 import com.intellij.codeInsight.completion.CompletionMemory;
@@ -32,6 +32,7 @@ import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.Stack;
 import com.siyeh.ig.psiutils.TypeUtils;
+import com.siyeh.ig.testFrameworks.AssertHint;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -42,7 +43,7 @@ import java.util.*;
 /**
  * @author ven
  */
-public class ExpectedTypesProvider {
+public final class ExpectedTypesProvider {
   private static final ExpectedTypeInfo VOID_EXPECTED = createInfoImpl(PsiType.VOID, ExpectedTypeInfo.TYPE_OR_SUBTYPE, PsiType.VOID, TailType.SEMICOLON);
 
   private static final Logger LOG = Logger.getInstance(ExpectedTypesProvider.class);
@@ -152,7 +153,11 @@ public class ExpectedTypesProvider {
     if (parent != null) {
       parent.accept(visitor);
     }
-    return visitor.getResult();
+    ExpectedTypeInfo[] result = visitor.getResult();
+    if (forCompletion) {
+      return ContainerUtil.map2Array(result, ExpectedTypeInfo.class, i -> ((ExpectedTypeInfoImpl)i).fixUnresolvedTypes(expr));
+    }
+    return result;
   }
 
   private static PsiFunctionalExpression extractFunctionalExpression(PsiExpression expr) {
@@ -251,7 +256,7 @@ public class ExpectedTypesProvider {
     }
   }
 
-  private static class MyParentVisitor extends JavaElementVisitor {
+  private static final class MyParentVisitor extends JavaElementVisitor {
     private PsiExpression myExpr;
     private final boolean myForCompletion;
     private final boolean myUsedAfter;
@@ -354,7 +359,7 @@ public class ExpectedTypesProvider {
         Collections.addAll(myResult, getExpectedTypes(expression, myForCompletion));
       }
     }
-    
+
     @Override
     public void visitMethodCallExpression(@NotNull PsiMethodCallExpression expression) {
       myExpr = (PsiExpression)myExpr.getParent();
@@ -548,7 +553,9 @@ public class ExpectedTypesProvider {
     @Override
     public void visitVariable(@NotNull PsiVariable variable) {
       PsiType type = variable.getType();
-      TailType tail = variable instanceof PsiResourceVariable ? TailType.NONE : TailType.SEMICOLON;
+      TailType tail = variable instanceof PsiResourceVariable ? TailType.NONE :
+                      PsiUtilCore.getElementType(PsiTreeUtil.nextCodeLeaf(variable)) == JavaTokenType.COMMA ? CommaTailType.INSTANCE :
+                      TailType.SEMICOLON;
       myResult.add(createInfoImpl(type, ExpectedTypeInfo.TYPE_OR_SUBTYPE, type, tail, null, getPropertyName(variable)));
     }
 
@@ -1074,6 +1081,9 @@ public class ExpectedTypesProvider {
           if (params.length <= index) continue;
           PsiParameter param = params[index];
           PsiType paramType = getParameterType(param, substitutor);
+          if (method.hasTypeParameters() && PsiTypesUtil.mentionsTypeParameters(paramType, ContainerUtil.newHashSet(method.getTypeParameters()))) {
+            continue;
+          }
           TailType tailType = getMethodArgumentTailType(argument, index, method, substitutor, params);
           ExpectedTypeInfoImpl info = createInfoImpl(paramType, ExpectedTypeInfo.TYPE_OR_SUBTYPE, paramType,
                                                      tailType, method, getPropertyName(param));
@@ -1186,18 +1196,14 @@ public class ExpectedTypesProvider {
       PsiType hardcoded = HardcodedDefaultTypesKt.getDefaultType(method, substitutor, index, argument);
       if (hardcoded != null) return hardcoded;
 
-      @NonNls final String name = method.getName();
       final PsiElementFactory factory = JavaPsiFacade.getElementFactory(containingClass.getProject());
-      int argCount = Math.max(index + 1, args.length);
-      if ("assertEquals".equals(name) || "assertSame".equals(name) && method.getParameterList().getParametersCount() == argCount) {
-        if (argCount == 2 ||
-            argCount == 3 && method.getParameterList().getParameters()[0].getType().equalsToText(CommonClassNames.JAVA_LANG_STRING)) {
-          int other = index == argCount - 1 ? index - 1 : index + 1;
-          if (args.length > other) {
-            ExpectedTypeInfo info = getEqualsType(args[other]);
-            if (info != null && parameterType.isAssignableFrom(info.getDefaultType())) {
-              return info.getDefaultType();
-            }
+      AssertHint assertHint = AssertHint.createAssertEqualsLikeHintForCompletion(args, method, index);
+      if (assertHint != null) {
+        PsiExpression other = assertHint.getOtherExpression(argument);
+        if (other != null) {
+          ExpectedTypeInfo info = getEqualsType(other);
+          if (info != null && parameterType.isAssignableFrom(info.getDefaultType())) {
+            return info.getDefaultType();
           }
         }
       }
@@ -1229,7 +1235,7 @@ public class ExpectedTypesProvider {
           LOG.error("Vararg parameter with non-array type. Class=" + parameter.getClass() + "; type=" + parameter.getType());
         }
       }
-      PsiType parameterType = substitutor.substitute(type);
+      PsiType parameterType = GenericsUtil.eliminateExtendsFinalWildcard(substitutor.substitute(type));
       if (parameterType instanceof PsiCapturedWildcardType) {
         parameterType = ((PsiCapturedWildcardType)parameterType).getWildcard();
       }
@@ -1362,7 +1368,7 @@ public class ExpectedTypesProvider {
     return TailTypes.CALL_RPARENTH;
   }
 
-  private static class CommaTailTypeWithSyncHintUpdate extends TailType {
+  private static final class CommaTailTypeWithSyncHintUpdate extends TailType {
     private final PsiCall myOriginalCall;
 
     private CommaTailTypeWithSyncHintUpdate(@NotNull PsiCall originalCall) {myOriginalCall = originalCall;}

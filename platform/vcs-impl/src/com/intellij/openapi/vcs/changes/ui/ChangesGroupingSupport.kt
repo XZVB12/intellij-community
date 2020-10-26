@@ -9,13 +9,14 @@ import com.intellij.openapi.vcs.changes.ui.ChangesGroupingSupport.Companion.DIRE
 import com.intellij.openapi.vcs.changes.ui.ChangesGroupingSupport.Companion.MODULE_GROUPING
 import com.intellij.openapi.vcs.changes.ui.ChangesGroupingSupport.Companion.REPOSITORY_GROUPING
 import gnu.trove.THashMap
+import org.jetbrains.annotations.NonNls
 import java.beans.PropertyChangeListener
 import java.beans.PropertyChangeSupport
 import javax.swing.tree.DefaultTreeModel
 
 private val PREDEFINED_PRIORITIES = mapOf(DIRECTORY_GROUPING to 10, MODULE_GROUPING to 20, REPOSITORY_GROUPING to 30)
 
-class ChangesGroupingSupport(val project: Project, source: Any, val showConflictsNode: Boolean) {
+open class ChangesGroupingSupport(val project: Project, source: Any, val showConflictsNode: Boolean) {
   private val changeSupport = PropertyChangeSupport(source)
   private val groupingConfig: MutableMap<String, Boolean>
 
@@ -31,14 +32,14 @@ class ChangesGroupingSupport(val project: Project, source: Any, val showConflict
     }
   }
 
-  operator fun get(groupingKey: String): Boolean {
-    if (!isAvailable(groupingKey)) throw IllegalArgumentException("Unknown grouping $groupingKey")
+  operator fun get(groupingKey: @NonNls String): Boolean {
+    if (!isAvailable(groupingKey)) throw IllegalArgumentException("Unknown grouping $groupingKey") // NON-NLS
 
     return groupingConfig[groupingKey]!!
   }
 
   operator fun set(groupingKey: String, state: Boolean) {
-    if (!isAvailable(groupingKey)) throw IllegalArgumentException("Unknown grouping $groupingKey")
+    if (!isAvailable(groupingKey)) throw IllegalArgumentException("Unknown grouping $groupingKey") // NON-NLS
 
     if (groupingConfig[groupingKey] != state) {
       val oldGroupingKeys = groupingKeys
@@ -65,7 +66,7 @@ class ChangesGroupingSupport(val project: Project, source: Any, val showConflict
   fun setGroupingKeysOrSkip(groupingKeys: Set<String>) {
     groupingConfig.entries.forEach { it.setValue(it.key in groupingKeys) }
   }
-  fun isAvailable(groupingKey: String) = findFactory(groupingKey) != null
+  open fun isAvailable(groupingKey: String) = findFactory(groupingKey) != null
 
   fun addPropertyChangeListener(listener: PropertyChangeListener): Unit = changeSupport.addPropertyChangeListener(listener)
   fun removePropertyChangeListener(listener: PropertyChangeListener): Unit = changeSupport.removePropertyChangeListener(listener)
@@ -74,11 +75,11 @@ class ChangesGroupingSupport(val project: Project, source: Any, val showConflict
     @JvmField
     val KEY = DataKey.create<ChangesGroupingSupport>("ChangesTree.GroupingSupport")
 
-    const val PROP_GROUPING_KEYS = "ChangesGroupingKeys"
-    const val DIRECTORY_GROUPING = "directory"
-    const val MODULE_GROUPING = "module"
-    const val REPOSITORY_GROUPING = "repository"
-    const val NONE_GROUPING = "none"
+    const val PROP_GROUPING_KEYS = "ChangesGroupingKeys" // NON-NLS
+    const val DIRECTORY_GROUPING = "directory" // NON-NLS
+    const val MODULE_GROUPING = "module" // NON-NLS
+    const val REPOSITORY_GROUPING = "repository" // NON-NLS
+    const val NONE_GROUPING = "none" // NON-NLS
 
     @JvmStatic
     fun getFactory(key: String): ChangesGroupingPolicyFactory {

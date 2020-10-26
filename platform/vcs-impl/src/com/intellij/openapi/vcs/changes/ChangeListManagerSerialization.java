@@ -1,24 +1,11 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs.changes;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FilePath;
+import com.intellij.openapi.vcs.impl.PartialLineStatusTrackerManagerState;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.vcsUtil.VcsUtil;
 import com.intellij.xml.util.XmlStringUtil;
@@ -30,7 +17,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
-class ChangeListManagerSerialization {
+final class ChangeListManagerSerialization {
   @NonNls private static final String ATT_ID = "id";
   @NonNls private static final String ATT_NAME = "name";
   @NonNls private static final String ATT_COMMENT = "comment";
@@ -45,6 +32,10 @@ class ChangeListManagerSerialization {
   @NonNls private static final String NODE_LIST = "list";
   @NonNls private static final String NODE_CHANGE = "change";
 
+  @NonNls private static final String NODE_DISABLED = "disabled";
+  @NonNls private static final String NODE_WORKER_DISABLED = "disabled_changelists";
+  @NonNls private static final String NODE_LSTM_DISABLED = "disabled_trackers";
+
   public static void writeExternal(@NotNull Element element, @NotNull ChangeListWorker worker) {
     for (LocalChangeList list : worker.getChangeLists()) {
       element.addContent(writeChangeList(list));
@@ -57,6 +48,42 @@ class ChangeListManagerSerialization {
       lists.add(readChangeList(listNode, worker.getProject()));
     }
     worker.setChangeLists(removeDuplicatedLists(lists));
+  }
+
+  public static void writeDisabledChangeLists(@NotNull Element element, @Nullable Element disabledLists) {
+    if (disabledLists != null) element.addContent(disabledLists.clone());
+  }
+
+  @Nullable
+  public static Element readDisabledChangeLists(@NotNull Element element) {
+    return element.getChild(NODE_DISABLED);
+  }
+
+  @NotNull
+  public static Element saveDisabledChangeLists(@NotNull ChangeListWorker worker) {
+    Element element = new Element(NODE_DISABLED);
+
+    Element workerElement = new Element(NODE_WORKER_DISABLED);
+    element.addContent(workerElement);
+    writeExternal(workerElement, worker);
+
+    Element lstmElement = new Element(NODE_LSTM_DISABLED);
+    element.addContent(lstmElement);
+    PartialLineStatusTrackerManagerState.writeState(worker.getProject(), lstmElement);
+
+    return element;
+  }
+
+  public static void loadDisabledChangeLists(@NotNull Element element, @NotNull ChangeListWorker worker) {
+    Element workerElement = element.getChild(NODE_WORKER_DISABLED);
+    if (workerElement != null) {
+      readExternal(workerElement, worker);
+    }
+
+    Element lstmElement = element.getChild(NODE_LSTM_DISABLED);
+    if (lstmElement != null) {
+      PartialLineStatusTrackerManagerState.restoreState(worker.getProject(), lstmElement);
+    }
   }
 
   @NotNull
@@ -102,7 +129,7 @@ class ChangeListManagerSerialization {
     if (listData instanceof ChangeListData) {
       listNode.addContent(ChangeListData.writeExternal((ChangeListData)listData));
     }
-    
+
     List<Change> changes = ContainerUtil.sorted(list.getChanges(), new ChangeComparator());
     for (Change change : changes) {
       listNode.addContent(writeChange(change));

@@ -29,7 +29,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-public class PyStringLiteralExpressionImpl extends PyElementImpl implements PyStringLiteralExpression, PsiLiteralValue {
+public class PyStringLiteralExpressionImpl extends PyElementImpl implements PyStringLiteralExpression, PsiLiteralValue, ContributedReferenceHost {
 
   @Nullable private volatile String myStringValue;
   @Nullable private volatile List<TextRange> myValueTextRanges;
@@ -91,6 +91,13 @@ public class PyStringLiteralExpressionImpl extends PyElementImpl implements PySt
   public boolean isDocString() {
     final List<ASTNode> stringNodes = getStringNodes();
     return stringNodes.size() == 1 && stringNodes.get(0).getElementType() == PyTokenTypes.DOCSTRING;
+  }
+
+  @Override
+  public boolean isInterpolated() {
+    return StreamEx.of(getStringElements())
+      .select(PyFormattedStringElement.class)
+      .anyMatch(element -> !element.getFragments().isEmpty());
   }
 
   @Override

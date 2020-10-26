@@ -9,10 +9,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages.showErrorDialog
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.text.StringUtil.equalsIgnoreWhitespaces
-import com.intellij.openapi.vcs.ProjectLevelVcsManager
-import com.intellij.openapi.vcs.VcsConfiguration
-import com.intellij.openapi.vcs.VcsException
-import com.intellij.openapi.vcs.VcsRoot
+import com.intellij.openapi.vcs.*
 import com.intellij.openapi.vcs.changes.CommitContext
 import com.intellij.openapi.vcs.changes.CommitResultHandler
 import com.intellij.util.EventDispatcher
@@ -68,8 +65,9 @@ open class AmendCommitHandlerImpl(private val workflowHandler: AbstractCommitWor
     amendCommitEventDispatcher.addListener(listener, parent)
 
   protected fun setAmendPrefix(isAmend: Boolean) {
-    val amendPrefix = if (isAmend) "Amend " else ""
-    workflowHandler.ui.defaultCommitActionName = amendPrefix + workflowHandler.getCommitActionName()
+    val commitActionName = workflowHandler.getCommitActionName()
+    val newActionName = if (isAmend) VcsBundle.message("amend.action.name", commitActionName) else commitActionName
+    workflowHandler.ui.defaultCommitActionName = newActionName
   }
 
   private fun setAmendMessage() {
@@ -116,8 +114,8 @@ open class AmendCommitHandlerImpl(private val workflowHandler: AbstractCommitWor
     ui.commitMessageUi.focus()
   }
 
-  private inner class LoadCommitMessagesTask(project: Project, private val roots: Collection<VcsRoot>) :
-    Task.WithResult<List<String>, VcsException>(project, "Loading Commit Message...", true) {
+  private class LoadCommitMessagesTask(project: Project, private val roots: Collection<VcsRoot>) :
+    Task.WithResult<List<String>, VcsException>(project, VcsBundle.message("amend.commit.load.message.task.title"), true) {
 
     fun load(): List<String>? {
       queue()
@@ -125,7 +123,8 @@ open class AmendCommitHandlerImpl(private val workflowHandler: AbstractCommitWor
         result
       }
       catch (e: VcsException) {
-        showErrorDialog(project, "Couldn't load commit message of the commit to amend.\n${e.message.capitalize()}", "Commit Message Not Loaded")
+        showErrorDialog(project, VcsBundle.message("amend.commit.load.message.error.text") + "\n" + e.message.capitalize(),
+                        VcsBundle.message("amend.commit.load.message.error.title"))
         LOG.info(e)
         null
       }

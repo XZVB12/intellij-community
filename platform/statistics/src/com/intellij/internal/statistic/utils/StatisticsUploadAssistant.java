@@ -1,13 +1,20 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.utils;
 
-import com.intellij.internal.statistic.connect.StatisticsService;
+import com.intellij.internal.statistic.eventLog.connection.EventLogSendListener;
+import com.intellij.internal.statistic.eventLog.connection.StatisticsService;
 import com.intellij.internal.statistic.eventLog.*;
+import com.intellij.internal.statistic.eventLog.connection.EventLogStatisticsService;
+import com.intellij.internal.statistic.eventLog.connection.EventLogUploadSettingsService;
 import com.intellij.internal.statistic.persistence.UsageStatisticsPersistenceComponent;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.text.StringUtil;
 import org.jetbrains.annotations.NotNull;
 
-public class StatisticsUploadAssistant {
+import java.util.List;
+
+public final class StatisticsUploadAssistant {
+  private static final String IDEA_HEADLESS_ENABLE_STATISTICS = "idea.headless.enable.statistics";
   private static final String IDEA_SUPPRESS_REPORT_STATISTICS = "idea.suppress.statistics.report";
   private static final String ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT = "idea.local.statistics.without.report";
 
@@ -15,49 +22,39 @@ public class StatisticsUploadAssistant {
 
   private StatisticsUploadAssistant() {}
 
-  public static long getSendPeriodInMillis() {
-    return UsageStatisticsPersistenceComponent.getInstance().getPeriod().getMillis();
-  }
-
-  public static boolean isTimeToSend() {
-    return isTimeToSend(UsageStatisticsPersistenceComponent.getInstance());
-  }
-
-  public static boolean isTimeToSend(UsageStatisticsPersistenceComponent settings) {
-    final long timeDelta = System.currentTimeMillis() - settings.getLastTimeSent();
-
-    return Math.abs(timeDelta) > settings.getPeriod().getMillis();
-  }
-
   public static boolean isSendAllowed() {
-    return isSendAllowed(UsageStatisticsPersistenceComponent.getInstance());
-  }
+    if (isSuppressStatisticsReport() || isLocalStatisticsWithoutReport()) {
+      return false;
+    }
 
-  public static boolean isSendAllowed(final UsageStatisticsPersistenceComponent settings) {
-    return settings != null && settings.isAllowed() &&
-           !Boolean.getBoolean(IDEA_SUPPRESS_REPORT_STATISTICS) &&
-           !Boolean.getBoolean(ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT);
+    if (isHeadlessStatisticsEnabled()) {
+      return true;
+    }
+    UsageStatisticsPersistenceComponent settings = UsageStatisticsPersistenceComponent.getInstance();
+    return settings != null && settings.isAllowed();
   }
 
   public static boolean isCollectAllowed() {
+    if (isHeadlessStatisticsEnabled()) {
+      return true;
+    }
     final UsageStatisticsPersistenceComponent settings = UsageStatisticsPersistenceComponent.getInstance();
-    return (settings != null && settings.isAllowed()) || Boolean.getBoolean(ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT);
+    return (settings != null && settings.isAllowed()) || isLocalStatisticsWithoutReport();
+  }
+
+  private static boolean isHeadlessStatisticsEnabled() {
+    return Boolean.getBoolean(IDEA_HEADLESS_ENABLE_STATISTICS) && ApplicationManager.getApplication().isHeadlessEnvironment();
   }
 
   public static boolean isTestStatisticsEnabled() {
-    return Boolean.getBoolean(ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT) || StringUtil.isNotEmpty(System.getenv("TEAMCITY_VERSION"));
+    return isLocalStatisticsWithoutReport() || isTeamcityDetected();
   }
 
-  public static void updateSentTime() {
-    UsageStatisticsPersistenceComponent.getInstance().setSentTime(System.currentTimeMillis());
-  }
-
-  @NotNull
-  public static StatisticsService getEventLogStatisticsService(@NotNull String recorderId) {
+  public static @NotNull StatisticsService getEventLogStatisticsService(@NotNull String recorderId) {
     EventLogSendListener listener = new EventLogSendListener() {
       @Override
-      public void onLogsSend(int succeed, int failed, int totalLocalFiles) {
-        EventLogSystemLogger.logFilesSend(recorderId, totalLocalFiles, succeed, failed, false);
+      public void onLogsSend(@NotNull List<String> successfullySentFiles, int failed, int totalLocalFiles) {
+        EventLogSystemLogger.logFilesSend(recorderId, totalLocalFiles, successfullySentFiles.size(), failed, false, successfullySentFiles);
       }
     };
 
@@ -68,7 +65,19 @@ public class StatisticsUploadAssistant {
     );
   }
 
-  public static EventLogUploadSettingsService createExternalSettings(@NotNull String recorderId, boolean isTest) {
-    return new EventLogUploadSettingsService(recorderId, new EventLogInternalApplicationInfo(recorderId, isTest));
+  public static EventLogUploadSettingsService createExternalSettings(@NotNull String recorderId, boolean isTest, long cacheTimeoutMs) {
+    return new EventLogUploadSettingsService(recorderId, new EventLogInternalApplicationInfo(recorderId, isTest), cacheTimeoutMs);
+  }
+
+  public static boolean isTeamcityDetected() {
+    return StringUtil.isNotEmpty(System.getenv("TEAMCITY_VERSION"));
+  }
+
+  public static boolean isSuppressStatisticsReport() {
+    return Boolean.getBoolean(IDEA_SUPPRESS_REPORT_STATISTICS);
+  }
+
+  public static boolean isLocalStatisticsWithoutReport() {
+    return Boolean.getBoolean(ENABLE_LOCAL_STATISTICS_WITHOUT_REPORT);
   }
 }

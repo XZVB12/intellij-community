@@ -41,8 +41,8 @@ import static org.jetbrains.plugins.gradle.tooling.builder.ModelBuildersDataProv
 class ExternalProjectBuilderImpl extends AbstractModelBuilderService {
 
   private static final GradleVersion gradleBaseVersion = GradleVersion.current().baseVersion
-  private static final boolean is4OrBetter = gradleBaseVersion >= GradleVersion.version("4.0")
-  private static final boolean is51OrBetter = is4OrBetter && gradleBaseVersion >= GradleVersion.version("5.1")
+  public static final boolean is4OrBetter = gradleBaseVersion >= GradleVersion.version("4.0")
+  public static final boolean is51OrBetter = is4OrBetter && gradleBaseVersion >= GradleVersion.version("5.1")
 
   static final DataProvider<Map<Project, ExternalProject>> PROJECTS_PROVIDER = new DataProvider<Map<Project, ExternalProject>>() {
     @NotNull
@@ -124,7 +124,7 @@ class ExternalProjectBuilderImpl extends AbstractModelBuilderService {
 
   static void addArtifactsData(final Project project, DefaultExternalProject externalProject) {
     final List<File> artifacts = new ArrayList<File>()
-    for (Jar jar : project.getTasks().withType(Jar.class)) {
+    project.getTasks().withType(Jar.class, { Jar jar ->
       try {
         if (is51OrBetter) {
           def archiveFile = jar.getArchiveFile()
@@ -140,7 +140,7 @@ class ExternalProjectBuilderImpl extends AbstractModelBuilderService {
         // TODO add reporting for such issues
         project.getLogger().error("warning: [task $jar.path] $e.message")
       }
-    }
+    })
     externalProject.setArtifacts(artifacts)
 
     def configurationsByName = project.getConfigurations().getAsMap()
@@ -584,13 +584,13 @@ class ExternalProjectBuilderImpl extends AbstractModelBuilderService {
 
         if (copyActions) {
           copyActions.each { Action<? super FileCopyDetails> action ->
-            def filterClass = findPropertyWithType(action, Class, 'val$filterType', 'arg$2', 'arg$1')
+            def filterClass = findPropertyWithType(action, Class, 'filterType', 'val$filterType', 'arg$2', 'arg$1')
             if (filterClass != null) {
               //noinspection GrUnresolvedAccess
               def filterType = filterClass.name
               def filter = [filterType: filterType] as DefaultExternalFilter
 
-              def props = findPropertyWithType(action, Map, 'val$properties', 'arg$1')
+              def props = findPropertyWithType(action, Map, 'properties', 'val$properties', 'arg$1')
               if (props != null) {
                   if ('org.apache.tools.ant.filters.ExpandProperties' == filterType && props['project']) {
                     if (props['project']) filter.propertiesAsJsonMap = new GsonBuilder().create().toJson(props['project'].properties)
@@ -605,7 +605,7 @@ class ExternalProjectBuilderImpl extends AbstractModelBuilderService {
               //noinspection GrUnresolvedAccess
               if (action.transformer.hasProperty('matcher') && action?.transformer?.hasProperty('replacement')) {
                 //noinspection GrUnresolvedAccess
-                String pattern = action?.transformer?.matcher?.pattern()?.pattern
+                String pattern = action?.transformer?.matcher?.pattern()?.pattern ?: action?.transformer?.pattern?.pattern
                 //noinspection GrUnresolvedAccess
                 String replacement = action?.transformer?.replacement
                 def filter = [filterType: 'RenamingCopyFilter'] as DefaultExternalFilter
@@ -636,12 +636,13 @@ class ExternalProjectBuilderImpl extends AbstractModelBuilderService {
 
   static <T> T findPropertyWithType(Object self, Class<T> type, String... propertyNames) {
     for (String name in propertyNames) {
-      def property = self.hasProperty(name)
-      if (property != null) {
-        def value = property.getProperty(self)
-        if (type.isAssignableFrom(value.class)) {
-          return (value as T)
+      try {
+        def field = self.class.getDeclaredField(name)
+        if (field != null && type.isAssignableFrom(field.type)) {
+          field.setAccessible(true)
+          return field.get(self) as T
         }
+      } catch (NoSuchFieldException ignored) {
       }
     }
     return null

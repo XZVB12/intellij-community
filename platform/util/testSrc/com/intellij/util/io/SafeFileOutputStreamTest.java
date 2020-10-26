@@ -68,7 +68,7 @@ public class SafeFileOutputStreamTest {
 
     File target = tempDir.newFile("test.txt");
     File link = new File(tempDir.getRoot(), "link");
-    Files.createSymbolicLink(link.toPath(), target.toPath());
+    IoTestUtil.createSymbolicLink(link.toPath(), target.toPath());
     checkWriteSucceed(link);
     assertThat(link.toPath()).isSymbolicLink();
   }
@@ -76,7 +76,7 @@ public class SafeFileOutputStreamTest {
   @Test public void newFileInReadOnlyDirectory() throws IOException {
     assumeUnix();
 
-    File dir = tempDir.newFolder("dir");
+    File dir = tempDir.newDirectory("dir");
     Files.setPosixFilePermissions(dir.toPath(), EnumSet.of(OWNER_READ, OWNER_EXECUTE));
     checkWriteFailed(new File(dir, "test.txt"));
   }

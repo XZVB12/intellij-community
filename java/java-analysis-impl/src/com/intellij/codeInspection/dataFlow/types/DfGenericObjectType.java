@@ -2,6 +2,10 @@
 package com.intellij.codeInspection.dataFlow.types;
 
 import com.intellij.codeInspection.dataFlow.*;
+import com.intellij.java.JavaBundle;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiEnumConstant;
 import gnu.trove.THashSet;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
@@ -80,7 +84,7 @@ class DfGenericObjectType extends DfAntiConstantType<Object> implements DfRefere
     TypeConstraint negated = myConstraint.tryNegate();
     if (negated == null) return null;
     DfType result = negated.asDfType();
-    return myNullability == DfaNullability.NOT_NULL ? result.join(DfTypes.NULL) : result;
+    return myNullability == DfaNullability.NOT_NULL ? result.join(DfTypes.NULL) : result.meet(DfTypes.NOT_NULL_OBJECT);
   }
 
   @NotNull
@@ -182,6 +186,9 @@ class DfGenericObjectType extends DfAntiConstantType<Object> implements DfRefere
     if (isSuperType(other)) return this;
     if (other.isSuperType(this)) return other;
     if (!(other instanceof DfReferenceType)) return TOP;
+    if (other instanceof DfNullConstantType || other instanceof DfEphemeralReferenceType) {
+      return other.join(this);
+    }
     DfReferenceType type = (DfReferenceType)other;
     TypeConstraint constraint = getConstraint().join(type.getConstraint());
     DfaNullability nullability = getNullability().unite(type.getNullability());
@@ -204,7 +211,7 @@ class DfGenericObjectType extends DfAntiConstantType<Object> implements DfRefere
   @NotNull
   @Override
   public DfType meet(@NotNull DfType other) {
-    if (other instanceof DfConstantType) {
+    if (other instanceof DfConstantType || other instanceof DfEphemeralReferenceType) {
       return other.meet(this);
     }
     if (isSuperType(other)) return other;
@@ -242,9 +249,36 @@ class DfGenericObjectType extends DfAntiConstantType<Object> implements DfRefere
       } else if (!myNotValues.containsAll(otherNotValues)) {
         notValues = new THashSet<>(myNotValues);
         notValues.addAll(otherNotValues);
+        if (nullability == DfaNullability.NOT_NULL) {
+          DfEphemeralReferenceType ephemeralValue = checkEphemeral(constraint, notValues);
+          if (ephemeralValue != null) {
+            return ephemeralValue;
+          }
+        }
       }
     }
     return new DfGenericObjectType(notValues, constraint, nullability, mutability, sf, sfType, locality);
+  }
+
+  private static DfEphemeralReferenceType checkEphemeral(TypeConstraint constraint, Set<Object> notValues) {
+    if (notValues.isEmpty()) return null;
+    Object value = notValues.iterator().next();
+    if (!(value instanceof PsiEnumConstant)) return null;
+    PsiClass enumClass = ((PsiEnumConstant)value).getContainingClass();
+    if (enumClass == null) return null;
+    TypeConstraint enumType = TypeConstraints.instanceOf(
+      JavaPsiFacade.getElementFactory(enumClass.getProject()).createType(enumClass));
+    if (!enumType.equals(constraint)) return null;
+    Set<PsiEnumConstant> allEnumConstants = StreamEx.of(enumClass.getFields()).select(PsiEnumConstant.class).toSet();
+    if (notValues.size() != allEnumConstants.size()) return null;
+    for (Object notValue : notValues) {
+      if (!(notValue instanceof PsiEnumConstant)) return null;
+      if (!allEnumConstants.remove(notValue)) return null;
+    }
+    if (allEnumConstants.isEmpty()) {
+      return new DfEphemeralReferenceType(constraint);
+    }
+    return null;
   }
 
   @Override
@@ -279,7 +313,7 @@ class DfGenericObjectType extends DfAntiConstantType<Object> implements DfRefere
       components.add(myMutability.name());
     }
     if (myLocal) {
-      components.add("local object");
+      components.add(JavaBundle.message("type.information.local.object"));
     }
     if (mySpecialField != null) {
       components.add(mySpecialField + "=" + mySpecialFieldType);

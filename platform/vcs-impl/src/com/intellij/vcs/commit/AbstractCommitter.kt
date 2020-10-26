@@ -47,7 +47,7 @@ abstract class AbstractCommitter(
     val task = object : Task.Backgroundable(project, taskName, true, configuration.commitOption) {
       override fun run(indicator: ProgressIndicator) {
         val vcsManager = ProjectLevelVcsManager.getInstance(myProject)
-        val activity = IdeActivity.started(myProject, "vcs", "commit")
+        val activity = IdeActivity.started(myProject, "vcs", "commit") // NON-NLS
         vcsManager.startBackgroundVcsOperation()
         try {
           delegateCommitToVcsThread()
@@ -129,12 +129,18 @@ abstract class AbstractCommitter(
     }
     catch (e: Throwable) {
       LOG.error(e)
-      _exceptions.add(VcsException(e))
+      addException(e)
     }
     finally {
       finishCommit(canceled)
       onFinish()
     }
+  }
+
+  protected fun Throwable.asVcsException(): VcsException = if (this is VcsException) this else VcsException(this)
+
+  protected fun addException(e: Throwable) {
+    _exceptions.add(e.asVcsException())
   }
 
   private fun finishCommit(canceled: Boolean) {

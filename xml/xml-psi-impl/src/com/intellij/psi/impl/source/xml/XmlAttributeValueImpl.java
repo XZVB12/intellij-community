@@ -2,6 +2,7 @@
 package com.intellij.psi.impl.source.xml;
 
 import com.intellij.lang.ASTNode;
+import com.intellij.model.psi.PsiSymbolReference;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.navigation.ItemPresentationWithSeparator;
 import com.intellij.openapi.diagnostic.Logger;
@@ -28,8 +29,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.util.Arrays;
+import java.util.Collections;
 
-public class XmlAttributeValueImpl extends XmlElementImpl implements XmlAttributeValue, PsiLanguageInjectionHost, RegExpLanguageHost, PsiMetaOwner, PsiMetaData {
+public class XmlAttributeValueImpl extends XmlElementImpl
+  implements XmlAttributeValue, PsiLanguageInjectionHost, RegExpLanguageHost, PsiMetaOwner, PsiMetaData, HintedReferenceHost {
   private static final Logger LOG = Logger.getInstance(XmlAttributeValueImpl.class);
 
   public XmlAttributeValueImpl() {
@@ -75,8 +79,24 @@ public class XmlAttributeValueImpl extends XmlElementImpl implements XmlAttribut
   }
 
   @Override
+  public @NotNull Iterable<? extends @NotNull PsiSymbolReference> getOwnReferences() {
+    PsiReference[] references = getReferences();
+    return references.length == 0 ? Collections.emptyList() : Arrays.asList(references);
+  }
+
+  @Override
+  public PsiReference @NotNull [] getReferences(PsiReferenceService.@NotNull Hints hints) {
+    return ReferenceProvidersRegistry.getReferencesFromProviders(this, hints);
+  }
+
+  @Override
+  public boolean shouldAskParentForReferences(PsiReferenceService.@NotNull Hints hints) {
+    return false;
+  }
+
+  @Override
   public PsiReference @NotNull [] getReferences() {
-    return ReferenceProvidersRegistry.getReferencesFromProviders(this);
+    return getReferences(PsiReferenceService.Hints.NO_HINTS);
   }
 
   @Override

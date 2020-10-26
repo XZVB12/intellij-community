@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.intellij.build.impl
 
+import com.intellij.openapi.util.JDOMUtil
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.text.StringUtil
@@ -95,7 +96,12 @@ class BuildTasksImpl extends BuildTasks {
     })
   }
 
-  static void runApplicationStarter(BuildContext context, String tempDir, List<String> modules, List<String> arguments, Map<String, Object> systemProperties = [:]) {
+  static void runApplicationStarter(BuildContext context,
+                                    String tempDir,
+                                    List<String> modules,
+                                    List<String> arguments,
+                                    Map<String, Object> systemProperties = [:],
+                                    List<String> vmOptions = ["-ea", "-Xmx512m"]) {
     context.ant.mkdir(dir: tempDir)
 
     Set<String> ideClasspath = new LinkedHashSet<String>()
@@ -118,13 +124,39 @@ class BuildTasksImpl extends BuildTasks {
       ideaProperties += ["idea.platform.prefix": context.productProperties.platformPrefix]
     }
 
+    def additionalPluginPaths = context.productProperties.getAdditionalPluginPaths(context)
+    additionalPluginPaths?.each { pluginPath ->
+      File libFile = new File(pluginPath, "lib")
+      libFile.list { _, name ->
+        FileUtil.extensionEquals(name, "jar")
+      }.each { jarName ->
+        File jarFile = new File(libFile, jarName)
+        if (ideClasspath.add(jarFile.absolutePath)) {
+          context.messages.debug(" $jarFile from plugin ${libFile.parentFile.name}")
+        }
+      }
+    }
+
+    disableCompatibleIgnoredPlugins(context, "${tempDir}/config")
+
     BuildUtils.runJava(
       context,
-      ["-ea", "-Xmx512m"],
+      vmOptions,
       ideaProperties + systemProperties,
       ideClasspath,
       "com.intellij.idea.Main",
       arguments)
+  }
+
+  private static void disableCompatibleIgnoredPlugins(BuildContext context, String configDir) {
+    String text = ""
+    context.productProperties.productLayout.compatiblePluginsToIgnore.each { moduleName ->
+      def pluginXml = context.findFileInModuleSources(moduleName, "META-INF/plugin.xml")
+      text += JDOMUtil.load(pluginXml).getChildTextTrim("id") + "\n"
+    }
+    if (!text.isEmpty()) {
+      FileUtil.writeToFile(new File(configDir + "/disabled_plugins.txt"), text)
+    }
   }
 
   File patchIdeaPropertiesFile() {
@@ -209,6 +241,12 @@ idea.fatal.error.notification=disabled
       }
 
       buildContext.productProperties.copyAdditionalFiles(buildContext, buildContext.paths.distAll)
+
+      buildContext.productProperties.getAdditionalPluginPaths(buildContext)?.each { pluginPath ->
+        buildContext.ant.copy(todir: "$buildContext.paths.distAll/plugins/${new File(pluginPath).name}") {
+          fileset(dir: pluginPath)
+        }
+      }
     }
   }
 
@@ -332,7 +370,7 @@ idea.fatal.error.notification=disabled
       }
       else {
         buildContext.messages.info("Skipped building product distributions because 'intellij.build.target.os' property is set to '$BuildOptions.OS_NONE'")
-        distributionJARsBuilder.buildOrderFiles()
+        DistributionJARsBuilder.buildOrderFiles(buildContext)
         distributionJARsBuilder.buildSearchableOptions()
         distributionJARsBuilder.buildNonBundledPlugins()
       }
@@ -425,7 +463,7 @@ idea.fatal.error.notification=disabled
     def pluginsToPublish = new LinkedHashSet<PluginLayout>(
       DistributionJARsBuilder.getPluginsByModules(buildContext, mainPluginModules))
     def distributionJARsBuilder = compilePlatformAndPluginModules(patchApplicationInfo(), pluginsToPublish)
-    distributionJARsBuilder.buildSearchableOptions()
+    distributionJARsBuilder.buildSearchableOptions(buildContext)
     distributionJARsBuilder.buildNonBundledPlugins()
   }
 
@@ -479,17 +517,27 @@ idea.fatal.error.notification=disabled
     }
   }
 
+  //dbus-java is used only on linux for KWallet integration.
+  //It relies on native libraries, causing notarization issues on mac.
+  //So it is excluded from all distributions and manually re-included on linux.
+  static def addDbusJava(BuildContext buildContext, String distDir) {
+    def library = buildContext.findModule("intellij.platform.credentialStore").libraryCollection.findLibrary("dbus-java")
+    library.getFiles(JpsOrderRootType.COMPILED).each { f ->
+      buildContext.ant.copy(todir: "$distDir/lib") {
+        fileset(file: f.absolutePath)
+      }
+    }
+  }
+
   private void logFreeDiskSpace(String phase) {
     CompilationContextImpl.logFreeDiskSpace(buildContext.messages, buildContext.paths.buildOutputRoot, phase)
   }
 
 
   private def copyDependenciesFile() {
-    if (buildContext.gradle.forceRun('Preparing dependencies file', 'dependenciesFile')) {
-      def outputFile = "$buildContext.paths.artifacts/dependencies.txt"
-      buildContext.ant.copy(file: "$buildContext.paths.communityHome/build/dependencies/build/dependencies.properties", tofile: outputFile)
-      buildContext.notifyArtifactBuilt(outputFile)
-    }
+    def outputFile = "$buildContext.paths.artifacts/dependencies.txt"
+    buildContext.ant.copy(file: buildContext.dependenciesProperties.file.absolutePath, tofile: outputFile)
+    buildContext.notifyArtifactBuilt(outputFile)
   }
 
   private void scramble() {
@@ -735,6 +783,10 @@ idea.fatal.error.notification=disabled
       scramble()
     }
     layoutShared()
+    Map<String, String> checkerConfig = buildContext.productProperties.versionCheckerConfig
+    if (checkerConfig != null) {
+      new ClassVersionChecker(checkerConfig).checkVersions(buildContext, new File(buildContext.paths.distAll))
+    }
   }
 
   @Override
@@ -794,6 +846,7 @@ idea.fatal.error.notification=disabled
       }
     }
     else {
+      SVGPreBuilder.copyIconDb(buildContext, SystemInfo.isMac ? "$targetDirectory/Resources" : targetDirectory)
       unpackPty4jNative(buildContext, targetDirectory, null)
     }
   }

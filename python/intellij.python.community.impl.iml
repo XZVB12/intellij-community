@@ -17,8 +17,8 @@
     <orderEntry type="library" name="XmlRPC" level="project" />
     <orderEntry type="module" module-name="intellij.platform.debugger" />
     <orderEntry type="module" module-name="intellij.regexp" exported="" />
-    <orderEntry type="module" module-name="intellij.platform.testRunner" />
-    <orderEntry type="module" module-name="intellij.platform.smRunner" />
+    <orderEntry type="module" module-name="intellij.platform.testRunner" exported="" />
+    <orderEntry type="module" module-name="intellij.platform.smRunner" exported="" />
     <orderEntry type="module" module-name="intellij.spellchecker" />
     <orderEntry type="module" module-name="intellij.platform.debugger.impl" />
     <orderEntry type="module" module-name="intellij.xml.psi.impl" />
@@ -33,7 +33,7 @@
     <orderEntry type="library" name="netty-codec-http" level="project" />
     <orderEntry type="library" name="jsoup" level="project" />
     <orderEntry type="library" name="javax.annotation-api" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="Groovy" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="org.codehaus.groovy:groovy" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Ant" level="project" />
     <orderEntry type="module" module-name="intellij.python.psi.impl" exported="" />
     <orderEntry type="module" module-name="intellij.python.sdk" exported="" />
@@ -69,5 +69,9 @@
         <SOURCES />
       </library>
     </orderEntry>
+    <orderEntry type="library" name="Trove4j" level="project" />
+    <orderEntry type="module" module-name="intellij.platform.util" />
+    <orderEntry type="library" name="netty-buffer" level="project" />
+    <orderEntry type="module" module-name="intellij.platform.core.ui" />
   </component>
 </module>

@@ -2,18 +2,21 @@
 package com.intellij.ide.ui.laf.darcula.ui;
 
 import com.intellij.icons.AllIcons;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.ui.laf.darcula.DarculaUIUtil;
 import com.intellij.openapi.keymap.KeymapUtil;
+import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.ui.ComponentUtil;
 import com.intellij.ui.components.fields.ExtendableTextComponent;
 import com.intellij.ui.components.fields.ExtendableTextComponent.Extension;
-import com.intellij.ui.popup.util.PopupState;
+import com.intellij.ui.popup.PopupState;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -40,12 +43,12 @@ import static com.intellij.util.FontUtil.disableKerning;
  * @author Konstantin Bulenkov
  */
 public abstract class TextFieldWithPopupHandlerUI extends BasicTextFieldUI implements Condition {
-  private static final String DOCUMENT = "document";
-  private static final String MONOSPACED = "monospaced";
-  private static final String VARIANT = "JTextField.variant";
-  private static final String POPUP = "JTextField.Search.FindPopup";
-  private static final String INPLACE_HISTORY = "JTextField.Search.InplaceHistory";
-  private static final String ON_CLEAR = "JTextField.Search.CancelAction";
+  @NonNls private static final String DOCUMENT = "document";
+  @NonNls private static final String MONOSPACED = "monospaced";
+  @NonNls private static final String VARIANT = "JTextField.variant";
+  @NonNls private static final String POPUP = "JTextField.Search.FindPopup";
+  @NonNls private static final String INPLACE_HISTORY = "JTextField.Search.InplaceHistory";
+  @NonNls private static final String ON_CLEAR = "JTextField.Search.CancelAction";
 
   protected final LinkedHashMap<String, IconHolder> icons = new LinkedHashMap<>();
   private final Handler handler = new Handler();
@@ -219,11 +222,15 @@ public abstract class TextFieldWithPopupHandlerUI extends BasicTextFieldUI imple
   }
 
   public static boolean isSearchField(Component c) {
-    return c instanceof JTextField && "search".equals(((JTextField)c).getClientProperty("JTextField.variant"));
+    if(!(c instanceof JTextField)){
+      return false;
+    }
+    var variant = ((JTextField)c).getClientProperty(VARIANT);
+    return "search".equals(variant) || "searchWithJbPopup".equals(variant);
   }
 
   public static boolean isSearchFieldWithHistoryPopup(Component c) {
-    return isSearchField(c) && ((JTextField)c).getClientProperty("JTextField.Search.FindPopup") instanceof JPopupMenu;
+    return isSearchField(c) && ((JTextField)c).getClientProperty(POPUP) instanceof JPopupMenu;
   }
 
   @Nullable
@@ -355,7 +362,7 @@ public abstract class TextFieldWithPopupHandlerUI extends BasicTextFieldUI imple
               showSearchPopup();
               break;
             case CLEAR:
-              Object listener = getComponent().getClientProperty("JTextField.Search.CancelAction");
+              Object listener = getComponent().getClientProperty(ON_CLEAR);
               if (listener instanceof ActionListener) {
                 ((ActionListener)listener).actionPerformed(new ActionEvent(getComponent(), ActionEvent.ACTION_PERFORMED, "action"));
               }
@@ -555,7 +562,15 @@ public abstract class TextFieldWithPopupHandlerUI extends BasicTextFieldUI imple
         if (extension instanceof Extension) {
           addExtension((Extension)extension);
         }
-        addExtension(new SearchExtension());
+        addExtension(new SearchExtension(PopupState.forPopupMenu()));
+        addExtension(new ClearExtension());
+      }
+      else if ("searchWithJbPopup".equals(variant)) {
+        Object extension = getComponent().getClientProperty("search.extension");
+        if (extension instanceof Extension) {
+          addExtension((Extension)extension);
+        }
+        addExtension(new SearchExtension(PopupState.forPopup()));
         addExtension(new ClearExtension());
       }
     }
@@ -577,7 +592,7 @@ public abstract class TextFieldWithPopupHandlerUI extends BasicTextFieldUI imple
           font = UIManager.getFont(getPropertyPrefix() + ".font");
           component.setFont(!monospaced
                             ? !SystemInfo.isMacOSCatalina ? font : disableKerning(font)
-                            : new FontUIResource("monospaced", font.getStyle(), font.getSize()));
+                            : new FontUIResource(Font.MONOSPACED, font.getStyle(), font.getSize()));
         }
       }
     }
@@ -616,8 +631,12 @@ public abstract class TextFieldWithPopupHandlerUI extends BasicTextFieldUI imple
 
 
   private final class SearchExtension implements Extension {
-    private final PopupState myPopupState = new PopupState();
+    private final PopupState myPopupState;
     private Rectangle bounds; // should be bound to IconHandler#bounds
+
+    public SearchExtension(PopupState popupState){
+      this.myPopupState = popupState;
+    }
 
     @Override
     public Icon getIcon(boolean hovered) {
@@ -643,23 +662,40 @@ public abstract class TextFieldWithPopupHandlerUI extends BasicTextFieldUI imple
     @Override
     public Runnable getActionOnClick() {
       JTextComponent component = getComponent();
-      Object property = component == null ? null : component.getClientProperty(POPUP);
-      JPopupMenu popup = property instanceof JPopupMenu ? (JPopupMenu)property : null;
-      return popup == null ? null : () -> {
-        if (myPopupState.isRecentlyHidden()) return; // do not show new popup
-        Rectangle editor = getVisibleEditorRect();
-        if (editor != null) {
-          popup.addPopupMenuListener(myPopupState);
-          popup.show(component, bounds.x, editor.y + editor.height);
-        }
-      };
+      if(component == null){
+        return null;
+      }
+      Object property = component.getClientProperty(POPUP);
+      if(property instanceof JPopupMenu){
+        JPopupMenu popup = (JPopupMenu) property;
+        return () -> {
+          if (myPopupState.isRecentlyHidden()) return; // do not show new popup
+          Rectangle editor = getVisibleEditorRect();
+          if (editor != null) {
+            myPopupState.prepareToShow(popup);
+            popup.show(component, bounds.x, editor.y + editor.height);
+          }
+        };
+      }
+      if(property instanceof JBPopup){
+        JBPopup popup = (JBPopup) property;
+        return () -> {
+          if (myPopupState.isRecentlyHidden()) return; // do not show new popup
+          Rectangle editor = getVisibleEditorRect();
+          if (editor != null) {
+            myPopupState.prepareToShow(popup);
+            popup.showUnderneathOf(component);
+          }
+        };
+      }
+      return null;
     }
 
     @Override
     public String getTooltip() {
       String prefix = null;
-      if (UIUtil.getClientProperty(getComponent(), INPLACE_HISTORY) != null) prefix = "Recent Search";
-      if (getActionOnClick() != null) prefix = "Search History";
+      if (UIUtil.getClientProperty(getComponent(), INPLACE_HISTORY) != null) prefix = IdeBundle.message("tooltip.recent.search");
+      if (getActionOnClick() != null) prefix = IdeBundle.message("tooltip.search.history");
       return (prefix == null) ? null : prefix + " (" + KeymapUtil.getFirstKeyboardShortcutText("ShowSearchHistory") + ")";
     }
 

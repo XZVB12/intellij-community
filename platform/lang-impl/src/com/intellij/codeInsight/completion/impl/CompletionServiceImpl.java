@@ -5,6 +5,9 @@ import com.intellij.codeInsight.completion.*;
 import com.intellij.codeInsight.lookup.Classifier;
 import com.intellij.codeInsight.lookup.ClassifierFactory;
 import com.intellij.codeInsight.lookup.LookupElement;
+import com.intellij.codeWithMe.ClientId;
+import com.intellij.ide.plugins.DynamicPluginListener;
+import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -15,8 +18,11 @@ import com.intellij.patterns.ElementPattern;
 import com.intellij.psi.Weigher;
 import com.intellij.util.Consumer;
 import com.intellij.util.ExceptionUtil;
+import com.intellij.util.messages.MessageBusConnection;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import static com.intellij.codeWithMe.ClientIdKt.isForeignClientOnServer;
 
 /**
  * @author peter
@@ -29,7 +35,8 @@ public final class CompletionServiceImpl extends BaseCompletionService {
 
   public CompletionServiceImpl() {
     super();
-    ApplicationManager.getApplication().getMessageBus().connect().subscribe(ProjectManager.TOPIC, new ProjectManagerListener() {
+    MessageBusConnection connection = ApplicationManager.getApplication().getMessageBus().connect();
+    connection.subscribe(ProjectManager.TOPIC, new ProjectManagerListener() {
       @Override
       public void projectClosing(@NotNull Project project) {
         CompletionProgressIndicator indicator = getCurrentCompletionProgressIndicator();
@@ -40,6 +47,12 @@ public final class CompletionServiceImpl extends BaseCompletionService {
         else if (indicator == null) {
           setCompletionPhase(CompletionPhase.NoCompletion);
         }
+      }
+    });
+    connection.subscribe(DynamicPluginListener.TOPIC, new DynamicPluginListener() {
+      @Override
+      public void beforePluginUnload(@NotNull IdeaPluginDescriptor pluginDescriptor, boolean isUpdate) {
+        setCompletionPhase(CompletionPhase.NoCompletion);
       }
     });
   }
@@ -182,7 +195,6 @@ public final class CompletionServiceImpl extends BaseCompletionService {
     return phase != CompletionPhase.NoCompletion && !(phase instanceof CompletionPhase.ZombiePhase) &&
            !(phase instanceof CompletionPhase.ItemsCalculated);
   }
-
 
   public static CompletionPhase getCompletionPhase() {
     return ourPhase;

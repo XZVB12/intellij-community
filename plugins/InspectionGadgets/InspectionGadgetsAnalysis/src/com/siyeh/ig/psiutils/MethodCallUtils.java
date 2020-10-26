@@ -37,7 +37,7 @@ import java.util.regex.Pattern;
 
 import static com.intellij.util.ObjectUtils.tryCast;
 
-public class MethodCallUtils {
+public final class MethodCallUtils {
 
   @NonNls private static final Set<String> regexMethodNames = new HashSet<>(5);
 
@@ -51,8 +51,7 @@ public class MethodCallUtils {
 
   private MethodCallUtils() {}
 
-  @Nullable
-  public static String getMethodName(@NotNull PsiMethodCallExpression expression) {
+  public static @Nullable @NonNls String getMethodName(@NotNull PsiMethodCallExpression expression) {
     return expression.getMethodExpression().getReferenceName();
   }
 
@@ -222,13 +221,13 @@ public class MethodCallUtils {
 
   public static boolean isMethodCallOnVariable(@NotNull PsiMethodCallExpression expression,
                                                @NotNull PsiVariable variable,
-                                               @NotNull String methodName) {
+                                               @NotNull @NonNls String methodName) {
     final PsiReferenceExpression methodExpression = expression.getMethodExpression();
     @NonNls final String name = methodExpression.getReferenceName();
     if (!methodName.equals(name)) {
       return false;
     }
-    final PsiExpression qualifier = ParenthesesUtils.stripParentheses(methodExpression.getQualifierExpression());
+    final PsiExpression qualifier = PsiUtil.skipParenthesizedExprDown(methodExpression.getQualifierExpression());
     if (!(qualifier instanceof PsiReferenceExpression)) {
       return false;
     }
@@ -303,7 +302,7 @@ public class MethodCallUtils {
   }
 
   public static boolean hasSuperQualifier(@NotNull PsiMethodCallExpression expression) {
-    return ParenthesesUtils.stripParentheses(expression.getMethodExpression().getQualifierExpression()) instanceof PsiSuperExpression;
+    return PsiUtil.skipParenthesizedExprDown(expression.getMethodExpression().getQualifierExpression()) instanceof PsiSuperExpression;
   }
 
   /**
@@ -330,7 +329,7 @@ public class MethodCallUtils {
   }
 
   public static boolean callWithNonConstantString(@NotNull PsiMethodCallExpression expression, boolean considerStaticFinalConstant,
-                                                  String className, String... methodNames) {
+                                                  @NonNls String className, @NonNls String... methodNames) {
     final String methodName = getMethodName(expression);
     boolean found = false;
     for (String name : methodNames) {
@@ -354,7 +353,7 @@ public class MethodCallUtils {
       return false;
     }
     final PsiExpressionList argumentList = expression.getArgumentList();
-    final PsiExpression argument = ParenthesesUtils.stripParentheses(ExpressionUtils.getFirstExpressionInList(argumentList));
+    final PsiExpression argument = PsiUtil.skipParenthesizedExprDown(ExpressionUtils.getFirstExpressionInList(argumentList));
     if (argument == null) {
       return false;
     }
@@ -457,7 +456,7 @@ public class MethodCallUtils {
     final PsiExpression[] arguments = argumentList.getExpressions();
     for (int i = 0; i < arguments.length; i++) {
       PsiExpression argument = arguments[i];
-      argument = ParenthesesUtils.stripParentheses(argument);
+      argument = PsiUtil.skipParenthesizedExprDown(argument);
       if (argument instanceof PsiReferenceExpression) {
         final PsiElement target = ((PsiReferenceExpression)argument).resolve();
         if (target == parameter) {

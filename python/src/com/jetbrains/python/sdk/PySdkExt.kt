@@ -18,6 +18,7 @@ package com.jetbrains.python.sdk
 import com.intellij.execution.ExecutionException
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.progress.ProgressManager
@@ -30,6 +31,7 @@ import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.util.Key
+import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.util.UserDataHolder
 import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.openapi.util.io.FileUtil
@@ -43,6 +45,7 @@ import com.intellij.webcore.packaging.PackagesNotificationPanel
 import com.jetbrains.python.PyBundle
 import com.jetbrains.python.packaging.ui.PyPackageManagementService
 import com.jetbrains.python.psi.LanguageLevel
+import com.jetbrains.python.sdk.conda.PyCondaSdkCustomizer
 import com.jetbrains.python.sdk.flavors.CondaEnvSdkFlavor
 import com.jetbrains.python.sdk.flavors.PythonSdkFlavor
 import com.jetbrains.python.sdk.flavors.VirtualEnvSdkFlavor
@@ -100,7 +103,8 @@ fun detectVirtualEnvs(module: Module?, existingSdks: List<Sdk>, context: UserDat
   filterSuggestedPaths(VirtualEnvSdkFlavor.getInstance().suggestHomePaths(module, context), existingSdks, module)
 
 fun detectCondaEnvs(module: Module?, existingSdks: List<Sdk>, context: UserDataHolder): List<PyDetectedSdk> =
-  filterSuggestedPaths(CondaEnvSdkFlavor.getInstance().suggestHomePaths(module, context), existingSdks, module)
+  filterSuggestedPaths(CondaEnvSdkFlavor.getInstance().suggestHomePaths(module, context), existingSdks, module,
+                       !PyCondaSdkCustomizer.instance.disableEnvsSorting)
 
 fun findExistingAssociatedSdk(module: Module, existingSdks: List<Sdk>): Sdk? {
   return existingSdks
@@ -123,17 +127,25 @@ fun createSdkByGenerateTask(generateSdkHomePath: Task.WithResult<String, Executi
                             suggestedSdkName: String?): Sdk? {
   val homeFile = try {
     val homePath = ProgressManager.getInstance().run(generateSdkHomePath)
-    StandardFileSystems.local().refreshAndFindFileByPath(homePath) ?: throw ExecutionException("Directory $homePath not found")
+    StandardFileSystems.local().refreshAndFindFileByPath(homePath) ?: throw ExecutionException(
+      PyBundle.message("python.sdk.directory.not.found", homePath)
+    )
   }
   catch (e: ExecutionException) {
-    val description = PyPackageManagementService.toErrorDescription(listOf(e), baseSdk) ?: return null
-    PackagesNotificationPanel.showError(PyBundle.message("python.sdk.failed.to.create.interpreter.title"), description)
+    showSdkExecutionException(baseSdk, e, PyBundle.message("python.sdk.failed.to.create.interpreter.title"))
     return null
   }
   val suggestedName = suggestedSdkName ?: suggestAssociatedSdkName(homeFile.path, associatedProjectPath)
   return SdkConfigurationUtil.setupSdk(existingSdks.toTypedArray(), homeFile,
                                        PythonSdkType.getInstance(),
-                                       false, null, suggestedName) ?: return null
+                                       false, null, suggestedName)
+}
+
+fun showSdkExecutionException(sdk: Sdk?, e: ExecutionException, @NlsContexts.DialogTitle title: String) {
+  runInEdt {
+    val description = PyPackageManagementService.toErrorDescription(listOf(e), sdk) ?: return@runInEdt
+    PackagesNotificationPanel.showError(title, description)
+  }
 }
 
 fun Sdk.associateWithModule(module: Module?, newProjectPath: String?) {
@@ -163,6 +175,7 @@ val Sdk.associatedModulePath: String?
   // TODO: Support .project associations
   get() = associatedPathFromAdditionalData /*?: associatedPathFromDotProject*/
 
+@Deprecated("Use Sdk.associatedModuleDir instead. There may be several Module objects opened in different projects for a single *.iml module file. To be removed in 2021.2")
 val Sdk.associatedModule: Module?
   get() {
     val associatedPath = associatedModulePath
@@ -171,6 +184,9 @@ val Sdk.associatedModule: Module?
       .flatMap { ModuleManager.getInstance(it).modules.asSequence() }
       .firstOrNull { it?.basePath == associatedPath }
   }
+
+val Sdk.associatedModuleDir: VirtualFile?
+  get() = associatedModulePath?.let { StandardFileSystems.local().findFileByPath(it) }
 
 fun Sdk.adminPermissionsNeeded(): Boolean {
   val pathToCheck = sitePackagesDirectory?.path ?: homePath ?: return false
@@ -313,16 +329,22 @@ fun Sdk.getOrCreateAdditionalData(): PythonSdkAdditionalData {
 
 private fun filterSuggestedPaths(suggestedPaths: MutableCollection<String>,
                                  existingSdks: List<Sdk>,
-                                 module: Module?): List<PyDetectedSdk> {
+                                 module: Module?,
+                                 sortByModule: Boolean = true): List<PyDetectedSdk> {
   val existingPaths = existingSdks.map { it.homePath }.toSet()
-  return suggestedPaths
+  val paths = suggestedPaths
     .asSequence()
     .filterNot { it in existingPaths }
     .distinct()
     .map { PyDetectedSdk(it) }
-    .sortedWith(compareBy({ !it.isAssociatedWithModule(module) },
-                          { it.homePath }))
     .toList()
+  return if (sortByModule) {
+    paths.sortedWith(compareBy({ !it.isAssociatedWithModule(module) },
+                               { it.homePath }))
+  }
+  else {
+    paths
+  }
 }
 
 val ACTIVE_PYTHON_SDK_TOPIC: Topic<ActiveSdkListener> = Topic("Active SDK changed", ActiveSdkListener::class.java)

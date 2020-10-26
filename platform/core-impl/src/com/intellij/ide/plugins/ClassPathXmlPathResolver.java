@@ -6,7 +6,7 @@ import com.intellij.openapi.util.SafeJdomFactory;
 import com.intellij.util.PathUtil;
 import org.jdom.Element;
 import org.jdom.JDOMException;
-import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -17,19 +17,17 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-@ApiStatus.Internal
-public final class ClassPathXmlPathResolver implements PathBasedJdomXIncluder.PathResolver<String> {
+final class ClassPathXmlPathResolver implements PathBasedJdomXIncluder.PathResolver<String> {
   private final ClassLoader classLoader;
 
-  @ApiStatus.Internal
-  public ClassPathXmlPathResolver(@NotNull ClassLoader classLoader) {
+  ClassPathXmlPathResolver(@NotNull ClassLoader classLoader) {
     this.classLoader = classLoader;
   }
 
   @NotNull
   @Override
   public List<String> createNewStack(@Nullable Path base) {
-    List<String> stack = new ArrayList<>(2);
+    List<@NonNls String> stack = new ArrayList<>(2);
     stack.add("META-INF");
     return stack;
   }

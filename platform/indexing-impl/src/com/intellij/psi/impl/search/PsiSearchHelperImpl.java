@@ -1,10 +1,11 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.impl.search;
 
 import com.intellij.concurrency.AsyncFuture;
 import com.intellij.concurrency.AsyncUtil;
 import com.intellij.concurrency.JobLauncher;
 import com.intellij.concurrency.SensitiveProgressWrapper;
+import com.intellij.find.ngrams.TrigramIndex;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationListener;
 import com.intellij.openapi.application.ApplicationManager;
@@ -19,11 +20,13 @@ import com.intellij.openapi.progress.impl.CoreProgressManager;
 import com.intellij.openapi.progress.util.ProgressWrapper;
 import com.intellij.openapi.progress.util.TooManyUsagesStatus;
 import com.intellij.openapi.project.DumbService;
+import com.intellij.openapi.project.DumbUtil;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.text.TrigramBuilder;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.PsiManagerEx;
@@ -36,13 +39,17 @@ import com.intellij.util.Processor;
 import com.intellij.util.Processors;
 import com.intellij.util.SmartList;
 import com.intellij.util.codeInsight.CommentUtilCore;
+import com.intellij.util.containers.CollectionFactory;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.ObjectIntHashMap;
 import com.intellij.util.indexing.DumbModeAccessType;
 import com.intellij.util.indexing.FileBasedIndex;
 import com.intellij.util.indexing.IndexingBundle;
 import com.intellij.util.text.StringSearcher;
 import gnu.trove.THashMap;
 import gnu.trove.THashSet;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -136,6 +143,19 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
     EnumSet<Options> options = makeOptions(caseSensitive, processInjectedPsi);
 
     return processElementsWithWord(searchScope, text, searchContext, options, null, new SearchSession(), processor);
+  }
+
+  @Override
+  public boolean hasIdentifierInFile(@NotNull PsiFile file, @NotNull String name) {
+    PsiUtilCore.ensureValid(file);
+    if (file.getVirtualFile() == null || DumbService.isDumb(file.getProject())) {
+      return StringUtil.contains(file.getViewProvider().getContents(), name);
+    }
+
+    // TODO: direct forward index access is not used right now since IdIndex shared index doesn't have forward index
+    GlobalSearchScope fileScope = GlobalSearchScope.fileScope(file);
+    IdIndexEntry key = new IdIndexEntry(name, true);
+    return !FileBasedIndex.getInstance().getContainingFiles(IdIndex.NAME, key, fileScope).isEmpty();
   }
 
   @NotNull
@@ -327,8 +347,9 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
         }
       };
 
-      List<VirtualFile> directoryNearTargetFiles =
-        ContainerUtil.filter(allFiles, f -> directoryNearTargetScope.contains(f) && !targets.contains(f));
+      List<VirtualFile> directoryNearTargetFiles = ReadAction.compute(() ->
+        ContainerUtil.filter(allFiles, f -> directoryNearTargetScope.contains(f) && !targets.contains(f))
+      );
       if (!directoryNearTargetFiles.isEmpty()) {
         priorities.add(directoryNearTargetFiles);
         allFiles.removeAll(directoryNearTargetFiles);
@@ -497,13 +518,16 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
   }
 
   private void processVirtualFile(@NotNull VirtualFile vfile,
-                                  @NotNull AtomicBoolean stopped, @NotNull Processor<? super PsiFile> localProcessor) throws ApplicationUtil.CannotRunReadActionException {
+                                  @NotNull AtomicBoolean stopped,
+                                  @NotNull Processor<? super PsiFile> localProcessor) throws ApplicationUtil.CannotRunReadActionException {
     PsiFile file = ApplicationUtil.tryRunReadAction(() -> vfile.isValid() ? myManager.findFile(vfile) : null);
     if (file != null && !(file instanceof PsiBinaryFile)) {
       ApplicationUtil.tryRunReadAction(() -> {
         Project project = myManager.getProject();
         if (project.isDisposed()) throw new ProcessCanceledException();
-        if (DumbService.isDumb(project)) throw ApplicationUtil.CannotRunReadActionException.create();
+        if (!DumbUtil.getInstance(project).mayUseIndices()) {
+          throw ApplicationUtil.CannotRunReadActionException.create();
+        }
 
         List<PsiFile> psiRoots = file.getViewProvider().getAllFiles();
         Set<PsiFile> processed = new THashSet<>(psiRoots.size() * 2, (float)0.5);
@@ -533,24 +557,30 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
     processCandidateFilesForText(scope, searchContext, caseSensitively, text, Processors.cancelableCollectProcessor(result));
   }
 
+  public boolean processCandidateFilesForText(@NotNull GlobalSearchScope scope,
+                                              short searchContext,
+                                              boolean caseSensitively,
+                                              boolean useOnlyWordHashToSearch,
+                                              @NotNull String text,
+                                              @NotNull Processor<? super VirtualFile> processor) {
+    return processFilesContainingAllKeys(myManager.getProject(), scope, processor,
+                                         TextIndexQuery.fromWord(text, caseSensitively, useOnlyWordHashToSearch, searchContext));
+  }
+
   @Override
   public boolean processCandidateFilesForText(@NotNull GlobalSearchScope scope,
                                               short searchContext,
                                               boolean caseSensitively,
                                               @NotNull String text,
                                               @NotNull Processor<? super VirtualFile> processor) {
-    List<IdIndexEntry> entries = getWordEntries(text, caseSensitively);
-    if (entries.isEmpty()) return true;
-
-    Condition<Integer> contextMatches = matchContextCondition(searchContext);
-    return processFilesContainingAllKeys(myManager.getProject(), scope, contextMatches, entries, processor);
+    return processCandidateFilesForText(scope, searchContext, caseSensitively, false, text, processor);
   }
 
   @Override
   public PsiFile @NotNull [] findFilesWithPlainTextWords(@NotNull String word) {
-    return CacheManager.SERVICE.getInstance(myManager.getProject()).getFilesWithWord(word, UsageSearchContext.IN_PLAIN_TEXT,
-                                                                                     GlobalSearchScope.projectScope(myManager.getProject()),
-                                                                                     true);
+    return CacheManager.getInstance(myManager.getProject()).getFilesWithWord(word, UsageSearchContext.IN_PLAIN_TEXT,
+                                                                             GlobalSearchScope.projectScope(myManager.getProject()),
+                                                                             true);
   }
 
 
@@ -581,7 +611,8 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
       }
       return initialScope;
     });
-    PsiFile[] files = myDumbService.runReadActionInSmartMode(() -> CacheManager.SERVICE.getInstance(myManager.getProject()).getFilesWithWord(wordToSearch, UsageSearchContext.IN_PLAIN_TEXT, theSearchScope, true));
+    PsiFile[] files = myDumbService.runReadActionInSmartMode(() -> CacheManager.getInstance(myManager.getProject())
+      .getFilesWithWord(wordToSearch, UsageSearchContext.IN_PLAIN_TEXT, theSearchScope, true));
 
     StringSearcher searcher = new StringSearcher(qName, true, true, false);
 
@@ -628,7 +659,7 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
                                          @NotNull GlobalSearchScope scope,
                                          @NotNull Processor<? super PsiFile> processor,
                                          boolean caseSensitively) {
-    return CacheManager.SERVICE.getInstance(myManager.getProject()).processFilesWithWord(processor, word, UsageSearchContext.IN_CODE, scope, caseSensitively);
+    return CacheManager.getInstance(myManager.getProject()).processFilesWithWord(processor, word, UsageSearchContext.IN_CODE, scope, caseSensitively);
   }
 
   @Override
@@ -636,24 +667,24 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
                                                @NotNull GlobalSearchScope scope,
                                                @NotNull Processor<? super PsiFile> processor,
                                                boolean caseSensitively) {
-    return CacheManager.SERVICE.getInstance(myManager.getProject()).processFilesWithWord(processor, word, UsageSearchContext.IN_PLAIN_TEXT, scope, caseSensitively);
+    return CacheManager.getInstance(myManager.getProject()).processFilesWithWord(processor, word, UsageSearchContext.IN_PLAIN_TEXT, scope, caseSensitively);
   }
 
   @Override
   public boolean processAllFilesWithWordInComments(@NotNull String word,
                                                    @NotNull GlobalSearchScope scope,
                                                    @NotNull Processor<? super PsiFile> processor) {
-    return CacheManager.SERVICE.getInstance(myManager.getProject()).processFilesWithWord(processor, word, UsageSearchContext.IN_COMMENTS, scope, true);
+    return CacheManager.getInstance(myManager.getProject()).processFilesWithWord(processor, word, UsageSearchContext.IN_COMMENTS, scope, true);
   }
 
   @Override
   public boolean processAllFilesWithWordInLiterals(@NotNull String word,
                                                    @NotNull GlobalSearchScope scope,
                                                    @NotNull Processor<? super PsiFile> processor) {
-    return CacheManager.SERVICE.getInstance(myManager.getProject()).processFilesWithWord(processor, word, UsageSearchContext.IN_STRINGS, scope, true);
+    return CacheManager.getInstance(myManager.getProject()).processFilesWithWord(processor, word, UsageSearchContext.IN_STRINGS, scope, true);
   }
 
-  private static class RequestWithProcessor implements WordRequestInfo {
+  private static final class RequestWithProcessor implements WordRequestInfo {
     @NotNull private final PsiSearchRequest request;
     @NotNull private Processor<? super PsiReference> refProcessor;
 
@@ -722,7 +753,7 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
       return false;
     }
     do {
-      Map<Set<IdIndexEntry>, Collection<RequestWithProcessor>> globals = new HashMap<>();
+      Map<TextIndexQuery, Collection<RequestWithProcessor>> globals = new HashMap<>();
       List<Computable<Boolean>> customs = new ArrayList<>();
       Set<RequestWithProcessor> locals = new LinkedHashSet<>();
       Map<RequestWithProcessor, Processor<? super PsiElement>> localProcessors = new THashMap<>();
@@ -787,7 +818,7 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
     return changed ? QueryRequestsRunResult.CHANGED : QueryRequestsRunResult.UNCHANGED;
   }
 
-  private boolean processGlobalRequestsOptimized(@NotNull Map<Set<IdIndexEntry>, Collection<RequestWithProcessor>> singles,
+  private boolean processGlobalRequestsOptimized(@NotNull Map<TextIndexQuery, Collection<RequestWithProcessor>> singles,
                                                  @NotNull ProgressIndicator progress,
                                                  @NotNull Map<RequestWithProcessor, Processor<? super PsiElement>> localProcessors) {
     if (singles.isEmpty()) {
@@ -805,9 +836,9 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
     return processGlobalRequests(singles, progress, localProcessors);
   }
 
-  <T extends WordRequestInfo> boolean processGlobalRequests(@NotNull Map<Set<IdIndexEntry>, Collection<T>> singles,
-                                @NotNull ProgressIndicator progress,
-                                @NotNull Map<T, Processor<? super PsiElement>> localProcessors) {
+  <T extends WordRequestInfo> boolean processGlobalRequests(@NotNull Map<TextIndexQuery, Collection<T>> singles,
+                                                            @NotNull ProgressIndicator progress,
+                                                            @NotNull Map<T, Processor<? super PsiElement>> localProcessors) {
     progress.pushState();
     progress.setText(IndexingBundle.message("psi.scanning.files.progress"));
     boolean result;
@@ -898,34 +929,24 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
 
   @NotNull
   private static BulkOccurrenceProcessor adaptProcessor(@NotNull PsiSearchRequest singleRequest,
-                                                       @NotNull Processor<? super PsiReference> consumer) {
+                                                        @NotNull Processor<? super PsiReference> consumer) {
     SearchScope searchScope = singleRequest.searchScope;
     boolean ignoreInjectedPsi = searchScope instanceof LocalSearchScope && ((LocalSearchScope)searchScope).isIgnoreInjectedPsi();
     RequestResultProcessor wrapped = singleRequest.processor;
     return new BulkOccurrenceProcessor() {
       @Override
       public boolean execute(@NotNull PsiElement scope, int @NotNull [] offsetsInScope, @NotNull StringSearcher searcher) {
-        try {
-          ProgressManager.checkCanceled();
-          if (wrapped instanceof RequestResultProcessor.BulkResultProcessor) {
-            return ((RequestResultProcessor.BulkResultProcessor)wrapped).processTextOccurrences(scope, offsetsInScope, consumer);
-          }
+        ProgressManager.checkCanceled();
+        if (wrapped instanceof RequestResultProcessor.BulkResultProcessor) {
+          return ((RequestResultProcessor.BulkResultProcessor)wrapped).processTextOccurrences(scope, offsetsInScope, consumer);
+        }
 
-          return LowLevelSearchUtil.processElementsAtOffsets(scope, searcher, !ignoreInjectedPsi,
-                                                             getOrCreateIndicator(), offsetsInScope,
-                                                             (element, offsetInElement) -> {
+        return LowLevelSearchUtil.processElementsAtOffsets(scope, searcher, !ignoreInjectedPsi,
+                                                           getOrCreateIndicator(), offsetsInScope,
+                                                           (element, offsetInElement) -> {
             if (ignoreInjectedPsi && element instanceof PsiLanguageInjectionHost) return true;
             return wrapped.processTextOccurrence(element, offsetInElement, consumer);
           });
-        }
-        catch (ProcessCanceledException e) {
-          throw e;
-        }
-        catch (Exception | Error e) {
-          PsiFile file = scope.getContainingFile();
-          LOG.error("Error during processing of: " + (file != null ? file.getName() : scope), e);
-          return true;
-        }
       }
 
       @Override
@@ -936,53 +957,62 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
   }
 
   // returns total size
-  private <T extends WordRequestInfo> int collectFiles(@NotNull Map<Set<IdIndexEntry>, Collection<T>> singles,
-                            @NotNull Map<VirtualFile, Collection<T>> targetFiles,
-                            @NotNull Map<VirtualFile, Collection<T>> nearDirectoryFiles,
-                            @NotNull Map<VirtualFile, Collection<T>> containerNameFiles,
-                            @NotNull Map<VirtualFile, Collection<T>> restFiles) {
+  private <T extends WordRequestInfo> int collectFiles(@NotNull Map<TextIndexQuery, Collection<T>> singles,
+                                                       @NotNull Map<VirtualFile, Collection<T>> targetFiles,
+                                                       @NotNull Map<VirtualFile, Collection<T>> nearDirectoryFiles,
+                                                       @NotNull Map<VirtualFile, Collection<T>> containerNameFiles,
+                                                       @NotNull Map<VirtualFile, Collection<T>> restFiles) {
     int totalSize = 0;
-    for (Map.Entry<Set<IdIndexEntry>, Collection<T>> entry : singles.entrySet()) {
+    for (Map.Entry<TextIndexQuery, Collection<T>> entry : singles.entrySet()) {
       ProgressManager.checkCanceled();
-      Set<IdIndexEntry> keys = entry.getKey();
-      if (keys.isEmpty()) {
+      TextIndexQuery key = entry.getKey();
+      if (key.isEmpty()) {
         continue;
       }
-
       Collection<T> processors = entry.getValue();
-
       GlobalSearchScope commonScope = uniteScopes(processors);
       // files which are target of the search
       Set<VirtualFile> thisTargetFiles = ReadAction.compute(() -> processors.stream().flatMap(p -> p.getSearchSession().getTargetVirtualFiles().stream()).filter(commonScope::contains).collect(Collectors.toSet()));
       // directories in which target files are contained
       Set<VirtualFile> thisTargetDirectories = ContainerUtil.map2SetNotNull(thisTargetFiles, f -> f.getParent());
-
-      Set<VirtualFile> intersectionWithContainerNameFiles = intersectionWithContainerNameFiles(commonScope, processors, keys);
-
+      Set<VirtualFile> intersectionWithContainerNameFiles = intersectionWithContainerNameFiles(commonScope, processors, key);
       List<VirtualFile> allFilesForKeys = new ArrayList<>();
-      processFilesContainingAllKeys(myManager.getProject(), commonScope, null, keys, Processors.cancelableCollectProcessor(allFilesForKeys));
+      processFilesContainingAllKeys(myManager.getProject(), commonScope, Processors.cancelableCollectProcessor(allFilesForKeys), key);
+      ObjectIntHashMap<VirtualFile> file2Mask = new ObjectIntHashMap<>();
+      IntRef maskRef = new IntRef();
       for (VirtualFile file : allFilesForKeys) {
         ProgressManager.checkCanceled();
-        for (IdIndexEntry indexEntry : keys) {
+        for (IdIndexEntry indexEntry : key.myIdIndexEntries) {
           ProgressManager.checkCanceled();
+          maskRef.set(0);
           myDumbService.runReadActionInSmartMode(
             () -> FileBasedIndex.getInstance().processValues(IdIndex.NAME, indexEntry, file, (__, value) -> {
-              int mask = value.intValue();
-              Map<VirtualFile, Collection<T>> result =
-                thisTargetFiles.contains(file) ? targetFiles :
-                thisTargetDirectories.contains(file.getParent()) ? nearDirectoryFiles :
-                intersectionWithContainerNameFiles != null && intersectionWithContainerNameFiles.contains(file) ? containerNameFiles
-                : restFiles;
-              for (T single : processors) {
-                ProgressManager.checkCanceled();
-                if ((mask & single.getSearchContext()) != 0 && single.getSearchScope().contains(file)) {
-                  result.computeIfAbsent(file, ___ -> new SmartList<>()).add(single);
-                }
-              }
+              maskRef.set(value);
               return true;
             }, commonScope));
+          int oldMask = file2Mask.get(file, UsageSearchContext.ANY);
+          file2Mask.put(file, oldMask & maskRef.get());
         }
       }
+      file2Mask.forEachEntry((file, mask)->{
+        myDumbService.runReadActionInSmartMode(() -> {
+          Map<VirtualFile, Collection<T>> result =
+            thisTargetFiles.contains(file)
+            ? targetFiles
+            : thisTargetDirectories.contains(file.getParent())
+              ? nearDirectoryFiles
+              : intersectionWithContainerNameFiles != null && intersectionWithContainerNameFiles.contains(file)
+                ? containerNameFiles
+                : restFiles;
+          for (T single : processors) {
+            ProgressManager.checkCanceled();
+            if ((mask & single.getSearchContext()) != 0 && single.getSearchScope().contains(file)) {
+              result.computeIfAbsent(file, ___ -> new SmartList<>()).add(single);
+            }
+          }
+        });
+        return true;
+      });
       totalSize += allFilesForKeys.size();
     }
     return totalSize;
@@ -991,7 +1021,7 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
   @Nullable("null means we did not find common container files")
   private Set<VirtualFile> intersectionWithContainerNameFiles(@NotNull GlobalSearchScope commonScope,
                                                               @NotNull Collection<? extends WordRequestInfo> data,
-                                                              @NotNull Set<IdIndexEntry> keys) {
+                                                              @NotNull TextIndexQuery query) {
     String commonName = null;
     short searchContext = 0;
     boolean caseSensitive = true;
@@ -1015,14 +1045,11 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
     }
     if (commonName == null) return null;
 
-    List<IdIndexEntry> entries = getWordEntries(commonName, caseSensitive);
-    if (entries.isEmpty()) return null;
-    entries.addAll(keys); // should find words from both text and container names
+    TextIndexQuery commonNameQuery = TextIndexQuery.fromWord(commonName, caseSensitive, searchContext);
 
-    Condition<Integer> contextMatches = matchContextCondition(searchContext);
     Set<VirtualFile> containerFiles = new THashSet<>();
     Processor<VirtualFile> processor = Processors.cancelableCollectProcessor(containerFiles);
-    processFilesContainingAllKeys(myManager.getProject(), commonScope, contextMatches, entries, processor);
+    processFilesContainingAllKeys(myManager.getProject(), commonScope, processor, query, commonNameQuery);
 
     return containerFiles;
   }
@@ -1040,7 +1067,7 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
 
   private static void distributePrimitives(@NotNull Map<SearchRequestCollector, Processor<? super PsiReference>> collectors,
                                            @NotNull Set<RequestWithProcessor> locals,
-                                           @NotNull Map<Set<IdIndexEntry>, Collection<RequestWithProcessor>> globals,
+                                           @NotNull Map<TextIndexQuery, Collection<RequestWithProcessor>> globals,
                                            @NotNull List<? super Computable<Boolean>> customs,
                                            @NotNull Map<RequestWithProcessor, Processor<? super PsiElement>> localProcessors) {
     for (Map.Entry<SearchRequestCollector, Processor<? super PsiReference>> entry : collectors.entrySet()) {
@@ -1054,7 +1081,7 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
           registerRequest(locals, primitive, processor);
         }
         else {
-          Set<IdIndexEntry> key = new HashSet<>(getWordEntries(primitive.word, primitive.caseSensitive));
+          TextIndexQuery key = TextIndexQuery.fromWord(primitive.word, primitive.caseSensitive, null);
           registerRequest(globals.computeIfAbsent(key, __ -> new SmartList<>()), primitive, processor);
         }
       }
@@ -1064,7 +1091,7 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
       }
     }
 
-    for (Map.Entry<Set<IdIndexEntry>, Collection<RequestWithProcessor>> entry : globals.entrySet()) {
+    for (Map.Entry<TextIndexQuery, Collection<RequestWithProcessor>> entry : globals.entrySet()) {
       ProgressManager.checkCanceled();
       for (RequestWithProcessor singleRequest : entry.getValue()) {
         ProgressManager.checkCanceled();
@@ -1129,8 +1156,8 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
         return currentFilesCount < maxFilesToProcess && accumulatedFileSizeToProcess < maxFilesSizeToProcess;
       }
     };
-    List<IdIndexEntry> keys = getWordEntries(name, true);
-    boolean cheap = keys.isEmpty() || processFilesContainingAllKeys(myManager.getProject(), scope, null, keys, processor);
+    TextIndexQuery query = TextIndexQuery.fromWord(name, true, null);
+    boolean cheap = processFilesContainingAllKeys(myManager.getProject(), scope, processor, query);
 
     if (!cheap) {
       return SearchCostResult.TOO_MANY_OCCURRENCES;
@@ -1141,31 +1168,135 @@ public class PsiSearchHelperImpl implements PsiSearchHelper {
 
   private static boolean processFilesContainingAllKeys(@NotNull Project project,
                                                        @NotNull GlobalSearchScope scope,
-                                                       @Nullable Condition<? super Integer> checker,
-                                                       @NotNull Collection<IdIndexEntry> keys,
-                                                       @NotNull Processor<? super VirtualFile> processor) {
-    Computable<Boolean> query =
-      () -> FileBasedIndex.getInstance().processFilesContainingAllKeys(IdIndex.NAME, keys, scope, checker, processor);
+                                                       @NotNull Processor<? super VirtualFile> processor,
+                                                       TextIndexQuery @NotNull ... textIndexQueries) {
+    if (ContainerUtil.find(textIndexQueries, query -> !query.isEmpty()) == null) return true;
 
-    Boolean[] result = {null};
+    Computable<Boolean> query =
+      () -> {
+        Collection<FileBasedIndex.AllKeysQuery<?, ?>> queries = ContainerUtil.flatMap(Arrays.asList(textIndexQueries), q -> q.toFileBasedIndexQueries());
+        return FileBasedIndex.getInstance().processFilesContainingAllKeys(queries, scope, processor);
+      };
+
     if (FileBasedIndex.isIndexAccessDuringDumbModeEnabled()) {
-      ReadAction.nonBlocking(() ->
-        FileBasedIndex.getInstance().ignoreDumbMode(() -> result[0] = query.compute(), project, DumbModeAccessType.RAW_INDEX_DATA_ACCEPTABLE)
-      ).executeSynchronously();
+      if (ApplicationManager.getApplication().isReadAccessAllowed() &&
+          (!DumbService.isDumb(project) ||
+          FileBasedIndex.getInstance().getCurrentDumbModeAccessType() != null)) {
+        return query.compute();
+      }
+
+      return ReadAction.compute(() -> FileBasedIndex.getInstance().ignoreDumbMode(
+        DumbModeAccessType.RAW_INDEX_DATA_ACCEPTABLE,
+        () -> query.compute()
+      ));
     }
-    return result[0] != null ? result[0] : DumbService.getInstance(project).runReadActionInSmartMode(query);
+    else {
+      return DumbService.getInstance(project).runReadActionInSmartMode(query);
+    }
   }
 
-  @NotNull
-  static List<IdIndexEntry> getWordEntries(@NotNull String name, boolean caseSensitively) {
-    List<String> words = StringUtil.getWordsInStringLongestFirst(name);
-    if (words.isEmpty()) {
-      String trimmed = name.trim();
-      if (StringUtil.isNotEmpty(trimmed)) {
-        words = Collections.singletonList(trimmed);
-      }
+  @ApiStatus.Internal
+  public static final class TextIndexQuery {
+    @NotNull
+    private final Set<IdIndexEntry> myIdIndexEntries;
+    @NotNull
+    private final Set<Integer> myTrigrams;
+    @Nullable
+    private final Short myContext;
+    private final boolean myUseOnlyWeakHashToSearch;
+
+    private TextIndexQuery(@NotNull Set<IdIndexEntry> idIndexEntries,
+                           @NotNull Set<Integer> trigrams,
+                           @Nullable Short context,
+                           boolean useOnlyWeakHashToSearch) {
+      myIdIndexEntries = idIndexEntries;
+      myTrigrams = trigrams;
+      myContext = context;
+      myUseOnlyWeakHashToSearch = useOnlyWeakHashToSearch;
     }
-    if (words.isEmpty()) return Collections.emptyList();
-    return ContainerUtil.map2List(words, word -> new IdIndexEntry(word, caseSensitively));
+
+    public boolean isEmpty() {
+      return myIdIndexEntries.isEmpty();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      TextIndexQuery query = (TextIndexQuery)o;
+      return myIdIndexEntries.equals(query.myIdIndexEntries) &&
+             myTrigrams.equals(query.myTrigrams) &&
+             Objects.equals(myContext, query.myContext);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(myIdIndexEntries, myTrigrams, myContext);
+    }
+
+    @NotNull
+    public List<FileBasedIndex.AllKeysQuery<?, ?>> toFileBasedIndexQueries() {
+      Condition<Integer> contextCondition = myContext == null ? null : matchContextCondition(myContext);
+
+      FileBasedIndex.AllKeysQuery<IdIndexEntry, Integer> idIndexQuery =
+        new FileBasedIndex.AllKeysQuery<>(IdIndex.NAME, myIdIndexEntries, contextCondition);
+
+      if (myUseOnlyWeakHashToSearch || myTrigrams.isEmpty()) {
+        // short words don't produce trigrams
+        return Collections.singletonList(idIndexQuery);
+      }
+
+      FileBasedIndex.AllKeysQuery<Integer, Void> trigramIndexQuery =
+        new FileBasedIndex.AllKeysQuery<>(TrigramIndex.INDEX_ID, myTrigrams, null);
+
+      return Arrays.asList(idIndexQuery, trigramIndexQuery);
+    }
+
+    @NotNull
+    private static TextIndexQuery fromWord(@NotNull String word,
+                                           boolean caseSensitively,
+                                           boolean useOnlyWeakHashToSearch,
+                                           @Nullable Short context) {
+      return fromWords(Collections.singleton(word), caseSensitively, useOnlyWeakHashToSearch, context);
+    }
+
+    @NotNull
+    public static TextIndexQuery fromWord(@NotNull String word, boolean caseSensitively, @Nullable Short context) {
+      return fromWord(word, caseSensitively, false, context);
+    }
+
+    @NotNull
+    public static TextIndexQuery fromWords(@NotNull Collection<String> words,
+                                           boolean caseSensitively,
+                                           boolean useOnlyWeakHashToSearch, @Nullable Short context) {
+      Set<IdIndexEntry> keys = CollectionFactory.createSmallMemoryFootprintSet(ContainerUtil.flatMap(words, w -> getWordEntries(w, caseSensitively)));
+      Set<Integer> trigrams = new IntOpenHashSet();
+      if (!useOnlyWeakHashToSearch) {
+        for (String word : words) {
+          TrigramBuilder.processTrigrams(word, new TrigramBuilder.TrigramProcessor() {
+            @Override
+            public boolean test(int value) {
+              trigrams.add(value);
+              return true;
+            }
+          });
+        }
+      }
+
+      return new TextIndexQuery(keys, trigrams, context, useOnlyWeakHashToSearch);
+    }
+
+    @NotNull
+    private static List<IdIndexEntry> getWordEntries(@NotNull String name, boolean caseSensitively) {
+      List<String> words = StringUtil.getWordsInStringLongestFirst(name);
+      if (words.isEmpty()) {
+        String trimmed = name.trim();
+        if (StringUtil.isNotEmpty(trimmed)) {
+          words = Collections.singletonList(trimmed);
+        }
+      }
+      if (words.isEmpty()) return Collections.emptyList();
+      return ContainerUtil.map2List(words, word -> new IdIndexEntry(word, caseSensitively));
+    }
   }
 }

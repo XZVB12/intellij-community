@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.actions;
 
 import com.intellij.execution.configurations.GeneralCommandLine;
@@ -11,15 +11,19 @@ import com.intellij.idea.ActionsBundle;
 import com.intellij.jna.JnaLoader;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationListener;
+import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsActions.ActionText;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileSystem;
@@ -38,6 +42,7 @@ import java.io.*;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -67,13 +72,15 @@ public class RevealFileAction extends DumbAwareAction implements LightEditCompat
   };
 
   public RevealFileAction() {
-    getTemplatePresentation().setText(getActionName());
+    getTemplatePresentation().setText(getActionName(null));
   }
 
   @Override
   public void update(@NotNull AnActionEvent e) {
-    e.getPresentation().setEnabledAndVisible(isSupported() && getFile(e) != null);
-    e.getPresentation().setText(getActionName());
+    Editor editor = e.getData(CommonDataKeys.EDITOR);
+    e.getPresentation().setEnabledAndVisible(isSupported() && getFile(e) != null &&
+                                             (!ActionPlaces.isPopupPlace(e.getPlace()) || editor == null || !editor.getSelectionModel().hasSelection()));
+    e.getPresentation().setText(getActionName(e.getPlace()));
   }
 
   @Override
@@ -94,12 +101,25 @@ public class RevealFileAction extends DumbAwareAction implements LightEditCompat
            Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN);
   }
 
+  @ActionText
   @NotNull
   public static String getActionName() {
+    return getActionName(null);
+  }
+
+  @ActionText
+  @NotNull
+  public static String getActionName(@Nullable String place) {
+    if (ActionPlaces.EDITOR_TAB_POPUP.equals(place) ||
+        ActionPlaces.EDITOR_POPUP.equals(place) ||
+        ActionPlaces.PROJECT_VIEW_POPUP.equals(place)) {
+      return getFileManagerName();
+    }
     return SystemInfo.isMac ? ActionsBundle.message("action.RevealIn.name.mac") : ActionsBundle.message("action.RevealIn.name.other", getFileManagerName());
   }
 
   @NotNull
+  @NlsSafe
   public static String getFileManagerName() {
     return Holder.fileManagerName;
   }
@@ -118,8 +138,8 @@ public class RevealFileAction extends DumbAwareAction implements LightEditCompat
     return null;
   }
 
-  public static void showDialog(Project project, String message, String title, @NotNull File file, @Nullable DialogWrapper.DoNotAskOption option) {
-    String ok = getActionName();
+  public static void showDialog(Project project, @NlsContexts.DialogMessage String message, @NlsContexts.DialogTitle String title, @NotNull File file, @Nullable DialogWrapper.DoNotAskOption option) {
+    String ok = getActionName(null);
     String cancel = IdeBundle.message("action.close");
     if (Messages.showOkCancelDialog(project, message, title, ok, cancel, Messages.getInformationIcon(), option) == Messages.OK) {
       openFile(file);
@@ -131,12 +151,15 @@ public class RevealFileAction extends DumbAwareAction implements LightEditCompat
    * (note that not all platforms support highlighting).
    */
   public static void openFile(@NotNull File file) {
-    if (!file.exists()) {
-      LOG.info("does not exist: " + file);
-      return;
-    }
+    openFile(file.toPath());
+  }
 
-    File parent = file.getAbsoluteFile().getParentFile();
+  /**
+   * Opens a system file manager with given file's parent directory open and the file highlighted in it
+   * (note that not all platforms support highlighting).
+   */
+  public static void openFile(@NotNull Path file) {
+    Path parent = file.toAbsolutePath().getParent();
     if (parent != null) {
       doOpen(parent, file);
     }
@@ -149,17 +172,19 @@ public class RevealFileAction extends DumbAwareAction implements LightEditCompat
    * Opens a system file manager with given directory open in it.
    */
   public static void openDirectory(@NotNull File directory) {
-    if (!directory.isDirectory()) {
-      LOG.info("not a directory: " + directory);
-      return;
-    }
-
-    doOpen(directory.getAbsoluteFile(), null);
+    doOpen(directory.toPath(), null);
   }
 
-  private static void doOpen(@NotNull File _dir, @Nullable File _toSelect) {
-    String dir = FileUtil.toSystemDependentName(FileUtil.toCanonicalPath(_dir.getPath()));
-    String toSelect = _toSelect != null ? FileUtil.toSystemDependentName(FileUtil.toCanonicalPath(_toSelect.getPath())) : null;
+  /**
+   * Opens a system file manager with given directory selected in it.
+   */
+  public static void selectDirectory(@NotNull File directory) {
+    doOpen(directory.toPath(), directory.toPath());
+  }
+
+  private static void doOpen(@NotNull Path _dir, @Nullable Path _toSelect) {
+    String dir = _dir.toAbsolutePath().normalize().toString();
+    String toSelect = _toSelect != null ? _toSelect.toAbsolutePath().normalize().toString() : null;
     String fmApp;
 
     if (SystemInfo.isWindows) {
@@ -238,7 +263,7 @@ public class RevealFileAction extends DumbAwareAction implements LightEditCompat
   }
 
   private static class Holder {
-    private static final String fileManagerApp =
+    @NonNls private static final String fileManagerApp =
       readDesktopEntryKey("Exec")
         .map(line -> line.split(" ")[0])
         .filter(exec -> exec.endsWith("nautilus") || exec.endsWith("pantheon-files") || exec.endsWith("dolphin"))
@@ -264,6 +289,7 @@ public class RevealFileAction extends DumbAwareAction implements LightEditCompat
       return Optional.empty();
     }
 
+    @NonNls
     private static String getXdgDataDirectories() {
       return StringUtil.defaultIfEmpty(System.getenv("XDG_DATA_HOME"), SystemProperties.getUserHome() + "/.local/share") + ':' +
              StringUtil.defaultIfEmpty(System.getenv("XDG_DATA_DIRS"), "/usr/local/share:/usr/share");

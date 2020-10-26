@@ -2,10 +2,11 @@
 package com.intellij.ide.plugins;
 
 import com.intellij.openapi.extensions.PluginId;
+import com.intellij.openapi.util.NlsSafe;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
@@ -16,7 +17,7 @@ public final class PluginNode implements IdeaPluginDescriptor {
     UNKNOWN, INSTALLED, DOWNLOADED, DELETED
   }
 
-  private PluginId id;
+  private @NotNull PluginId id;
   private String name;
   private String productCode;
   private Date releaseDate;
@@ -24,7 +25,7 @@ public final class PluginNode implements IdeaPluginDescriptor {
   private boolean licenseOptional;
   private String version;
   private String vendor;
-  private String description;
+  private @NlsSafe String description;
   private String sinceBuild;
   private String untilBuild;
   private String changeNotes;
@@ -35,8 +36,7 @@ public final class PluginNode implements IdeaPluginDescriptor {
   private String vendorUrl;
   private String url;
   private long date = Long.MAX_VALUE;
-  private List<PluginId> myDependencies;
-  private PluginId[] myOptionalDependencies;
+  private List<IdeaPluginDependency> myDependencies = new ArrayList<>();
   private Status myStatus = Status.UNKNOWN;
   private boolean myLoaded;
   private String myDownloadUrl;
@@ -49,7 +49,12 @@ public final class PluginNode implements IdeaPluginDescriptor {
   private String externalUpdateId;
   private String externalPluginId;
 
-  public PluginNode() { }
+  /**
+   * @deprecated Use {@link #PluginNode(PluginId)}
+   */
+  @Deprecated
+  public PluginNode() {
+  }
 
   public PluginNode(@NotNull PluginId id) {
     this.id = id;
@@ -71,9 +76,6 @@ public final class PluginNode implements IdeaPluginDescriptor {
   }
 
   public void setName(@NotNull String name) {
-    if (id == null) {
-      id = PluginId.getId(name);
-    }
     this.name = name;
   }
 
@@ -179,7 +181,7 @@ public final class PluginNode implements IdeaPluginDescriptor {
     return description;
   }
 
-  public void setDescription(String description) {
+  public void setDescription(@NlsSafe String description) {
     this.description = description;
   }
 
@@ -218,6 +220,7 @@ public final class PluginNode implements IdeaPluginDescriptor {
   }
 
   @Override
+  @NlsSafe
   public String getDownloads() {
     return downloads;
   }
@@ -262,24 +265,48 @@ public final class PluginNode implements IdeaPluginDescriptor {
   }
 
   public void setDate(String date) {
-    this.date = Long.valueOf(date).longValue();
+    this.date = Long.valueOf(date);
+  }
+  public void setDate(Long date) {
+    this.date = date;
   }
 
   public long getDate() {
     return date;
   }
 
-  public List<PluginId> getDepends() {
-    return myDependencies;
+  /**
+   * @deprecated Use {@link #setDependencies(List)} instead
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval(inVersion = "2021.2")
+  public void setDepends(@NotNull List<PluginId> depends, PluginId @Nullable [] optionalDependencies) {
+    myDependencies = new ArrayList<>();
+    for (PluginId id : depends) {
+      myDependencies.add(new PluginNodeDependency(id, false));
+    }
+    if (optionalDependencies != null) {
+      for (PluginId dependency : optionalDependencies) {
+        myDependencies.add(new PluginNodeDependency(dependency, true));
+      }
+    }
   }
 
-  public void setDepends(@NotNull List<? extends PluginId> depends, PluginId @Nullable [] optionalDependencies) {
-    myDependencies = new ArrayList<>(depends);
-    myOptionalDependencies = optionalDependencies;
+  public void setDependencies(@NotNull List<IdeaPluginDependency> dependencies) {
+    myDependencies = new ArrayList<>(dependencies);
   }
 
   public void addDepends(@NotNull String id) {
-    (myDependencies != null ? myDependencies : (myDependencies = new ArrayList<>())).add(PluginId.getId(id));
+    addDepends(id, false);
+  }
+
+  public void addDepends(@NotNull String id, boolean optional) {
+    myDependencies.add(new PluginNodeDependency(PluginId.getId(id), optional));
+  }
+
+  @Override
+  public @NotNull List<IdeaPluginDependency> getDependencies() {
+    return myDependencies;
   }
 
   public List<String> getTags() {
@@ -298,7 +325,7 @@ public final class PluginNode implements IdeaPluginDescriptor {
    * Methods below implement PluginDescriptor and IdeaPluginDescriptor interface
    */
   @Override
-  public PluginId getPluginId() {
+  public @NotNull PluginId getPluginId() {
     return id;
   }
 
@@ -309,19 +336,19 @@ public final class PluginNode implements IdeaPluginDescriptor {
   }
 
   @Override
-  @Nullable
-  public File getPath() {
-    return null;
-  }
-
-  @Override
   public Path getPluginPath() {
     return null;
   }
 
   @Override
   public PluginId @NotNull [] getOptionalDependentPluginIds() {
-    return myOptionalDependencies != null ? myOptionalDependencies : PluginId.EMPTY_ARRAY;
+    List<PluginId> result = new ArrayList<>();
+    for (IdeaPluginDependency dependency : myDependencies) {
+      if (dependency.isOptional()) {
+        result.add(dependency.getPluginId());
+      }
+    }
+    return result.toArray(PluginId.EMPTY_ARRAY);
   }
 
   @Override
@@ -357,7 +384,7 @@ public final class PluginNode implements IdeaPluginDescriptor {
     myDownloadUrl = host;
   }
 
-  public String getRepositoryName() {
+  public @NlsSafe String getRepositoryName() {
     return myRepositoryName;
   }
 
@@ -389,6 +416,10 @@ public final class PluginNode implements IdeaPluginDescriptor {
     myIncomplete = incomplete;
   }
 
+  public boolean detailsLoaded() {
+    return externalPluginId == null || externalUpdateId == null || description != null;
+  }
+
   @Override
   public boolean equals(Object o) {
     return this == o || o instanceof PluginNode && id == ((PluginNode)o).id;
@@ -402,5 +433,25 @@ public final class PluginNode implements IdeaPluginDescriptor {
   @Override
   public String toString() {
     return getName();
+  }
+
+  private static class PluginNodeDependency implements IdeaPluginDependency {
+    private final PluginId myPluginId;
+    private final boolean myOptional;
+
+    private PluginNodeDependency(PluginId id, boolean optional) {
+      myPluginId = id;
+      myOptional = optional;
+    }
+
+    @Override
+    public PluginId getPluginId() {
+      return myPluginId;
+    }
+
+    @Override
+    public boolean isOptional() {
+      return myOptional;
+    }
   }
 }

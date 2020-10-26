@@ -1,5 +1,4 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
 package org.intellij.plugins.intelliLang;
 
 import com.intellij.icons.AllIcons;
@@ -57,6 +56,7 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.*;
 
@@ -255,11 +255,14 @@ public final class InjectionsSettingsUI extends SearchableConfigurable.Parent.Ab
 
       @Override
       public void actionPerformed(@NotNull final AnActionEvent e) {
-        final List<BaseInjection> injections = getInjectionList(getSelectedInjections());
-        final VirtualFileWrapper wrapper = FileChooserFactory.getInstance().createSaveFileDialog(
-          new FileSaverDescriptor(IntelliLangBundle.message("dialog.title.export.selected.injections.to.file"), "", "xml"), myProject).save(null, null);
-        if (wrapper == null) return;
-        final Configuration configuration = new Configuration();
+        List<BaseInjection> injections = getInjectionList(getSelectedInjections());
+        VirtualFileWrapper wrapper = FileChooserFactory.getInstance()
+          .createSaveFileDialog(new FileSaverDescriptor(IntelliLangBundle.message("dialog.title.export.selected.injections.to.file"), "", "xml"), myProject)
+          .save((Path)null, null);
+        if (wrapper == null) {
+          return;
+        }
+        Configuration configuration = new Configuration();
         configuration.setInjections(injections);
         try {
           JdomKt.write(configuration.getState(), wrapper.getFile().toPath());
@@ -302,9 +305,8 @@ public final class InjectionsSettingsUI extends SearchableConfigurable.Parent.Ab
           if (place.isEnabled()) enablePlacesCount++;
         }
       }
-      myCountLabel.setText(IntelliLangBundle
-                             .message("label.text.0.injection.1.2.of.3.place.4.enabled", items.size(), items.size() > 1 ? "s" : "",
-                                      enablePlacesCount, placesCount, placesCount > 1 ? "s" : ""));
+      myCountLabel.setText(
+        IntelliLangBundle.message("label.text.0.injection.1.2.of.3.place.4.enabled", items.size(), enablePlacesCount, placesCount));
     }
     else {
       myCountLabel.setText(IntelliLangBundle.message("label.text.no.injections.configured"));
@@ -425,7 +427,7 @@ public final class InjectionsSettingsUI extends SearchableConfigurable.Parent.Ab
   }
 
   private List<InjInfo> getSelectedInjections() {
-    final ArrayList<InjInfo> toRemove = new ArrayList<>();
+    List<InjInfo> toRemove = new ArrayList<>();
     for (int row : myInjectionsTable.getSelectedRows()) {
       toRemove.add(myInjectionsTable.getItems().get(myInjectionsTable.convertRowIndexToModel(row)));
     }
@@ -441,8 +443,9 @@ public final class InjectionsSettingsUI extends SearchableConfigurable.Parent.Ab
   private void performAdd(AnActionButton e) {
     DefaultActionGroup group = new DefaultActionGroup(myAddActions);
 
-    JBPopupFactory.getInstance().createActionGroupPopup(null, group, e.getDataContext(), JBPopupFactory.ActionSelectionAid.NUMBERING, true,
-                                                        this::updateCountLabel, -1).show(e.getPreferredPopupPoint());
+    JBPopupFactory.getInstance()
+      .createActionGroupPopup(null, group, e.getDataContext(), JBPopupFactory.ActionSelectionAid.NUMBERING, true, this::updateCountLabel, -1)
+      .show(e.getPreferredPopupPoint());
   }
 
   @Override
@@ -456,7 +459,7 @@ public final class InjectionsSettingsUI extends SearchableConfigurable.Parent.Ab
     return "reference.settings.injection.language.injection.settings";
   }
 
-  private class InjectionsTable extends TableView<InjInfo> {
+  private final class InjectionsTable extends TableView<InjInfo> {
     private InjectionsTable(final List<InjInfo> injections) {
       super(new ListTableModel<>(createInjectionColumnInfos(), injections, 1));
       setAutoResizeMode(AUTO_RESIZE_LAST_COLUMN);
@@ -743,12 +746,7 @@ public final class InjectionsSettingsUI extends SearchableConfigurable.Parent.Ab
         ArrayList<InjInfo> list = new ArrayList<>(ObjectUtils.notNull(currentMap.get(supportId), Collections.emptyList()));
         final List<BaseInjection> currentInjections = getInjectionList(list);
         final List<BaseInjection> importingInjections = cfg.getInjections(supportId);
-        if (currentInjections == null) {
-          newInjections.addAll(importingInjections);
-        }
-        else {
-          Configuration.importInjections(currentInjections, importingInjections, originalInjections, newInjections);
-        }
+        Configuration.importInjections(currentInjections, importingInjections, originalInjections, newInjections);
       }
       info.replace(originalInjections, newInjections);
       myInjectionsTable.getListTableModel().setItems(getInjInfoList(myInfos));
@@ -854,7 +852,7 @@ public final class InjectionsSettingsUI extends SearchableConfigurable.Parent.Ab
     }
   }
 
-  private static class InjInfo {
+  private static final class InjInfo {
     final BaseInjection injection;
     final CfgInfo cfgInfo;
     final boolean bundled;
@@ -870,7 +868,7 @@ public final class InjectionsSettingsUI extends SearchableConfigurable.Parent.Ab
     return ContainerUtil.concat(infos, cfgInfo -> cfgInfo.injectionInfos);
   }
 
-  private static List<BaseInjection> getInjectionList(final List<? extends InjInfo> list) {
+  private static @NotNull List<BaseInjection> getInjectionList(final List<? extends InjInfo> list) {
     return new AbstractList<BaseInjection>() {
       @Override
       public BaseInjection get(final int index) {

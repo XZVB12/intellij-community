@@ -1,8 +1,9 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.util;
 
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.SimpleModificationTracker;
 import com.intellij.openapi.util.text.StringUtilRt;
 import org.jetbrains.annotations.NonNls;
@@ -12,9 +13,11 @@ import org.jetbrains.annotations.Nullable;
 import java.lang.reflect.Field;
 
 /**
+ * Allows simple persistence of application/project-level values.
+ * <p/>
  * Roaming is disabled for PropertiesComponent, so, use it only and only for temporary non-roamable properties.
- *
- * See http://www.jetbrains.org/intellij/sdk/docs/basics/persisting_state_of_components.html "Using PropertiesComponent for Simple non-roamable Persistence"
+ * <p/>
+ * See <a href="http://www.jetbrains.org/intellij/sdk/docs/basics/persisting_state_of_components.html">Using PropertiesComponent for Simple non-roamable Persistence</a>.
  *
  * @author max
  * @author Konstantin Bulenkov
@@ -25,17 +28,17 @@ public abstract class PropertiesComponent extends SimpleModificationTracker {
   public abstract boolean isValueSet(@NonNls @NotNull String name);
 
   @Nullable
-  public abstract String getValue(@NonNls @NotNull String name);
+  public abstract @NonNls String getValue(@NonNls @NotNull String name);
 
   /**
    * Consider to use {@link #setValue(String, String, String)} to avoid write defaults.
    */
-  public abstract void setValue(@NonNls @NotNull String name, @Nullable String value);
+  public abstract void setValue(@NonNls @NotNull String name, @NonNls @Nullable String value);
 
   /**
    * Set value or unset if equals to default value
    */
-  public abstract void setValue(@NonNls @NotNull String name, @Nullable String value, @Nullable String defaultValue);
+  public abstract void setValue(@NonNls @NotNull String name, @NonNls @Nullable String value, @Nullable String defaultValue);
 
   /**
    * Set value or unset if equals to default value
@@ -63,12 +66,18 @@ public abstract class PropertiesComponent extends SimpleModificationTracker {
 
   public abstract void setValues(@NonNls @NotNull String name, String[] values);
 
+  /**
+   * Returns the project-level instance.
+   */
   public static PropertiesComponent getInstance(@NotNull Project project) {
-    return ServiceManager.getService(project, PropertiesComponent.class);
+    return project.getService(PropertiesComponent.class);
   }
 
+  /**
+   * Returns the application-level instance.
+   */
   public static PropertiesComponent getInstance() {
-    return ServiceManager.getService(PropertiesComponent.class);
+    return ApplicationManager.getApplication().getService(PropertiesComponent.class);
   }
 
   public final boolean isTrueValue(@NonNls String name) {
@@ -84,7 +93,7 @@ public abstract class PropertiesComponent extends SimpleModificationTracker {
   }
 
   @NotNull
-  public String getValue(@NonNls @NotNull String name, @NotNull String defaultValue) {
+  public @NlsSafe String getValue(@NonNls @NotNull String name, @NotNull String defaultValue) {
     String value = getValue(name);
     return value == null ? defaultValue : value;
   }
@@ -107,7 +116,7 @@ public abstract class PropertiesComponent extends SimpleModificationTracker {
   }
 
   /**
-   * @deprecated Use {@link #getLong(String, int)}
+   * @deprecated Use {@link #getLong(String, long)}
    * Init was never performed and in any case is not recommended.
    */
   @Deprecated
@@ -191,7 +200,8 @@ public abstract class PropertiesComponent extends SimpleModificationTracker {
   public float getFloat(@NonNls @NotNull String name, float defaultValue) {
     if (isValueSet(name)) {
       try {
-        return Float.parseFloat(getValue(name));
+        final String value = getValue(name);
+        if (value != null) return Float.parseFloat(value);
       }
       catch (NumberFormatException ignore) {
       }

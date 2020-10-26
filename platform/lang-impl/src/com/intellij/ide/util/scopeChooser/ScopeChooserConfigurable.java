@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.ide.util.scopeChooser;
 
@@ -16,9 +16,14 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectBundle;
 import com.intellij.openapi.ui.*;
 import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.NlsActions;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.packageDependencies.DependencyValidationManager;
 import com.intellij.psi.search.scope.impl.CustomScopesAggregator;
-import com.intellij.psi.search.scope.packageSet.*;
+import com.intellij.psi.search.scope.packageSet.NamedScope;
+import com.intellij.psi.search.scope.packageSet.NamedScopeManager;
+import com.intellij.psi.search.scope.packageSet.NamedScopesHolder;
+import com.intellij.psi.search.scope.packageSet.PackageSet;
 import com.intellij.ui.CommonActionsPanel;
 import com.intellij.ui.TreeSpeedSearch;
 import com.intellij.util.IconUtil;
@@ -127,7 +132,7 @@ public class ScopeChooserConfigurable extends MasterDetailsComponent implements 
   private void checkForPredefinedNames() throws ConfigurationException {
     final Set<String> predefinedScopes = new HashSet<>();
     for (NamedScope scope : CustomScopesAggregator.getAllCustomScopes(myProject)) {
-      predefinedScopes.add(scope.getName());
+      predefinedScopes.add(scope.getScopeId());
     }
     for (int i = 0; i < myRoot.getChildCount(); i++) {
       final MyNode node = (MyNode)myRoot.getChildAt(i);
@@ -154,7 +159,7 @@ public class ScopeChooserConfigurable extends MasterDetailsComponent implements 
       final NamedScope namedScope = scopeConfigurable.getEditableObject();
       if (order.size() <= i) return true;
       final String name = order.get(i);
-      if (!Comparing.strEqual(name, namedScope.getName())) return true;
+      if (!Comparing.strEqual(name, namedScope.getScopeId())) return true;
       if (isInitialized(scopeConfigurable)) {
         final NamedScopesHolder holder = scopeConfigurable.getHolder();
         final NamedScope scope = holder.getScope(name);
@@ -236,8 +241,8 @@ public class ScopeChooserConfigurable extends MasterDetailsComponent implements 
   protected boolean wasObjectStored(Object editableObject) {
     if (editableObject instanceof NamedScope) {
       NamedScope scope = (NamedScope)editableObject;
-      final String scopeName = scope.getName();
-      return myLocalScopesManager.getScope(scopeName) != null || mySharedScopesManager.getScope(scopeName) != null;
+      final String scopeId = scope.getScopeId();
+      return myLocalScopesManager.getScope(scopeId) != null || mySharedScopesManager.getScope(scopeId) != null;
     }
     return false;
   }
@@ -281,11 +286,11 @@ public class ScopeChooserConfigurable extends MasterDetailsComponent implements 
     }
   }
 
-  private void obtainCurrentScopes(final HashSet<? super String> scopes) {
+  private void obtainCurrentScopes(@NotNull Set<? super String> scopes) {
     for (int i = 0; i < myRoot.getChildCount(); i++) {
       final MyNode node = (MyNode)myRoot.getChildAt(i);
       final NamedScope scope = (NamedScope)node.getConfigurable().getEditableObject();
-      scopes.add(scope.getName());
+      scopes.add(scope.getScopeId());
     }
   }
 
@@ -296,14 +301,14 @@ public class ScopeChooserConfigurable extends MasterDetailsComponent implements 
     selectNodeInTree(nodeToAdd);
   }
 
-  private void createScope(final boolean isLocal, String title, final PackageSet set) {
+  private void createScope(final boolean isLocal, @NlsContexts.DialogTitle String title, final PackageSet set) {
     NamedScopesHolder holder = isLocal ? myLocalScopesManager : mySharedScopesManager;
     final String newName = Messages.showInputDialog(myTree, IdeBundle.message("add.scope.name.label"), title,
                                                     Messages.getInformationIcon(), createUniqueName(), new InputValidator() {
       @Override
       public boolean checkInput(String inputString) {
         for (NamedScope scope : holder.getPredefinedScopes()) {
-          if (Comparing.strEqual(scope.getName(), inputString.trim())) {
+          if (Comparing.strEqual(scope.getScopeId(), inputString.trim())) {
             return false;
           }
         }
@@ -404,8 +409,8 @@ public class ScopeChooserConfigurable extends MasterDetailsComponent implements 
   private class MyMoveAction extends AnAction {
     private final int myDirection;
 
-    protected MyMoveAction(String text, Icon icon, int direction) {
-      super(text, text, icon);
+    protected MyMoveAction(@NlsActions.ActionText String text, Icon icon, int direction) {
+      super(() -> text, icon);
       ShortcutSet shortcutSet = direction < 0 ? CommonActionsPanel.getCommonShortcut(CommonActionsPanel.Buttons.UP)
                                               : CommonActionsPanel.getCommonShortcut(CommonActionsPanel.Buttons.DOWN);
       registerCustomShortcutSet(shortcutSet, myTree);
@@ -438,8 +443,7 @@ public class ScopeChooserConfigurable extends MasterDetailsComponent implements 
 
   private class MyCopyAction extends AnAction {
     MyCopyAction() {
-      super(ExecutionBundle.message("copy.configuration.action.name"), ExecutionBundle.message("copy.configuration.action.name"),
-            COPY_ICON);
+      super(ExecutionBundle.messagePointer("copy.configuration.action.name"), COPY_ICON);
       registerCustomShortcutSet(CommonShortcuts.getDuplicate(), myTree);
     }
 
@@ -463,16 +467,15 @@ public class ScopeChooserConfigurable extends MasterDetailsComponent implements 
 
   private class MySaveAsAction extends AnAction {
     MySaveAsAction() {
-      super(ExecutionBundle.messagePointer("action.name.save.as.configuration"),
-            ExecutionBundle.messagePointer("action.name.save.as.configuration"), AllIcons.Actions.Menu_saveall);
+      super(ExecutionBundle.messagePointer("action.name.save.as.configuration"), AllIcons.Actions.MenuSaveall);
     }
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
       final TreePath selectionPath = myTree.getSelectionPath();
       if (selectionPath != null) {
-        final MyNode node = (MyNode)selectionPath.getLastPathComponent();
-        final NamedConfigurable configurable = node.getConfigurable();
+        MyNode node = (MyNode)selectionPath.getLastPathComponent();
+        NamedConfigurable<?> configurable = node.getConfigurable();
         if (configurable instanceof ScopeConfigurable) {
           final ScopeConfigurable scopeConfigurable = (ScopeConfigurable)configurable;
           PackageSet set = scopeConfigurable.getEditableObject().getValue();

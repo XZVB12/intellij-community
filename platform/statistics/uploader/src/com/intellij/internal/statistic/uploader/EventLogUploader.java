@@ -1,12 +1,15 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistic.uploader;
 
-import com.intellij.internal.statistic.StatisticsEventLogUtil;
-import com.intellij.internal.statistic.connect.StatisticsResult;
+import com.intellij.internal.statistic.eventLog.connection.EventLogConnectionSettings;
+import com.intellij.internal.statistic.eventLog.connection.EventLogSendListener;
+import com.intellij.internal.statistic.eventLog.connection.StatisticsResult;
 import com.intellij.internal.statistic.eventLog.*;
 import com.intellij.internal.statistic.eventLog.config.EventLogExternalApplicationInfo;
 import com.intellij.internal.statistic.eventLog.config.EventLogExternalRecorderConfig;
+import com.intellij.internal.statistic.eventLog.connection.EventLogStatisticsService;
 import com.intellij.internal.statistic.uploader.events.ExternalEventsLogger;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
@@ -14,7 +17,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class EventLogUploader {
+import static com.intellij.internal.statistic.StatisticsStringUtil.split;
+
+public final class EventLogUploader {
   private static final int WAIT_FOR_IDE_MS = 2000;
 
   public static void main(String[] args) {
@@ -62,7 +67,9 @@ public class EventLogUploader {
     }
 
     logger.info("Start uploading...");
-    logger.info("{url:" + appInfo.getTemplateUrl() + ", product:" + appInfo.getProductCode() + ", userAgent:" + appInfo.getUserAgent() +
+    EventLogConnectionSettings connectionSettings = appInfo.getConnectionSettings();
+    logger.info("{url:" + appInfo.getTemplateUrl() + ", product:" + appInfo.getProductCode() +
+                ", userAgent:" + connectionSettings.getUserAgent() +
                 ", internal:" + appInfo.isInternal() + ", isTest:" + appInfo.isTest() + "}");
     String logs = recorder.getLogFilesProvider().getLogFiles().stream().
       map(file -> file.getFile().getAbsolutePath()).collect(Collectors.joining(File.pathSeparator));
@@ -72,8 +79,8 @@ public class EventLogUploader {
     try {
       EventLogStatisticsService service = new EventLogStatisticsService(device, recorder, appInfo, new EventLogSendListener() {
         @Override
-        public void onLogsSend(int succeed, int failed, int totalLocalFiles) {
-          eventsLogger.logSendingLogsSucceed(succeed, failed, totalLocalFiles);
+        public void onLogsSend(@NotNull List<String> successfullySentFiles, int failed, int totalLocalFiles) {
+          eventsLogger.logSendingLogsSucceed(successfullySentFiles, failed, totalLocalFiles);
         }
       });
 
@@ -112,7 +119,7 @@ public class EventLogUploader {
     if (recorder != null) {
       String logs = options.get(EventLogUploaderOptions.LOGS_OPTION);
       if (logs != null) {
-        List<String> files = StatisticsEventLogUtil.split(logs, File.pathSeparatorChar);
+        List<String> files = split(logs, File.pathSeparatorChar);
         return new EventLogExternalRecorderConfig(recorder, files);
       }
     }
@@ -125,11 +132,15 @@ public class EventLogUploader {
                                                             DataCollectorSystemEventLogger eventLogger) {
     String url = options.get(EventLogUploaderOptions.URL_OPTION);
     String productCode = options.get(EventLogUploaderOptions.PRODUCT_OPTION);
+    String productVersion = options.get(EventLogUploaderOptions.PRODUCT_VERSION_OPTION);
     String userAgent = options.get(EventLogUploaderOptions.USER_AGENT_OPTION);
     if (url != null && productCode != null) {
       boolean isInternal = options.containsKey(EventLogUploaderOptions.INTERNAL_OPTION);
       boolean isTest = options.containsKey(EventLogUploaderOptions.TEST_OPTION);
-      return new EventLogExternalApplicationInfo(url, productCode, userAgent, isInternal, isTest, logger, eventLogger);
+      boolean isEAP = options.containsKey(EventLogUploaderOptions.EAP_OPTION);
+      return new EventLogExternalApplicationInfo(
+        url, productCode, productVersion, userAgent, isInternal, isTest, isEAP, logger, eventLogger
+      );
     }
     return null;
   }

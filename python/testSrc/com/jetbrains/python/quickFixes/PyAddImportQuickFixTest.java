@@ -80,7 +80,7 @@ public class PyAddImportQuickFixTest extends PyQuickFixTestCase {
 
   // PY-21563
   public void testCombineFromImportsForReferencesInTypeComment() {
-    doMultiFileAutoImportTest("Import 'typing.Set'");
+    doMultiFileAutoImportTest("Import 'typing.Literal'");
   }
 
   // PY-25234
@@ -257,7 +257,7 @@ public class PyAddImportQuickFixTest extends PyQuickFixTestCase {
     doMultiFileAutoImportTest(hintPrefix, null);
   }
 
-  private void doMultiFileAutoImportTest(@NotNull String hintPrefix, @Nullable Processor<AutoImportQuickFix> checkQuickfix) {
+  private void doMultiFileAutoImportTest(@NotNull String hintPrefix, @Nullable Processor<? super AutoImportQuickFix> checkQuickfix) {
     configureMultiFileProject();
 
     final PsiElement hostUnderCaret = myFixture.getFile().findElementAt(myFixture.getCaretOffset());

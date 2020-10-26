@@ -39,7 +39,6 @@ import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.Alarm;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.openapi.util.NlsContexts;
 import com.intellij.util.ui.*;
 import kotlin.Unit;
 import kotlin.jvm.functions.Function0;
@@ -146,7 +145,7 @@ public abstract class DialogWrapper {
 
   protected final @NotNull Disposable myDisposable = new Disposable() {
     @Override
-    public String toString() {
+    public @NonNls String toString() {
       return DialogWrapper.this.toString();
     }
 
@@ -174,8 +173,7 @@ public abstract class DialogWrapper {
   private JComponent myPreferredFocusedComponentFromPanel;
   private Computable<? extends Point> myInitialLocationCallback;
   private Dimension  myActualSize;
-  @NotNull
-  private List<ValidationInfo> myInfo = Collections.emptyList();
+  private @NotNull List<ValidationInfo> myInfo = Collections.emptyList();
   private @Nullable DoNotAskOption myDoNotAsk;
   private Action myYesAction;
   private Action myNoAction;
@@ -338,7 +336,7 @@ public abstract class DialogWrapper {
    * or validation description with component where problem has been found.
    *
    * @return {@code null} if everything is OK or validation descriptor
-   * 
+   *
    * @see <a href="https://jetbrains.design/intellij/principles/validation_errors/">Validation errors guidelines</a>
    */
   @Nullable
@@ -355,7 +353,7 @@ public abstract class DialogWrapper {
    *
    * @return {@code List<ValidationInfo>} of invalid fields. List
    * is empty if no errors found.
-   * 
+   *
    * @see <a href="https://jetbrains.design/intellij/principles/validation_errors/">Validation errors guidelines</a>
    */
   @NotNull
@@ -388,11 +386,8 @@ public abstract class DialogWrapper {
   }
 
   protected void updateErrorInfo(@NotNull List<ValidationInfo> info) {
-    boolean updateNeeded = Registry.is("ide.inplace.validation.tooltip") ?
-                           !myInfo.equals(info) : !myErrorText.isTextSet(info);
-
+    boolean updateNeeded = isInplaceValidationToolTipEnabled() ? !myInfo.equals(info) : !myErrorText.isTextSet(info);
     if (updateNeeded) {
-      //noinspection SSBasedInspection
       SwingUtilities.invokeLater(() -> {
         if (myDisposed) return;
         setErrorInfoAll(info);
@@ -478,7 +473,7 @@ public abstract class DialogWrapper {
 
   private static boolean isRemoveHelpButton() {
     return !ApplicationInfo.contextHelpAvailable() ||
-           Registry.is("ide.remove.help.button.from.dialogs");
+           Registry.is("ide.remove.help.button.from.dialogs", false);
   }
 
   /**
@@ -504,7 +499,7 @@ public abstract class DialogWrapper {
       addHelpToLeftSide = true;
     }
 
-    if (SystemInfo.isMac) {
+    if (SystemInfoRt.isMac) {
       Action macOtherAction = ContainerUtil.find(actions, MacOtherAction.class::isInstance);
       if (macOtherAction != null) {
         leftSideActions.add(macOtherAction);
@@ -559,6 +554,8 @@ public abstract class DialogWrapper {
         HelpTooltip.dispose((JComponent)evt.getSource());
       }
     });
+    helpButton.getAccessibleContext().setAccessibleName(UIBundle.message("dialog.options.help.button.accessible.name"));
+    helpButton.getAccessibleContext().setAccessibleDescription(ActionsBundle.message("action.HelpTopics.description"));
     return helpButton;
   }
 
@@ -632,7 +629,7 @@ public abstract class DialogWrapper {
     JComponent doNotAskCheckbox = createDoNotAskCheckbox();
 
     JPanel lrButtonsPanel = new NonOpaquePanel(new GridBagLayout());
-    Insets insets = SystemInfo.isMacOSLeopard && UIUtil.isUnderIntelliJLaF() ? JBInsets.create(0, 8) : JBUI.emptyInsets();
+    Insets insets = SystemInfoRt.isMac && UIUtil.isUnderIntelliJLaF() ? JBInsets.create(0, 8) : JBUI.emptyInsets();
 
     if (!rightSideButtons.isEmpty() || !leftSideButtons.isEmpty()) {
       GridBag bag = new GridBag().setDefaultInsets(insets);
@@ -786,11 +783,11 @@ public abstract class DialogWrapper {
       button = new JButton(action);
     }
 
-    if (SystemInfo.isMac) {
+    if (SystemInfoRt.isMac) {
       button.putClientProperty("JButton.buttonType", "text");
     }
 
-    Pair<Integer, String> pair = extractMnemonic(button.getText());
+    Pair<Integer, @Nls String> pair = extractMnemonic(button.getText());
     button.setText(pair.second);
     int mnemonic = pair.first;
 
@@ -818,11 +815,11 @@ public abstract class DialogWrapper {
   }
 
   @NotNull
-  public static Pair<Integer, String> extractMnemonic(@Nullable String text) {
+  public static Pair<Integer, @Nls String> extractMnemonic(@Nullable @Nls String text) {
     if (text == null) return pair(0, null);
 
     int mnemonic = 0;
-    StringBuilder plainText = new StringBuilder();
+    @Nls StringBuilder plainText = new StringBuilder();
     for (int i = 0; i < text.length(); i++) {
       char ch = text.charAt(i);
       if (ch == '_' || ch == '&') {
@@ -994,7 +991,6 @@ public abstract class DialogWrapper {
     }
   }
 
-  @SuppressWarnings("SSBasedInspection")
   public static void cleanupWindowListeners(@Nullable Window window) {
     if (window == null) return;
     SwingUtilities.invokeLater(() -> {
@@ -1006,7 +1002,6 @@ public abstract class DialogWrapper {
       }
     });
   }
-
 
   /**
    * This method is invoked by default implementation of "Cancel" action. It just closes dialog
@@ -1048,6 +1043,14 @@ public abstract class DialogWrapper {
     if (button != null) {
       button.doClick();
     }
+  }
+
+  /**
+   * Calls doOKAction. This is intended for internal use.
+   */
+  @ApiStatus.Internal
+  public final void performOKAction() {
+    doOKAction();
   }
 
   /**
@@ -1179,7 +1182,7 @@ public abstract class DialogWrapper {
   }
 
   @Nullable
-  public final String getDimensionKey() {
+  public final @NonNls String getDimensionKey() {
     return getDimensionServiceKey();
   }
 
@@ -1196,7 +1199,7 @@ public abstract class DialogWrapper {
     if (myPreferredFocusedComponentFromPanel != null) {
       return myPreferredFocusedComponentFromPanel;
     }
-    return SystemInfo.isMac ? myPreferredFocusedComponent : null;
+    return SystemInfoRt.isMac ? myPreferredFocusedComponent : null;
   }
 
   /**
@@ -1261,7 +1264,7 @@ public abstract class DialogWrapper {
    * @return dialog title
    * @see Dialog#getTitle
    */
-  public String getTitle() {
+  public @NlsContexts.DialogTitle String getTitle() {
     return myPeer.getTitle();
   }
 
@@ -1366,7 +1369,7 @@ public abstract class DialogWrapper {
     if (!postponeValidation()) {
       startTrackingValidation();
     }
-    if (SystemInfo.isWindows) {
+    if (SystemInfoRt.isWindows || (SystemInfoRt.isLinux && Registry.is("ide.linux.enter.on.dialog.triggers.focused.button", true))) {
       installEnterHook(root, myDisposable);
     }
     myErrorTextAlarm.setActivationComponent(root);
@@ -1409,7 +1412,6 @@ public abstract class DialogWrapper {
     }
   }
 
-  @SuppressWarnings("SSBasedInspection")
   protected void startTrackingValidation() {
     SwingUtilities.invokeLater(() -> {
       if (!myValidationStarted && !myDisposed) {
@@ -1458,6 +1460,28 @@ public abstract class DialogWrapper {
    */
   public void pack() {
     myPeer.pack();
+  }
+
+  /**
+   * Override to set default initial size of the window
+   *
+   * @return initial window size
+   */
+  @Nullable
+  public Dimension getInitialSize() {
+    List<JTable> tables = UIUtil.findComponentsOfType(getContentPanel(), JTable.class);
+    if (!tables.isEmpty()) {
+      Dimension size = getContentPanel().getPreferredSize();
+      for (JTable table : tables) {
+        Dimension tablePreferredSize = table.getPreferredSize();
+        size.width = Math.max(size.width, tablePreferredSize.width);
+        size.height = Math.max(size.height, size.height - table.getParent().getHeight() + tablePreferredSize.height);
+      }
+      size.width = Math.min(1000, Math.max(600, size.width));
+      size.height = Math.min(800, size.height);
+      return size;
+    }
+    return new Dimension(400, 0);
   }
 
   public Dimension getPreferredSize() {
@@ -1528,7 +1552,7 @@ public abstract class DialogWrapper {
     myOKAction.putValue(Action.MNEMONIC_KEY, c);
   }
 
-  protected final void setOKButtonTooltip(@Nls String text) {
+  protected final void setOKButtonTooltip(@NlsContexts.Tooltip String text) {
     myOKAction.putValue(Action.SHORT_DESCRIPTION, text);
   }
 
@@ -1805,7 +1829,7 @@ public abstract class DialogWrapper {
      *
      * @param name the action name (see {@link Action#NAME})
      */
-    protected DialogWrapperAction(@NotNull String name) {
+    protected DialogWrapperAction(@NotNull @NlsContexts.Button String name) {
       super(name);
     }
 
@@ -1858,7 +1882,7 @@ public abstract class DialogWrapper {
           IdeFocusManager.getInstance(null).requestFocus(info.component, true);
         }
 
-        if (!Registry.is("ide.inplace.validation.tooltip")) {
+        if (!isInplaceValidationToolTipEnabled()) {
           DialogEarthquakeShaker.shake(getPeer().getWindow());
         }
 
@@ -1875,7 +1899,7 @@ public abstract class DialogWrapper {
     }
   }
 
-  protected class CancelAction extends DialogWrapperAction {
+  protected final class CancelAction extends DialogWrapperAction {
     private CancelAction() {
       super(CommonBundle.getCancelButtonText());
       addPropertyChangeListener(myRepaintOnNameChangeListener);
@@ -1903,7 +1927,7 @@ public abstract class DialogWrapper {
      * @param name     the action name
      * @param exitCode the exit code for dialog
      */
-    public DialogWrapperExitAction(String name, int exitCode) {
+    public DialogWrapperExitAction(@NlsContexts.Button String name, int exitCode) {
       super(name);
       myExitCode = exitCode;
     }
@@ -1916,7 +1940,7 @@ public abstract class DialogWrapper {
     }
   }
 
-  private class HelpAction extends AbstractAction {
+  private final class HelpAction extends AbstractAction {
     private HelpAction() {
       super(CommonBundle.getHelpButtonText());
     }
@@ -1961,12 +1985,11 @@ public abstract class DialogWrapper {
       clearErrorRunnable.run();
     }
     else {
-      //noinspection SSBasedInspection
       SwingUtilities.invokeLater(clearErrorRunnable);
     }
 
     List<ValidationInfo> corrected = ContainerUtil.filter(myInfo, vi -> !info.contains(vi));
-    if (Registry.is("ide.inplace.validation.tooltip")) {
+    if (isInplaceValidationToolTipEnabled()) {
       corrected.stream().filter(vi -> vi.component != null).
         map(vi -> ComponentValidator.getInstance(vi.component)).
         forEach(c -> c.ifPresent(vi -> vi.updateInfo(null)));
@@ -1974,7 +1997,7 @@ public abstract class DialogWrapper {
 
     myInfo = info;
 
-    if (Registry.is("ide.inplace.validation.tooltip") && !myInfo.isEmpty()) {
+    if (isInplaceValidationToolTipEnabled() && !myInfo.isEmpty()) {
       myInfo.forEach(vi -> {
         if (vi.component != null) {
           ComponentValidator v = ComponentValidator.getInstance(vi.component).
@@ -1986,7 +2009,6 @@ public abstract class DialogWrapper {
           }
         }
 
-        //noinspection SSBasedInspection
         SwingUtilities.invokeLater(() -> myErrorText.appendError(vi));
       });
     }
@@ -2003,6 +2025,10 @@ public abstract class DialogWrapper {
         myErrorTextAlarm.addRequest(updateErrorTextRunnable, 300, null);
       }
     }
+  }
+
+  private static boolean isInplaceValidationToolTipEnabled() {
+    return Registry.is("ide.inplace.validation.tooltip", true);
   }
 
   /**
@@ -2035,7 +2061,7 @@ public abstract class DialogWrapper {
     return findInstance(KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner());
   }
 
-  private class ErrorText extends JPanel {
+  private final class ErrorText extends JPanel {
     private final JLabel myLabel = new JLabel();
     private final List<ValidationInfo> errors = new ArrayList<>();
 
@@ -2089,6 +2115,7 @@ public abstract class DialogWrapper {
       );
       sb.append("</html>");
 
+      //noinspection HardCodedStringLiteral
       myLabel.setText(sb.toString());
       setVisible(true);
       updateSize();
@@ -2213,7 +2240,7 @@ public abstract class DialogWrapper {
     @Override
     public void executePaint(Component component, Graphics2D g) {
       for (ValidationInfo i : info) {
-        if (i.component != null && !Registry.is("ide.inplace.errors.outline")) {
+        if (i.component != null && !Registry.is("ide.inplace.errors.outline", true)) {
           int w = i.component.getWidth();
           Point p = SwingUtilities.convertPoint(i.component, w, 0, component);
           AllIcons.General.Error.paintIcon(component, g, p.x - 8, p.y - 8);
@@ -2243,5 +2270,4 @@ public abstract class DialogWrapper {
       }
     }
   }
-
 }

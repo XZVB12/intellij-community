@@ -93,7 +93,7 @@ public class PsiPackageImplementationHelperImpl extends PsiPackageImplementation
       for (final ContentEntry contentEntry : rootModel.getContentEntries()) {
         for (final SourceFolder sourceFolder : contentEntry.getSourceFolders(JavaModuleSourceRootTypes.SOURCES)) {
           final String packagePrefix = sourceFolder.getPackagePrefix();
-          if (packagePrefix.startsWith(oldQualifiedName)) {
+          if (PsiNameHelper.isSubpackageOf(packagePrefix, oldQualifiedName)) {
             sourceFolder.setPackagePrefix(newQualifiedName + packagePrefix.substring(oldQualifiedName.length()));
             anyChange = true;
           }
@@ -170,6 +170,6 @@ public class PsiPackageImplementationHelperImpl extends PsiPackageImplementation
 
   @Override
   public Object @NotNull [] getDirectoryCachedValueDependencies(@NotNull PsiPackage psiPackage) {
-    return new Object[] { PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT, ProjectRootManager.getInstance(psiPackage.getProject()) };
+    return new Object[] {PsiModificationTracker.MODIFICATION_COUNT, ProjectRootManager.getInstance(psiPackage.getProject()) };
   }
 }

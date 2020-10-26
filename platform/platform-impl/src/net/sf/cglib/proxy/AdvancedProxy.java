@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package net.sf.cglib.proxy;
 
 import com.intellij.openapi.diagnostic.Logger;
@@ -19,7 +19,7 @@ import java.util.Map;
 /**
  * @author peter
  */
-public class AdvancedProxy {
+public final class AdvancedProxy {
   private static final Logger LOG = Logger.getInstance(AdvancedProxy.class);
   public static Method FINALIZE_METHOD;
   public static Method EQUALS_METHOD;
@@ -39,7 +39,7 @@ public class AdvancedProxy {
   }
 
 
-  private static final Map<ProxyDescription, Factory> ourFactories = ContainerUtil.createConcurrentWeakValueMap();
+  private static final Map<ProxyDescription, Factory> ourFactories = ContainerUtil.createConcurrentSoftKeySoftValueMap();
   private static final CallbackFilter NO_OBJECT_METHODS_FILTER = new CallbackFilter() {
     @Override
     public int accept(Method method) {

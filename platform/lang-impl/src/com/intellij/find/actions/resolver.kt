@@ -4,34 +4,37 @@
 package com.intellij.find.actions
 
 import com.intellij.CommonBundle
+import com.intellij.codeInsight.TargetElementUtil
 import com.intellij.codeInsight.hint.HintManager
 import com.intellij.codeInsight.navigation.PsiElementTargetPopupPresentation
 import com.intellij.find.FindBundle
 import com.intellij.find.findUsages.PsiElement2UsageTargetAdapter
-import com.intellij.find.usages.SearchTarget
-import com.intellij.find.usages.impl.DefaultSymbolSearchTarget
+import com.intellij.find.usages.api.SearchTarget
 import com.intellij.find.usages.impl.symbolSearchTargets
-import com.intellij.model.psi.PsiSymbolService
 import com.intellij.navigation.TargetPopupPresentation
 import com.intellij.navigation.chooseTargetPopup
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.util.NlsContexts.PopupTitle
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiManager
 import com.intellij.usages.UsageTarget
 import com.intellij.usages.UsageView
 import org.jetbrains.annotations.ApiStatus
 
 /* This file contains weird logic so Symbols will work with PsiElements and UsageTargets. */
 
-internal fun findShowUsages(project: Project, dataContext: DataContext, popupTitle: String, handler: UsageVariantHandler) {
-  val allTargets = allTargets(
-    project,
-    searchTargets(dataContext),
-    dataContext.getData(UsageView.USAGE_TARGETS_KEY)?.get(0)?.let { arrayOf(it) } ?: UsageTarget.EMPTY_ARRAY
-  )
+internal interface UsageVariantHandler {
+  fun handleTarget(target: SearchTarget)
+  fun handlePsi(element: PsiElement)
+}
+
+internal fun findShowUsages(project: Project,
+                            dataContext: DataContext,
+                            allTargets: List<TargetVariant>,
+                            @PopupTitle popupTitle: String,
+                            handler: UsageVariantHandler) {
   when (allTargets.size) {
     0 -> {
       val editor = dataContext.getData(CommonDataKeys.EDITOR)
@@ -44,46 +47,44 @@ internal fun findShowUsages(project: Project, dataContext: DataContext, popupTit
       }
     }
     1 -> {
-      handler.handle(allTargets.single())
+      allTargets.single().handle(handler)
     }
     else -> {
-      chooseTargetPopup(
-        popupTitle,
-        allTargets,
-        ::getPresentation,
-        handler::handle
-      ).showInBestPositionFor(dataContext)
+      chooseTargetPopup(popupTitle, allTargets, TargetVariant::presentation) {
+        it.handle(handler)
+      }.showInBestPositionFor(dataContext)
     }
   }
 }
 
-private fun allTargets(project: Project, targets: Collection<SearchTarget>, oldTargets: Array<out UsageTarget>): List<TargetVariant> {
+/**
+ * @see FindUsagesAction.findUsageTargetUsages
+ * @see com.intellij.codeInsight.navigation.actions.GotoDeclarationAction.doChooseAmbiguousTarget
+ */
+internal fun allTargets(dataContext: DataContext): List<TargetVariant> {
   val allTargets = ArrayList<TargetVariant>()
-  targets.mapTo(allTargets, TargetVariant::New)
-  for (usageTarget in oldTargets) {
-    if (!usageTarget.isValid || containsElementFromUsageTarget(project, targets, usageTarget)) {
-      // usage target is a simple PsiElement target
-      // => symbols should contain it too
-      // => if so, then we skip it to avoid duplicate items (and to avoid showing the popup, which is showed if there are > 1 items)
+  searchTargets(dataContext).mapTo(allTargets, ::SearchTargetVariant)
+  val usageTargets: Array<out UsageTarget>? = dataContext.getData(UsageView.USAGE_TARGETS_KEY)
+  if (usageTargets == null) {
+    val editor = dataContext.getData(CommonDataKeys.EDITOR)
+    if (editor != null) {
+      val offset = editor.caretModel.offset
+      val reference = TargetElementUtil.findReference(editor, offset)
+      if (reference != null) {
+        TargetElementUtil.getInstance().getTargetCandidates(reference).mapTo(allTargets, ::PsiTargetVariant)
+      }
+    }
+  }
+  else {
+    val target: UsageTarget = usageTargets[0]
+    allTargets += if (target is PsiElement2UsageTargetAdapter) {
+      PsiTargetVariant(target.element)
     }
     else {
-      allTargets.add(TargetVariant.Old(usageTarget))
+      CustomTargetVariant(target)
     }
   }
   return allTargets
-}
-
-private fun containsElementFromUsageTarget(project: Project, targets: Collection<SearchTarget>, oldTarget: UsageTarget): Boolean {
-  if (oldTarget !is PsiElement2UsageTargetAdapter) {
-    return false
-  }
-  val targetElement = oldTarget.element ?: return false
-  val manager = PsiManager.getInstance(project)
-  fun isWrappedTargetElement(target: SearchTarget): Boolean {
-    val element = targetPsi(target)
-    return element != null && manager.areElementsEquivalent(element, targetElement)
-  }
-  return targets.any(::isWrappedTargetElement)
 }
 
 private fun searchTargets(dataContext: DataContext): List<SearchTarget> {
@@ -92,60 +93,22 @@ private fun searchTargets(dataContext: DataContext): List<SearchTarget> {
   return symbolSearchTargets(file, offset)
 }
 
-private sealed class TargetVariant {
-  class New(val target: SearchTarget) : TargetVariant()
-  class Old(val target: UsageTarget) : TargetVariant()
+internal sealed class TargetVariant {
+  abstract val presentation: TargetPopupPresentation
+  abstract fun handle(handler: UsageVariantHandler)
 }
 
-internal interface UsageVariantHandler {
-  fun handleTarget(target: SearchTarget)
-  fun handlePsi(element: PsiElement)
+internal class SearchTargetVariant(private val target: SearchTarget) : TargetVariant() {
+  override val presentation: TargetPopupPresentation get() = target.presentation
+  override fun handle(handler: UsageVariantHandler): Unit = handler.handleTarget(target)
 }
 
-private fun UsageVariantHandler.handle(targetVariant: TargetVariant) {
-  when (targetVariant) {
-    is TargetVariant.New -> {
-      val target = targetVariant.target
-      val element = targetPsi(target)
-      if (element != null) {
-        handlePsi(element)
-      }
-      else {
-        handleTarget(target)
-      }
-    }
-    is TargetVariant.Old -> {
-      val target = targetVariant.target
-      if (target is PsiElement2UsageTargetAdapter) {
-        handlePsi(target.element)
-      }
-      else {
-        target.findUsages() // custom target
-      }
-    }
-  }
+internal class PsiTargetVariant(private val element: PsiElement) : TargetVariant() {
+  override val presentation: TargetPopupPresentation get() = PsiElementTargetPopupPresentation(element)
+  override fun handle(handler: UsageVariantHandler): Unit = handler.handlePsi(element)
 }
 
-private fun getPresentation(targetVariant: TargetVariant): TargetPopupPresentation {
-  return when (targetVariant) {
-    is TargetVariant.New -> targetVariant.target.presentation
-    is TargetVariant.Old -> {
-      val target = targetVariant.target
-      if (target is PsiElement2UsageTargetAdapter) {
-        PsiElementTargetPopupPresentation(target.element)
-      }
-      else {
-        Item2TargetPresentation(target.presentation!!)
-      }
-    }
-  }
-}
-
-internal fun targetPsi(target: SearchTarget): PsiElement? {
-  if (target is DefaultSymbolSearchTarget) {
-    return PsiSymbolService.getInstance().extractElementFromSymbol(target.symbol)
-  }
-  else {
-    return null
-  }
+private class CustomTargetVariant(private val target: UsageTarget) : TargetVariant() {
+  override val presentation: TargetPopupPresentation get() = Item2TargetPresentation(target.presentation!!)
+  override fun handle(handler: UsageVariantHandler): Unit = target.findUsages()
 }

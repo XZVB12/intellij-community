@@ -13,6 +13,7 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.externalSystem.issue.BuildIssueException;
 import com.intellij.openapi.externalSystem.model.LocationAwareExternalSystemException;
 import com.intellij.openapi.externalSystem.model.ProjectSystemId;
@@ -45,14 +46,12 @@ import com.intellij.util.ui.accessibility.ScreenReader;
 import com.intellij.util.ui.update.MergingUpdateQueue;
 import com.intellij.util.ui.update.Update;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.PrintStream;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -66,6 +65,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author Denis Zhdanov, Vladislav Soroka
  */
 public class ExternalSystemNotificationManager implements Disposable {
+  private static final Logger LOG = Logger.getInstance(ExternalSystemNotificationManager.class);
 
   private static final @NotNull Key<Pair<NotificationSource, ProjectSystemId>> CONTENT_ID_KEY = Key.create("CONTENT_ID");
   private final @NotNull MergingUpdateQueue myUpdateQueue;
@@ -161,6 +161,14 @@ public class ExternalSystemNotificationManager implements Disposable {
                                final @NotNull NotificationData notificationData,
                                @Nullable Key<String> notificationKey) {
     Disposer.register(this, notificationData);
+    if (ApplicationManager.getApplication().isHeadlessEnvironment()) {
+      if (notificationData.getNotificationCategory() == NotificationCategory.INFO) {
+        LOG.debug(notificationData.getMessage());
+      } else {
+        LOG.warn(notificationData.getMessage());
+      }
+    }
+
     if (ApplicationManager.getApplication().isUnitTestMode()) {
       @SuppressWarnings("UseOfSystemOutOrSystemErr")
       PrintStream out = notificationData.getNotificationCategory() == NotificationCategory.INFO ? System.out : System.err;
@@ -414,8 +422,10 @@ public class ExternalSystemNotificationManager implements Disposable {
 
   @Deprecated
   @ApiStatus.ScheduledForRemoval(inVersion = "2020.1")
-  public static @NotNull String getContentDisplayName(final @NotNull NotificationSource notificationSource,
-                                                      final @NotNull ProjectSystemId externalSystemId) {
+  public static @NotNull @Nls String getContentDisplayName(
+    final @NotNull NotificationSource notificationSource,
+    final @NotNull ProjectSystemId externalSystemId
+  ) {
     final String contentDisplayName;
     switch (notificationSource) {
       case PROJECT_SYNC:

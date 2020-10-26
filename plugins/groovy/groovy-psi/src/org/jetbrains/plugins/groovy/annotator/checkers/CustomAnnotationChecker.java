@@ -1,7 +1,8 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.annotator.checkers;
 
 import com.intellij.codeInsight.daemon.JavaErrorBundle;
+import com.intellij.codeInspection.util.InspectionMessage;
 import com.intellij.java.analysis.JavaAnalysisBundle;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.openapi.extensions.ExtensionPointName;
@@ -39,6 +40,7 @@ public abstract class CustomAnnotationChecker {
   public boolean checkApplicability(@NotNull AnnotationHolder holder, @NotNull GrAnnotation annotation) {return false;}
 
   @Nullable
+  @InspectionMessage
   static String checkAnnotationApplicable(@NotNull GrAnnotation annotation, @Nullable PsiAnnotationOwner owner) {
     if (!(owner instanceof PsiElement)) return null;
     PsiElement ownerToUse = owner instanceof PsiModifierList ? ((PsiElement)owner).getParent() : (PsiElement)owner;
@@ -52,10 +54,9 @@ public abstract class CustomAnnotationChecker {
     return null;
   }
 
-  public static Pair.NonNull<PsiElement, String> checkAnnotationArguments(@NotNull PsiClass annotation,
-                                                                  @NotNull PsiElement refToHighlight,
-                                                                  GrAnnotationNameValuePair @NotNull [] attributes,
-                                                                  boolean checkMissedAttributes) {
+  public static Pair<PsiElement, @InspectionMessage String> checkAnnotationArguments(@NotNull PsiClass annotation,
+                                                                                     GrAnnotationNameValuePair @NotNull [] attributes,
+                                                                                     boolean checkMissedAttributes) {
     Set<String> usedAttrs = new HashSet<>();
 
     if (attributes.length > 0) {
@@ -90,7 +91,7 @@ public abstract class CustomAnnotationChecker {
     }
 
     if (checkMissedAttributes && !missedAttrs.isEmpty()) {
-      return Pair.createNonNull(refToHighlight, GroovyBundle.message("missed.attributes", StringUtil.join(missedAttrs, ", ")));
+      return Pair.create(null, GroovyBundle.message("missed.attributes", StringUtil.join(missedAttrs, ", ")));
     }
     return null;
   }
@@ -117,9 +118,9 @@ public abstract class CustomAnnotationChecker {
     return null;
   }
 
-  public static Pair.NonNull<PsiElement,String> checkAnnotationValueByType(@NotNull GrAnnotationMemberValue value,
-                                                                   @Nullable PsiType ltype,
-                                                                   boolean skipArrays) {
+  public static Pair.NonNull<PsiElement, @InspectionMessage String> checkAnnotationValueByType(@NotNull GrAnnotationMemberValue value,
+                                                                                               @Nullable PsiType ltype,
+                                                                                               boolean skipArrays) {
     final GlobalSearchScope resolveScope = value.getResolveScope();
     final PsiManager manager = value.getManager();
 

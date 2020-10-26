@@ -1,18 +1,19 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight.completion;
 
 import com.intellij.lang.Language;
 import com.intellij.lang.LanguageExtension;
 import com.intellij.lang.MetaLanguage;
-import gnu.trove.THashSet;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-class CompletionExtension<T> extends LanguageExtension<T> {
-
-  CompletionExtension(String epName) {
+@ApiStatus.Internal
+public final class CompletionExtension<T> extends LanguageExtension<T> {
+  public CompletionExtension(String epName) {
     super(epName);
   }
 
@@ -25,6 +26,10 @@ class CompletionExtension<T> extends LanguageExtension<T> {
   @Override
   public void invalidateCacheForExtension(String key) {
     super.invalidateCacheForExtension(key);
+    // clear entire cache because, if languages are unloaded, we won't be able to find cache keys for unloaded dialects of
+    // given language
+    clearCache();
+
     if ("any".equals(key)) {
       for (Language language : Language.getRegisteredLanguages()) {
         super.invalidateCacheForExtension(keyToString(language));
@@ -34,7 +39,7 @@ class CompletionExtension<T> extends LanguageExtension<T> {
 
   @NotNull
   private Set<String> getAllBaseLanguageIdsWithAny(@NotNull Language key) {
-    Set<String> allowed = new THashSet<>();
+    Set<String> allowed = new HashSet<>();
     while (key != null) {
       allowed.add(keyToString(key));
       for (MetaLanguage metaLanguage : MetaLanguage.all()) {

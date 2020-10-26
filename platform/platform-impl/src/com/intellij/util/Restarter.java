@@ -13,7 +13,6 @@ import com.intellij.openapi.util.AtomicNotNullLazyValue;
 import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.NullableLazyValue;
 import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.util.text.StringUtil;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.WString;
@@ -42,7 +41,7 @@ public final class Restarter {
     return ourRestartSupported.getValue();
   }
 
-  private static final NotNullLazyValue<Boolean> ourRestartSupported = new AtomicNotNullLazyValue<Boolean>() {
+  private static final NotNullLazyValue<Boolean> ourRestartSupported = new AtomicNotNullLazyValue<>() {
     @Override
     protected @NotNull Boolean compute() {
       String problem;
@@ -118,7 +117,7 @@ public final class Restarter {
     return ourStarter.getValue();
   }
 
-  private static final NullableLazyValue<File> ourStarter = new NullableLazyValue<File>() {
+  private static final NullableLazyValue<File> ourStarter = new NullableLazyValue<>() {
     @Override
     protected File compute() {
       if (SystemInfo.isWindows && JnaLoader.isLoaded()) {
@@ -132,13 +131,7 @@ public final class Restarter {
         if (appDir != null && appDir.getName().endsWith(".app") && appDir.isDirectory()) return appDir;
       }
       else if (SystemInfo.isUnix) {
-        String binPath = PathManager.getBinPath();
-        ApplicationNamesInfo names = ApplicationNamesInfo.getInstance();
-        File starter = new File(binPath, names.getProductName() + ".sh");
-        if (starter.canExecute()) return starter;
-        starter = new File(binPath, StringUtil.toLowerCase(names.getProductName()) + ".sh");
-        if (starter.canExecute()) return starter;
-        starter = new File(binPath, names.getScriptName() + ".sh");
+        File starter = new File(PathManager.getBinPath(), ApplicationNamesInfo.getInstance().getScriptName() + ".sh");
         if (starter.canExecute()) return starter;
       }
 
@@ -266,7 +259,31 @@ public final class Restarter {
     }
     restarterArgs.add(0, restarter);
     Logger.getInstance(Restarter.class).info("run restarter: " + restarterArgs);
-    Runtime.getRuntime().exec(ArrayUtil.toStringArray(restarterArgs), null, doNotLock ? tempDir.toFile() : null);
+
+    ProcessBuilder processBuilder = new ProcessBuilder(restarterArgs);
+    if (doNotLock) processBuilder.directory(tempDir.toFile());
+    if (SystemInfo.isXWindow) setDesktopStartupId(processBuilder);
+    processBuilder.start();
+  }
+
+  // this is required to support X server's focus stealing prevention mechanism, see JBR-2503
+  private static void setDesktopStartupId(ProcessBuilder processBuilder) {
+    if (!SystemInfo.isJetBrainsJvm) return;
+    try {
+      Long lastUserActionTime = ReflectionUtil.getStaticFieldValue(Class.forName("sun.awt.X11.XBaseWindow"), long.class, "globalUserTime");
+      if (lastUserActionTime == null) {
+        Logger.getInstance(Restarter.class).warn("Couldn't obtain last user action's timestamp");
+      }
+      else {
+        // this doesn't start 'proper' startup sequence (by sending 'new:' message to the root window),
+        // but passing the event timestamp to the started process should be enough to prevent focus stealing
+        processBuilder.environment().put("DESKTOP_STARTUP_ID",
+                                         ApplicationNamesInfo.getInstance().getProductName() + "-restart_TIME" + lastUserActionTime);
+      }
+    }
+    catch (Exception e) {
+      Logger.getInstance(Restarter.class).warn("Couldn't set DESKTOP_STARTUP_ID", e);
+    }
   }
 
   @SuppressWarnings({"SameParameterValue", "UnusedReturnValue"})

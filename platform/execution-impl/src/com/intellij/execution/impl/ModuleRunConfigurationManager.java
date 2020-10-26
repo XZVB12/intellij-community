@@ -42,7 +42,7 @@ public final class ModuleRunConfigurationManager implements PersistentStateCompo
 
   public ModuleRunConfigurationManager(@NotNull Module module) {
     myModule = module;
-    myModule.getMessageBus().connect().subscribe(ProjectTopics.MODULES, new ModuleListener() {
+    myModule.getProject().getMessageBus().connect(myModule).subscribe(ProjectTopics.MODULES, new ModuleListener() {
       @Override
       public void beforeModuleRemoved(@NotNull Project project, @NotNull Module module) {
         if (myModule.equals(module)) {
@@ -108,12 +108,12 @@ public final class ModuleRunConfigurationManager implements PersistentStateCompo
   }
 
   private boolean usesMyModule(@NotNull RunnerAndConfigurationSettings runnerAndConfigurationSettings) {
-    // Presence of run configs stored in arbitrary file in project is controlled by the file presence, ModuleRunConfigurationManager doeshouldn't handle them.
+    // Presence of run configs stored in arbitrary file in project is controlled by the file presence, ModuleRunConfigurationManager shouldn't handle them.
     if (runnerAndConfigurationSettings.isStoredInArbitraryFileInProject()) return false;
 
     RunConfiguration config = runnerAndConfigurationSettings.getConfiguration();
     return config instanceof ModuleBasedConfiguration
-           && myModule.equals(((ModuleBasedConfiguration)config).getConfigurationModule().getModule());
+           && myModule.equals(((ModuleBasedConfiguration<?, ?>)config).getConfigurationModule().getModule());
   }
 
   public Element writeExternal(@NotNull final Element element, boolean isShared) throws WriteExternalException {

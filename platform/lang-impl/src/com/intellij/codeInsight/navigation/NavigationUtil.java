@@ -2,6 +2,7 @@
 
 package com.intellij.codeInsight.navigation;
 
+import com.intellij.codeInsight.CodeInsightBundle;
 import com.intellij.ide.util.DefaultPsiElementCellRenderer;
 import com.intellij.ide.util.EditSourceUtil;
 import com.intellij.ide.util.PsiElementListCellRenderer;
@@ -28,6 +29,7 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.*;
 import com.intellij.openapi.ui.popup.util.BaseListPopupStep;
+import com.intellij.openapi.util.NlsContexts.PopupTitle;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
@@ -63,14 +65,14 @@ public final class NavigationUtil {
   }
 
   @NotNull
-  public static JBPopup getPsiElementPopup(PsiElement @NotNull [] elements, String title) {
+  public static JBPopup getPsiElementPopup(PsiElement @NotNull [] elements, @PopupTitle String title) {
     return getPsiElementPopup(elements, new DefaultPsiElementCellRenderer(), title);
   }
 
   @NotNull
   public static JBPopup getPsiElementPopup(PsiElement @NotNull [] elements,
                                            @NotNull final PsiElementListCellRenderer<? super PsiElement> renderer,
-                                           final String title) {
+                                           @PopupTitle String title) {
     return getPsiElementPopup(elements, renderer, title, element -> {
       Navigatable descriptor = EditSourceUtil.getDescriptor(element);
       if (descriptor != null && descriptor.canNavigate()) {
@@ -83,7 +85,7 @@ public final class NavigationUtil {
   @NotNull
   public static <T extends PsiElement> JBPopup getPsiElementPopup(T @NotNull [] elements,
                                                                   @NotNull final PsiElementListCellRenderer<? super T> renderer,
-                                                                  final String title,
+                                                                  @PopupTitle String title,
                                                                   @NotNull final PsiElementProcessor<? super T> processor) {
     return getPsiElementPopup(elements, renderer, title, processor, null);
   }
@@ -91,7 +93,7 @@ public final class NavigationUtil {
   @NotNull
   public static <T extends PsiElement> JBPopup getPsiElementPopup(T @NotNull [] elements,
                                                                   @NotNull final PsiElementListCellRenderer<? super T> renderer,
-                                                                  @Nullable final String title,
+                                                                  @Nullable @PopupTitle String title,
                                                                   @NotNull final PsiElementProcessor<? super T> processor,
                                                                   @Nullable final T initialSelection) {
     assert elements.length > 0 : "Attempted to show a navigation popup with zero elements";
@@ -231,7 +233,7 @@ public final class NavigationUtil {
       if (!((MarkupModelEx)model).processRangeHighlightersOverlappingWith(range.getStartOffset(), range.getEndOffset(),
                                                                           highlighter -> {
                                                                             if (highlighter.isValid() && highlighter.getTargetArea() == HighlighterTargetArea.LINES_IN_RANGE) {
-                                                                              TextAttributes textAttributes = highlighter.getTextAttributes();
+                                                                              TextAttributes textAttributes = highlighter.getTextAttributes(editor.getColorsScheme());
                                                                               if (textAttributes != null) {
                                                                                 Color color = textAttributes.getBackgroundColor();
                                                                                 return !(color != null && color.getBlue() > 128 && color.getRed() < 128 && color.getGreen() < 128);
@@ -249,7 +251,7 @@ public final class NavigationUtil {
   }
 
   @NotNull
-  public static JBPopup getRelatedItemsPopup(final List<? extends GotoRelatedItem> items, String title) {
+  public static JBPopup getRelatedItemsPopup(final List<? extends GotoRelatedItem> items, @PopupTitle String title) {
     return getRelatedItemsPopup(items, title, false);
   }
 
@@ -260,7 +262,7 @@ public final class NavigationUtil {
    *                              {@code false} by default
    */
   @NotNull
-  public static JBPopup getRelatedItemsPopup(final List<? extends GotoRelatedItem> items, String title, boolean showContainingModules) {
+  public static JBPopup getRelatedItemsPopup(final List<? extends GotoRelatedItem> items, @PopupTitle String title, boolean showContainingModules) {
     List<Object> elements = new ArrayList<>(items.size());
     //todo[nik] move presentation logic to GotoRelatedItem class
     final Map<PsiElement, GotoRelatedItem> itemsMap = new HashMap<>();
@@ -287,7 +289,7 @@ public final class NavigationUtil {
   }
 
   private static JBPopup getPsiElementPopup(final List<Object> elements, final Map<PsiElement, GotoRelatedItem> itemsMap,
-                                           final String title, final boolean showContainingModules, final Processor<Object> processor) {
+                                            final @PopupTitle String title, final boolean showContainingModules, final Processor<Object> processor) {
 
     final Ref<Boolean> hasMnemonic = Ref.create(false);
     final DefaultPsiElementCellRenderer renderer = new DefaultPsiElementCellRenderer() {
@@ -376,7 +378,9 @@ public final class NavigationUtil {
           final GotoRelatedItem item = itemsMap.get(element);
           if (item != null && !StringUtil.equals(current, item.getGroup())) {
             current = item.getGroup();
-            separators.put(element, new ListSeparator(hasTitle && StringUtil.isEmpty(current) ? "Other" : current));
+            separators.put(element, new ListSeparator(
+              hasTitle && StringUtil.isEmpty(current) ? CodeInsightBundle.message("goto.related.items.separator.other") : current)
+            );
             if (!hasTitle && !StringUtil.isEmpty(current)) {
               hasTitle = true;
             }

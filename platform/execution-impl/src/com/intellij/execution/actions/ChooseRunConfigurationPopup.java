@@ -24,11 +24,12 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
-import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.openapi.ui.popup.ListPopupStep;
 import com.intellij.openapi.ui.popup.ListSeparator;
 import com.intellij.openapi.ui.popup.PopupStep;
 import com.intellij.openapi.ui.popup.util.BaseListPopupStep;
+import com.intellij.openapi.util.NlsActions;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.popup.WizardPopup;
 import com.intellij.ui.popup.list.ListPopupImpl;
@@ -82,8 +83,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     myPopup.showCenteredInCurrentWindow(myProject);
   }
 
-  @Nullable
-  protected String getAdText(final Executor alternateExecutor) {
+  private @Nullable String getAdText(final Executor alternateExecutor) {
     final PropertiesComponent properties = PropertiesComponent.getInstance();
     if (alternateExecutor != null && !properties.isTrueValue(myAddKey)) {
       return String
@@ -173,7 +173,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     myPopup.setCaption(getExecutor().getActionName());
   }
 
-  static void execute(final ItemWrapper itemWrapper, final Executor executor) {
+  private static void execute(ItemWrapper<?> itemWrapper, @Nullable Executor executor) {
     if (executor == null) {
       return;
     }
@@ -185,7 +185,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     }
   }
 
-  void editConfiguration(@NotNull Project project, @NotNull RunnerAndConfigurationSettings configuration) {
+  private void editConfiguration(@NotNull Project project, @NotNull RunnerAndConfigurationSettings configuration) {
     final Executor executor = getExecutor();
     PropertiesComponent.getInstance().setValue("run.configuration.edit.ad", Boolean.toString(true));
     if (RunDialog.editConfiguration(project, configuration, ExecutionBundle.message("dialog.title.edit.configuration.settings"), executor)) {
@@ -199,26 +199,26 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     boolean confirmed;
     if (runManagerConfig.isDeletionFromPopupRequiresConfirmation()) {
       popup.myPopup.cancel();
-      confirmed = Messages.YES == Messages.showYesNoDialog(project,
-                                                           ExecutionBundle.message("are.you.sure.you.want.to.delete.0", configurationSettings.getName()),
-                                                           CommonBundle.message("title.confirmation"),
-                                                           Messages.getQuestionIcon(), new DialogWrapper.DoNotAskOption.Adapter() {
-          @Override
-          public void rememberChoice(boolean isSelected, int exitCode) {
-            runManagerConfig.setDeletionFromPopupRequiresConfirmation(!isSelected);
-          }
+      confirmed = MessageDialogBuilder.yesNo(CommonBundle.message("title.confirmation"),
+                                             ExecutionBundle.message("are.you.sure.you.want.to.delete.0", configurationSettings.getName()))
+                    .doNotAsk(new DialogWrapper.DoNotAskOption.Adapter() {
+                      @Override
+                      public void rememberChoice(boolean isSelected, int exitCode) {
+                        runManagerConfig.setDeletionFromPopupRequiresConfirmation(!isSelected);
+                      }
 
-          @NotNull
-          @Override
-          public String getDoNotShowMessage() {
-            return ExecutionBundle.message("don.t.ask.again");
-          }
+                      @NotNull
+                      @Override
+                      public String getDoNotShowMessage() {
+                        return ExecutionBundle.message("don.t.ask.again");
+                      }
 
-          @Override
-          public boolean shouldSaveOptionsOnCancel() {
-            return true;
-          }
-        });
+                      @Override
+                      public boolean shouldSaveOptionsOnCancel() {
+                        return true;
+                      }
+                    })
+                    .ask(project);
     }
     else {
       confirmed = true;
@@ -270,7 +270,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     @Nullable
     public abstract Icon getIcon();
 
-    public abstract String getText();
+    public abstract @NlsActions.ActionText String getText();
 
     public boolean canBeDeleted() {
       return false;
@@ -350,7 +350,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     }
 
     public static ItemWrapper wrap(@NotNull final Project project, @NotNull final RunnerAndConfigurationSettings settings) {
-      return new ItemWrapper<RunnerAndConfigurationSettings>(settings) {
+      return new ItemWrapper<>(settings) {
         @Override
         public void perform(@NotNull Project project, @NotNull Executor executor, @NotNull DataContext context) {
           RunnerAndConfigurationSettings config = getValue();
@@ -609,7 +609,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
       });
 
       if (settings.isTemporary() || dynamic) {
-        result.add(new ActionWrapper(ExecutionBundle.message("choose.run.popup.save"), AllIcons.Actions.Menu_saveall) {
+        result.add(new ActionWrapper(ExecutionBundle.message("choose.run.popup.save"), AllIcons.Actions.MenuSaveall) {
           @Override
           public void perform() {
             final RunManager manager = RunManager.getInstance(project);
@@ -674,7 +674,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     }
   }
 
-  private static class RunListElementRenderer extends PopupListElementRenderer {
+  private static final class RunListElementRenderer extends PopupListElementRenderer {
     private JLabel myLabel;
     private final ListPopupImpl myPopup1;
     private final boolean myHasSideBar;
@@ -857,7 +857,7 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
     }
   }
 
-  private static class FolderWrapper extends ItemWrapper<String> {
+  private static final class FolderWrapper extends ItemWrapper<String> {
     private final Project myProject;
     private final ExecutorProvider myExecutorProvider;
     private final List<? extends RunnerAndConfigurationSettings> myConfigurations;
@@ -879,9 +879,8 @@ public final class ChooseRunConfigurationPopup implements ExecutorProvider {
       }
     }
 
-    @Nullable
     @Override
-    public Icon getIcon() {
+    public @NotNull Icon getIcon() {
       return AllIcons.Nodes.Folder;
     }
 

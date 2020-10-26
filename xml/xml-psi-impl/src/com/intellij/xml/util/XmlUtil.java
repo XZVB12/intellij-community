@@ -58,7 +58,7 @@ import java.io.File;
 import java.net.URL;
 import java.util.*;
 
-public class XmlUtil {
+public final class XmlUtil {
   @NonNls public static final String XML_SCHEMA_URI = "http://www.w3.org/2001/XMLSchema";
   @NonNls public static final String XML_SCHEMA_URI2 = "http://www.w3.org/1999/XMLSchema";
   @NonNls public static final String XML_SCHEMA_URI3 = "http://www.w3.org/2000/10/XMLSchema";
@@ -256,16 +256,16 @@ public class XmlUtil {
     return null;
   }
 
-  public static boolean processXmlElements(XmlElement element, PsiElementProcessor processor, boolean deepFlag) {
+  public static boolean processXmlElements(XmlElement element, PsiElementProcessor<? super PsiElement> processor, boolean deepFlag) {
     return XmlPsiUtil.processXmlElements(element, processor, deepFlag);
   }
 
-  public static boolean processXmlElements(XmlElement element, PsiElementProcessor processor, boolean deepFlag, boolean wideFlag) {
+  public static boolean processXmlElements(XmlElement element, PsiElementProcessor<? super PsiElement> processor, boolean deepFlag, boolean wideFlag) {
     return XmlPsiUtil.processXmlElements(element, processor, deepFlag, wideFlag);
   }
 
   public static boolean processXmlElements(final XmlElement element,
-                                           final PsiElementProcessor processor,
+                                           final PsiElementProcessor<? super PsiElement> processor,
                                            final boolean deepFlag,
                                            final boolean wideFlag,
                                            final PsiFile baseFile) {
@@ -273,7 +273,7 @@ public class XmlUtil {
   }
 
   public static boolean processXmlElements(final XmlElement element,
-                                           final PsiElementProcessor processor,
+                                           final PsiElementProcessor<? super PsiElement> processor,
                                            final boolean deepFlag,
                                            final boolean wideFlag,
                                            final PsiFile baseFile,
@@ -281,7 +281,7 @@ public class XmlUtil {
     return XmlPsiUtil.processXmlElements(element, processor, deepFlag, wideFlag, baseFile, processIncludes);
   }
 
-  public static boolean processXmlElementChildren(final XmlElement element, final PsiElementProcessor processor, final boolean deepFlag) {
+  public static boolean processXmlElementChildren(final XmlElement element, final PsiElementProcessor<? super PsiElement> processor, final boolean deepFlag) {
     return XmlPsiUtil.processXmlElementChildren(element, processor, deepFlag);
   }
 
@@ -348,7 +348,7 @@ public class XmlUtil {
       if (type instanceof ComplexTypeDescriptor) {
         final XmlTag[] simpleContent = new XmlTag[1];
 
-        processXmlElements(((ComplexTypeDescriptor)type).getDeclaration(), new PsiElementProcessor<PsiElement>() {
+        processXmlElements(((ComplexTypeDescriptor)type).getDeclaration(), new PsiElementProcessor<>() {
           @Override
           public boolean execute(@NotNull final PsiElement element) {
             if (element instanceof XmlTag) {
@@ -385,7 +385,7 @@ public class XmlUtil {
 
       if (presentNames.containsKey(nameKey)) {
         final T psiElement = presentNames.get(nameKey);
-        final String message = XmlPsiBundle.message("duplicate.declaration", nameKey);
+        final String message = XmlPsiBundle.message("xml.inspections.duplicate.declaration", nameKey);
 
         if (psiElement != null) {
           presentNames.put(nameKey, null);
@@ -1003,7 +1003,7 @@ public class XmlUtil {
 
       final PsiNamedElement[] result = new PsiNamedElement[1];
 
-      processXmlElements((XmlFile)currentElement, new PsiElementProcessor<PsiElement>() {
+      processXmlElements((XmlFile)currentElement, new PsiElementProcessor<>() {
         @Override
         public boolean execute(@NotNull final PsiElement element) {
           if (element instanceof PsiNamedElement) {

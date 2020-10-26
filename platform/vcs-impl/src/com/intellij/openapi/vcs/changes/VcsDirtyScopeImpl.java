@@ -8,7 +8,7 @@ import com.intellij.openapi.vcs.AbstractVcs;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.ProjectLevelVcsManager;
 import com.intellij.openapi.vcs.VcsRoot;
-import com.intellij.openapi.vcs.impl.projectlevelman.FilePathMapping;
+import com.intellij.openapi.vcs.impl.projectlevelman.RecursiveFilePathSet;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -140,9 +140,11 @@ public class VcsDirtyScopeImpl extends VcsModifiableDirtyScope {
   }
 
   /**
-   * Remove potential duplicates from the sets.
+   * @return VcsDirtyScope with trimmed duplicated paths from the sets.
    */
-  public void pack() {
+  @NotNull
+  public VcsDirtyScopeImpl pack() {
+    VcsDirtyScopeImpl copy = new VcsDirtyScopeImpl(myVcs, myWasEverythingDirty);
     for (VirtualFile root : myAffectedContentRoots) {
       RecursiveFilePathSet rootDirs = myDirtyDirectoriesRecursively.get(root);
       Set<FilePath> rootFiles = notNullize(myDirtyFiles.get(root));
@@ -150,9 +152,11 @@ public class VcsDirtyScopeImpl extends VcsModifiableDirtyScope {
       RecursiveFilePathSet filteredDirs = removeAncestorsRecursive(rootDirs);
       THashSet<FilePath> filteredFiles = removeAncestorsNonRecursive(filteredDirs, rootFiles);
 
-      myDirtyDirectoriesRecursively.put(root, filteredDirs);
-      myDirtyFiles.put(root, filteredFiles);
+      copy.myAffectedContentRoots.add(root);
+      copy.myDirtyDirectoriesRecursively.put(root, filteredDirs);
+      copy.myDirtyFiles.put(root, filteredFiles);
     }
+    return copy;
   }
 
   @NotNull
@@ -431,30 +435,5 @@ public class VcsDirtyScopeImpl extends VcsModifiableDirtyScope {
   @Override
   public boolean wasEveryThingDirty() {
     return myWasEverythingDirty;
-  }
-
-  private static class RecursiveFilePathSet {
-    private final FilePathMapping<FilePath> myMapping;
-
-    private RecursiveFilePathSet(boolean caseSensitive) {
-      myMapping = new FilePathMapping<>(caseSensitive);
-    }
-
-    public void add(@NotNull FilePath filePath) {
-      myMapping.add(filePath.getPath(), filePath);
-    }
-
-    public void remove(@NotNull FilePath filePath) {
-      myMapping.remove(filePath.getPath());
-    }
-
-    public boolean hasAncestor(@NotNull FilePath filePath) {
-      return myMapping.getMappingFor(filePath) != null;
-    }
-
-    @NotNull
-    public Collection<FilePath> filePaths() {
-      return myMapping.values();
-    }
   }
 }

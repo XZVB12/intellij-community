@@ -12,12 +12,11 @@ import com.intellij.openapi.application.JetBrainsProtocolHandler;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.ExceptionUtil;
+import com.intellij.util.ExceptionUtilRt;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufOutputStream;
-import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -26,10 +25,7 @@ import org.jetbrains.io.BuiltInServer;
 import org.jetbrains.io.MessageDecoder;
 
 import java.awt.*;
-import java.io.BufferedReader;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.net.ConnectException;
 import java.net.InetAddress;
@@ -43,12 +39,14 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
+
+import static com.intellij.ide.SpecialConfigFiles.*;
 
 public final class SocketLock {
   public enum ActivationStatus {ACTIVATED, NO_INSTANCE, CANNOT_ACTIVATE}
@@ -61,10 +59,6 @@ public final class SocketLock {
    * properly; see the details in WindowsLauncher.cpp.
    */
   public static final String LAUNCHER_INITIAL_DIRECTORY_ENV_VAR = "IDEA_INITIAL_DIRECTORY";
-
-  private static final String PORT_FILE = "port";
-  private static final String PORT_LOCK_FILE = "port.lock";
-  private static final String TOKEN_FILE = "token";
 
   private static final String ACTIVATE_COMMAND = "activate ";
   private static final String PID_COMMAND = "pid";
@@ -174,8 +168,7 @@ public final class SocketLock {
 
       String token = UUID.randomUUID().toString();
       Path[] lockedPaths = {myConfigPath, mySystemPath};
-      Supplier<ChannelHandler> handlerSupplier = () -> new MyChannelInboundHandler(lockedPaths, myCommandProcessorRef, token);
-      BuiltInServer server = BuiltInServer.startNioOrOio(BuiltInServer.getRecommendedWorkerCount(), 6942, 50, false, handlerSupplier);
+      BuiltInServer server = BuiltInServer.start(6942, 50, () -> new MyChannelInboundHandler(lockedPaths, myCommandProcessorRef, token));
       try {
         byte[] portBytes = Integer.toString(server.getPort()).getBytes(StandardCharsets.UTF_8);
         Files.write(myConfigPath.resolve(PORT_FILE), portBytes);
@@ -196,7 +189,8 @@ public final class SocketLock {
         unlockPortFiles();
       }
       catch (Exception e) {
-        ExceptionUtil.rethrow(e);
+        ExceptionUtilRt.rethrowUnchecked(e);
+        throw new CompletionException(e);
       }
 
       activity.end();
@@ -266,7 +260,7 @@ public final class SocketLock {
     try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), portNumber)) {
       socket.setSoTimeout(5000);
 
-      DataInputStream in = new DataInputStream(socket.getInputStream());
+      DataInput in = new DataInputStream(socket.getInputStream());
       List<String> stringList = readStringSequence(in);
       // backward compatibility: requires at least one path to match
       boolean result = ContainerUtil.intersects(paths, stringList);
@@ -444,7 +438,7 @@ public final class SocketLock {
     context.writeAndFlush(buffer);
   }
 
-  private static @NotNull List<String> readStringSequence(@NotNull DataInputStream in) {
+  private static @NotNull List<String> readStringSequence(@NotNull DataInput in) {
     List<String> result = new ArrayList<>();
     while (true) {
       try {

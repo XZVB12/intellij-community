@@ -23,7 +23,6 @@ import com.intellij.openapi.vcs.versionBrowser.CommittedChangeList;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Consumer;
 import com.intellij.util.containers.MultiMap;
-import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.messages.Topic;
 import com.intellij.vcs.ProgressManagerQueue;
@@ -81,6 +80,7 @@ public final class CommittedChangesCache extends SimplePersistentStateComponent<
       @Override
       public void directoryMappingChanged() {
         myLocationCache.reset();
+        myCachesHolder.reset();
         refreshAllCachesAsync(false, true);
         refreshIncomingChangesAsync();
         myTaskQueue.run(() -> {
@@ -117,10 +117,6 @@ public final class CommittedChangesCache extends SimplePersistentStateComponent<
     myExternallyLoadedChangeLists = new ConcurrentHashMap<>();
   }
 
-  public MessageBus getMessageBus() {
-    return myProject.getMessageBus();
-  }
-
   @Override
   public void loadState(@NotNull CommittedChangesCacheState state) {
     super.loadState(state);
@@ -140,7 +136,7 @@ public final class CommittedChangesCache extends SimplePersistentStateComponent<
     return true;
   }
 
-  private class MyProjectChangesLoader implements Runnable {
+  private final class MyProjectChangesLoader implements Runnable {
     private final ChangeBrowserSettings mySettings;
     private final int myMaxCount;
     private final boolean myCacheOnly;
@@ -557,7 +553,7 @@ public final class CommittedChangesCache extends SimplePersistentStateComponent<
     return result;
   }
 
-  private static class IncomingListsZipper extends VcsCommittedListsZipperAdapter {
+  private static final class IncomingListsZipper extends VcsCommittedListsZipperAdapter {
     private final VcsCommittedListsZipper myVcsZipper;
 
     private IncomingListsZipper(final VcsCommittedListsZipper vcsZipper) {
@@ -952,7 +948,7 @@ public final class CommittedChangesCache extends SimplePersistentStateComponent<
     void receivedError(VcsException ex);
   }
 
-  private static class MyRefreshRunnable implements Runnable {
+  private static final class MyRefreshRunnable implements Runnable {
     private CommittedChangesCache myCache;
 
     private MyRefreshRunnable(final CommittedChangesCache cache) {

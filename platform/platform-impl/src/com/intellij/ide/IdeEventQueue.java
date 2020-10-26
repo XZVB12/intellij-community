@@ -10,6 +10,8 @@ import com.intellij.ide.dnd.DnDManager;
 import com.intellij.ide.dnd.DnDManagerImpl;
 import com.intellij.ide.plugins.StartupAbortedException;
 import com.intellij.ide.ui.UISettings;
+import com.intellij.internal.statistic.eventLog.FeatureUsageData;
+import com.intellij.internal.statistic.service.fus.collectors.FUCounterUsageLogger;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.KeyboardShortcut;
@@ -18,7 +20,6 @@ import com.intellij.openapi.actionSystem.impl.ActionManagerImpl;
 import com.intellij.openapi.application.*;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.application.impl.LaterInvocator;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.keymap.Keymap;
 import com.intellij.openapi.keymap.KeymapManager;
@@ -32,21 +33,17 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.IdeFrame;
+import com.intellij.openapi.wm.WindowManager;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
 import com.intellij.openapi.wm.impl.FocusManagerImpl;
 import com.intellij.openapi.wm.impl.ProjectFrameHelper;
 import com.intellij.ui.ComponentUtil;
 import com.intellij.ui.mac.touchbar.TouchBarsManager;
-import com.intellij.util.Alarm;
-import com.intellij.util.ExceptionUtil;
-import com.intellij.util.ReflectionUtil;
-import com.intellij.util.SystemProperties;
+import com.intellij.util.*;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.lang.JavaVersion;
 import com.intellij.util.ui.EDT;
 import com.intellij.util.ui.UIUtil;
-import gnu.trove.THashMap;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import sun.awt.AppContext;
@@ -65,24 +62,26 @@ import java.util.List;
 import java.util.Queue;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import static com.intellij.openapi.application.impl.InvocationUtil.*;
 
 public final class IdeEventQueue extends EventQueue {
-  private static final Set<Class<? extends Runnable>> ourRunnablesWoWrite = ContainerUtil.set(REPAINT_PROCESSING_CLASS);
-  private static final Set<Class<? extends Runnable>> ourRunnablesWithWrite = ContainerUtil.set(FLUSH_NOW_CLASS);
+  private static final Set<Class<? extends Runnable>> ourRunnablesWoWrite = Set.of(REPAINT_PROCESSING_CLASS);
+  private static final Set<Class<? extends Runnable>> ourRunnablesWithWrite = Set.of(FLUSH_NOW_CLASS);
   private static final boolean ourDefaultEventWithWrite = true;
 
   private static final Logger LOG = Logger.getInstance(IdeEventQueue.class);
   private static final Logger TYPEAHEAD_LOG = Logger.getInstance(IdeEventQueue.class.getName() + ".typeahead");
   private static final Logger FOCUS_AWARE_RUNNABLES_LOG = Logger.getInstance(IdeEventQueue.class.getName() + ".runnables");
   private static final boolean JAVA11_ON_MAC = SystemInfo.isMac && SystemInfo.isJavaVersionAtLeast(11, 0, 0);
-  private static final boolean ourActionAwareTypeaheadEnabled = SystemProperties.getBooleanProperty("action.aware.typeAhead", true);
+  private static final boolean ourActionAwareTypeaheadEnabled = !SystemInfo.isMac && SystemProperties.getBooleanProperty("action.aware.typeAhead", true);
   private static final boolean ourTypeAheadSearchEverywhereEnabled =
     SystemProperties.getBooleanProperty("action.aware.typeAhead.searchEverywhere", false);
   private static final boolean ourSkipTypedEvent = SystemProperties.getBooleanProperty("skip.typed.event", true);
@@ -99,12 +98,11 @@ public final class IdeEventQueue extends EventQueue {
   private final List<Runnable> myIdleListeners = ContainerUtil.createLockFreeCopyOnWriteList();
   private final List<Runnable> myActivityListeners = ContainerUtil.createLockFreeCopyOnWriteList();
   private final Alarm myIdleRequestsAlarm = new Alarm();
-  private final Map<Runnable, MyFireIdleRequest> myListenerToRequest = new THashMap<>();
+  private final Map<Runnable, MyFireIdleRequest> myListenerToRequest = new HashMap<>();
   // IdleListener -> MyFireIdleRequest
   private final IdeKeyEventDispatcher myKeyEventDispatcher = new IdeKeyEventDispatcher(this);
   private final IdeMouseEventDispatcher myMouseEventDispatcher = new IdeMouseEventDispatcher();
   private final IdePopupManager myPopupManager = new IdePopupManager();
-  private final ToolkitBugsProcessor myToolkitBugsProcessor = new ToolkitBugsProcessor();
 
   /**
    * Counter of processed events. It is used to assert that data context lives only inside single
@@ -124,14 +122,14 @@ public final class IdeEventQueue extends EventQueue {
   private WindowManagerEx myWindowManager;
   private final List<EventDispatcher> myDispatchers = ContainerUtil.createLockFreeCopyOnWriteList();
   private final List<EventDispatcher> myPostProcessors = ContainerUtil.createLockFreeCopyOnWriteList();
-  private final Set<Runnable> myReady = new THashSet<>();
+  private final Set<Runnable> myReady = new HashSet<>();
   private boolean myKeyboardBusy;
   private boolean myWinMetaPressed;
   private int myInputMethodLock;
   private final com.intellij.util.EventDispatcher<PostEventHook>
     myPostEventListeners = com.intellij.util.EventDispatcher.create(PostEventHook.class);
 
-  private final Map<AWTEvent, List<Runnable>> myRunnablesWaitingFocusChange = new THashMap<>();
+  private final Map<AWTEvent, List<Runnable>> myRunnablesWaitingFocusChange = new HashMap<>();
   private MyLastShortcut myLastShortcut;
 
   public void executeWhenAllFocusEventsLeftTheQueue(@NotNull Runnable runnable) {
@@ -218,6 +216,7 @@ public final class IdeEventQueue extends EventQueue {
       addDispatcher(new WindowsUpMaximizer(), null);
     }
     addDispatcher(new EditingCanceller(), null);
+    //addDispatcher(new UIMouseTracker(), null);
 
     abracadabraDaberBoreh();
 
@@ -601,7 +600,7 @@ public final class IdeEventQueue extends EventQueue {
     if (manager == null) {
       Application app = ApplicationManager.getApplication();
       if (app != null && !app.isDisposed()) {
-        ourProgressManager = manager = ServiceManager.getService(ProgressManager.class);
+        ourProgressManager = manager = ApplicationManager.getApplication().getService(ProgressManager.class);
       }
     }
     return manager;
@@ -692,9 +691,8 @@ public final class IdeEventQueue extends EventQueue {
     if (isTestMode()) {
       ExceptionUtil.rethrow(t);
     }
-    if (!myToolkitBugsProcessor.process(t)) {
-      StartupAbortedException.processException(t);
-    }
+
+    StartupAbortedException.processException(t);
   }
 
   @NotNull
@@ -826,7 +824,7 @@ public final class IdeEventQueue extends EventQueue {
       }
     }
 
-    if (e instanceof ComponentEvent && myWindowManager != null) {
+    if (e instanceof ComponentEvent && myWindowManager != null && !ApplicationManager.getApplication().isHeadlessEnvironment()) {
       myWindowManager.dispatchComponentEvent((ComponentEvent)e);
     }
 
@@ -895,6 +893,9 @@ public final class IdeEventQueue extends EventQueue {
 
   private void dispatchMouseEvent(@NotNull AWTEvent e) {
     MouseEvent me = (MouseEvent)e;
+
+    if (me.getClickCount() > 10) LOG.warn(String.format("Too many mouse clicks (%d)!!!", me.getClickCount()));
+
     if (me.getID() == MouseEvent.MOUSE_PRESSED && me.getModifiers() > 0 && me.getModifiersEx() == 0) {
       resetGlobalMouseEventTarget(me);
     }
@@ -934,27 +935,28 @@ public final class IdeEventQueue extends EventQueue {
 
   private static void processAppActivationEvent(@NotNull WindowEvent event) {
     ApplicationActivationStateManager.updateState(event);
-    storeLastFocusedComponent(event);
-  }
 
-  private static void storeLastFocusedComponent(@NotNull WindowEvent we) {
-    if (we.getID() != WindowEvent.WINDOW_DEACTIVATED && we.getID() != WindowEvent.WINDOW_LOST_FOCUS) {
+    if (event.getID() != WindowEvent.WINDOW_DEACTIVATED && event.getID() != WindowEvent.WINDOW_LOST_FOCUS) {
       return;
     }
 
-    Window eventWindow = we.getWindow();
+    Window eventWindow = event.getWindow();
     Component focusOwnerInDeactivatedWindow = eventWindow.getMostRecentFocusOwner();
     if (focusOwnerInDeactivatedWindow == null) {
       return;
     }
 
     Component frame = ComponentUtil.findUltimateParent(eventWindow);
-    for (ProjectFrameHelper frameHelper : WindowManagerEx.getInstanceEx().getProjectFrameHelpers()) {
-      JFrame aFrame = frameHelper.getFrame();
-      if (aFrame.equals(frame)) {
+    WindowManager windowManager = ApplicationManager.getApplication().getServiceIfCreated(WindowManager.class);
+    if (windowManager == null) {
+      return;
+    }
+
+    for (ProjectFrameHelper frameHelper : ((WindowManagerEx)windowManager).getProjectFrameHelpers()) {
+      if (frame == frameHelper.getFrame()) {
         IdeFocusManager focusManager = IdeFocusManager.getGlobalInstance();
         if (focusManager instanceof FocusManagerImpl) {
-          ((FocusManagerImpl)focusManager).setLastFocusedAtDeactivation(aFrame, focusOwnerInDeactivatedWindow);
+          ((FocusManagerImpl)focusManager).setLastFocusedAtDeactivation((Window)frame, focusOwnerInDeactivatedWindow);
         }
       }
     }
@@ -964,7 +966,30 @@ public final class IdeEventQueue extends EventQueue {
     try {
       maybeReady();
       fixStickyAlt(e);
+      KeyEvent ke = e instanceof KeyEvent ? (KeyEvent)e : null;
+      boolean consumed = ke == null || ke.isConsumed();
       super.dispatchEvent(e);
+      // collect mnemonics statistics only if key event was processed above
+      if (!consumed && ke.isConsumed() && KeyEvent.KEY_PRESSED == ke.getID()) {
+        int code = ke.getKeyCode();
+        if (KeyEvent.VK_0 <= code && code <= KeyEvent.VK_Z) {
+          int modifiers = ke.getModifiersEx();
+          FeatureUsageData data = null;
+          if (modifiers == InputEvent.ALT_DOWN_MASK) {
+            if (IdeKeyEventDispatcher.hasMnemonicInWindow(ke.getComponent(), ke)) {
+              data = new FeatureUsageData().addData("type", SystemInfoRt.isMac ? "mac.alt.based" : "regular");
+            }
+          }
+          else if (SystemInfoRt.isMac && modifiers == (InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK)) {
+            if (IdeKeyEventDispatcher.hasMnemonicInWindow(ke.getComponent(), ke)) {
+              data = new FeatureUsageData().addData("type", "mac.regular");
+            }
+          }
+          if (data != null) {
+            FUCounterUsageLogger.getInstance().logEvent("ui.mnemonic", "mnemonic.used", data);
+          }
+        }
+      }
     }
     catch (Throwable t) {
       processException(t);
@@ -994,44 +1019,46 @@ public final class IdeEventQueue extends EventQueue {
     }
   }
 
-  public void pumpEventsForHierarchy(@NotNull Component modalComponent, @NotNull Condition<? super AWTEvent> exitCondition) {
+  public void pumpEventsForHierarchy(@NotNull Component modalComponent, @NotNull Future<?> exitCondition, @NotNull Predicate<? super AWTEvent> isCancelEvent) {
     if (LOG.isDebugEnabled()) {
       LOG.debug("pumpEventsForHierarchy(" + modalComponent + ", " + exitCondition + ")");
     }
-    AWTEvent event;
-    do {
+    while (!exitCondition.isDone()) {
       try {
-        event = getNextEvent();
-        boolean eventOk = true;
-        if (event instanceof InputEvent) {
-          final Object s = event.getSource();
-          if (s instanceof Component) {
-            Component c = (Component)s;
-            Window modalWindow = SwingUtilities.windowForComponent(modalComponent);
-            while (c != null && c != modalWindow) c = c.getParent();
-            if (c == null) {
-              eventOk = false;
-              if (LOG.isDebugEnabled()) {
-                LOG.debug("pumpEventsForHierarchy.consumed: " + event);
-              }
-              ((InputEvent)event).consume();
-            }
-          }
-        }
-
-        if (eventOk) {
+        AWTEvent event = getNextEvent();
+        boolean consumed = consumeUnrelatedEvent(modalComponent, event);
+        if (!consumed) {
           dispatchEvent(event);
         }
       }
       catch (Throwable e) {
         LOG.error(e);
-        event = null;
       }
     }
-    while (!exitCondition.value(event));
     if (LOG.isDebugEnabled()) {
       LOG.debug("pumpEventsForHierarchy.exit(" + modalComponent + ", " + exitCondition + ")");
     }
+  }
+
+  // return true if consumed
+  private static boolean consumeUnrelatedEvent(@NotNull Component modalComponent, @NotNull AWTEvent event) {
+    boolean consumed = false;
+    if (event instanceof InputEvent) {
+      Object s = event.getSource();
+      if (s instanceof Component) {
+        Component c = (Component)s;
+        Window modalWindow = SwingUtilities.windowForComponent(modalComponent);
+        while (c != null && c != modalWindow) c = c.getParent();
+        if (c == null) {
+          consumed = true;
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("pumpEventsForHierarchy.consumed: " + event);
+          }
+          ((InputEvent)event).consume();
+        }
+      }
+    }
+    return consumed;
   }
 
   @FunctionalInterface
@@ -1636,7 +1663,7 @@ public final class IdeEventQueue extends EventQueue {
     r.run();
   }
 
-  private static class MyLastShortcut {
+  private static final class MyLastShortcut {
     public final long when;
     public final char keyChar;
 

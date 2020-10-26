@@ -7,7 +7,8 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.vcs.changes.EditorTabPreviewEscapeAction;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.vcs.commit.ChangesViewCommitPanel;
+import com.intellij.vcs.commit.CommitActionsPanel;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -18,7 +19,7 @@ import static com.intellij.util.containers.ContainerUtil.filter;
 
 public class VcsActionPromoter implements ActionPromoter {
   @Override
-  public List<AnAction> promote(List<AnAction> actions, DataContext context) {
+  public List<AnAction> promote(@NotNull List<AnAction> actions, @NotNull DataContext context) {
     ActionManager am = ActionManager.getInstance();
     List<AnAction> reorderedActions = new ArrayList<>(actions);
     List<String> reorderedIds = ContainerUtil.map(reorderedActions, it -> am.getId(it));
@@ -27,7 +28,7 @@ public class VcsActionPromoter implements ActionPromoter {
     reorderActionPair(reorderedActions, reorderedIds, "Vcs.RollbackChangedLines", "ChangesView.Revert");
 
     Set<AnAction> promoted = new HashSet<>(filter(actions, action ->
-      action instanceof ShowMessageHistoryAction || action instanceof ChangesViewCommitPanel.DefaultCommitAction
+      action instanceof ShowMessageHistoryAction || action instanceof CommitActionsPanel.DefaultCommitAction
     ));
     Set<AnAction> demoted = new HashSet<>(filter(actions, action ->
       action instanceof EditorTabPreviewEscapeAction

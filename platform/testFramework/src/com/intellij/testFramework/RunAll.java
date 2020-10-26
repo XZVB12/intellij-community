@@ -1,6 +1,7 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.testFramework;
 
+import com.intellij.util.ErrorKt;
 import com.intellij.util.SmartList;
 import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.containers.ContainerUtil;
@@ -32,7 +33,7 @@ public final class RunAll implements Runnable {
 
   @SafeVarargs
   public static void runAll(ThrowableRunnable<Throwable> @NotNull ... actions) {
-    CompoundRuntimeException.throwIfNotEmpty(collectExceptions(Arrays.asList(actions)));
+    ErrorKt.throwIfNotEmpty(collectExceptions(Arrays.asList(actions)));
   }
 
   @SafeVarargs
@@ -47,11 +48,10 @@ public final class RunAll implements Runnable {
   }
 
   public void run(@NotNull List<? extends Throwable> suppressedExceptions) {
-    CompoundRuntimeException.throwIfNotEmpty(ContainerUtil.concat(suppressedExceptions, collectExceptions(myActions)));
+    ErrorKt.throwIfNotEmpty(ContainerUtil.concat(suppressedExceptions, collectExceptions(myActions)));
   }
 
-  @NotNull
-  private static List<Throwable> collectExceptions(@NotNull List<? extends ThrowableRunnable<?>> actions) {
+  private static @NotNull List<Throwable> collectExceptions(@NotNull List<? extends ThrowableRunnable<?>> actions) {
     List<Throwable> result = null;
     for (ThrowableRunnable<?> action : actions) {
       try {

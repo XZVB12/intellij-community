@@ -21,7 +21,10 @@ import com.intellij.openapi.editor.colors.EditorFontType;
 import com.intellij.openapi.editor.ex.MarkupModelEx;
 import com.intellij.openapi.editor.ex.RangeHighlighterEx;
 import com.intellij.openapi.editor.impl.DocumentMarkupModel;
-import com.intellij.openapi.editor.markup.*;
+import com.intellij.openapi.editor.markup.GutterDraggableObject;
+import com.intellij.openapi.editor.markup.GutterIconRenderer;
+import com.intellij.openapi.editor.markup.HighlighterLayer;
+import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.keymap.KeymapUtil;
@@ -38,10 +41,10 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.reference.SoftReference;
 import com.intellij.ui.ColorUtil;
+import com.intellij.ui.IconWithToolTip;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.RetrievableIcon;
 import com.intellij.util.IconUtil;
-import com.intellij.util.ObjectUtils;
 import com.intellij.util.PlatformIcons;
 import com.intellij.util.ui.JBCachingScalableIcon;
 import org.jetbrains.annotations.ApiStatus;
@@ -151,24 +154,10 @@ public final class Bookmark implements Navigatable, Comparable<Bookmark> {
     final RangeHighlighterEx highlighter;
     int line = getLine();
     if (line >= 0) {
-      highlighter = markup.addPersistentLineHighlighter(line, HighlighterLayer.ERROR + 1, null);
+      highlighter = markup.addPersistentLineHighlighter(CodeInsightColors.BOOKMARKS_ATTRIBUTES, line, HighlighterLayer.ERROR + 1);
       if (highlighter != null) {
         highlighter.setGutterIconRenderer(new MyGutterIconRenderer(this));
-
-        TextAttributes textAttributes =
-          ObjectUtils.notNull(EditorColorsManager.getInstance().getGlobalScheme().getAttributes(CodeInsightColors.BOOKMARKS_ATTRIBUTES),
-                              new TextAttributes());
-        Color stripeColor = ObjectUtils.notNull(textAttributes.getErrorStripeColor(), new JBColor(0x000000, 0xdbdbdb));
-        highlighter.setErrorStripeMarkColor(stripeColor);
         highlighter.setErrorStripeTooltip(getBookmarkTooltip());
-
-        TextAttributes attributes = highlighter.getTextAttributes();
-        if (attributes == null) {
-          attributes = new TextAttributes();
-        }
-        attributes.setBackgroundColor(textAttributes.getBackgroundColor());
-        attributes.setForegroundColor(textAttributes.getForegroundColor());
-        highlighter.setTextAttributes(attributes);
       }
     }
     else {
@@ -305,6 +294,10 @@ public final class Bookmark implements Navigatable, Comparable<Bookmark> {
     return targetLine;
   }
 
+  public boolean hasLine() {
+    return myTarget.getLine() >= 0;
+  }
+
   @NotNull
   private OpenFileDescriptor getTarget() {
     int line = getLine();
@@ -399,7 +392,7 @@ public final class Bookmark implements Navigatable, Comparable<Bookmark> {
     return result.toString();
   }
 
-  static class MnemonicIcon extends JBCachingScalableIcon<MnemonicIcon> {
+  static final class MnemonicIcon extends JBCachingScalableIcon<MnemonicIcon> {
     private static final MnemonicIcon[] cache = new MnemonicIcon[36];//0..9  + A..Z
     private final char myMnemonic;
 
@@ -484,7 +477,7 @@ public final class Bookmark implements Navigatable, Comparable<Bookmark> {
     }
   }
 
-  private static class MyCheckedIcon extends JBCachingScalableIcon<MyCheckedIcon> implements RetrievableIcon {
+  private static class MyCheckedIcon extends JBCachingScalableIcon<MyCheckedIcon> implements RetrievableIcon, IconWithToolTip {
     @NotNull
     @Override
     public Icon retrieveIcon() {
@@ -514,6 +507,11 @@ public final class Bookmark implements Navigatable, Comparable<Bookmark> {
     @Override
     public MyCheckedIcon copy() {
       return new MyCheckedIcon();
+    }
+
+    @Override
+    public String getToolTip(boolean composite) {
+      return IdeBundle.message("tooltip.bookmarked");
     }
   }
 
@@ -553,11 +551,6 @@ public final class Bookmark implements Navigatable, Comparable<Bookmark> {
           myBookmark.myTarget = new OpenFileDescriptor(myBookmark.myTarget.getProject(), file, line, -1, true);
           myBookmark.updateHighlighter();
           return true;
-        }
-
-        @Override
-        public Cursor getCursor(int line, int actionId) {
-          return DragSource.DefaultMoveDrop;
         }
       };
     }

@@ -15,6 +15,9 @@ import javax.swing.*;
 public class DictionaryFileType implements FileType {
   public static final DictionaryFileType INSTANCE = new DictionaryFileType();
 
+  private DictionaryFileType() {
+  }
+
   @NotNull
   @Override
   public String getName() {
@@ -41,11 +44,6 @@ public class DictionaryFileType implements FileType {
 
   @Override
   public boolean isBinary() {
-    return false;
-  }
-
-  @Override
-  public boolean isReadOnly() {
     return false;
   }
 

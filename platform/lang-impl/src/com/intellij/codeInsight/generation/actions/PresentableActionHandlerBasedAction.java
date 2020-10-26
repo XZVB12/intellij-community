@@ -14,13 +14,14 @@ import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiUtilCore;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public abstract class PresentableActionHandlerBasedAction extends BaseCodeInsightAction {
-  private String myCurrentActionName = null;
+  private @NlsContexts.Command String myCurrentActionName = null;
 
   @Override
   protected String getCommandName() {
@@ -30,7 +31,11 @@ public abstract class PresentableActionHandlerBasedAction extends BaseCodeInsigh
 
   @Override
   public void update(@NotNull AnActionEvent event) {
-    // since previous handled may have changed the presentation, we need to restore it; otherwise it will stick. 
+    if (!getLanguageExtension().hasAnyExtensions()) {
+      event.getPresentation().setEnabledAndVisible(false);
+      return;
+    }
+    // since previous handled may have changed the presentation, we need to restore it; otherwise it will stick.
     event.getPresentation().copyFrom(getTemplatePresentation());
     applyTextOverride(event);
     super.update(event);

@@ -325,15 +325,15 @@ public final class Generator {
 
     final String textOfMethods =
       "public void setData(" + dataBeanClassName + " data){\n" +
-      setDataBody.toString() +
+      setDataBody +
       "}\n" +
       "\n" +
       "public void getData(" + dataBeanClassName + " data){\n" +
-      getDataBody.toString() +
+      getDataBody +
       "}\n" +
       "\n" +
       "public boolean isModified(" + dataBeanClassName + " data){\n" +
-      isModifiedBody.toString() +
+      isModifiedBody +
       "}\n";
 
     // put them to the bound class
@@ -676,16 +676,13 @@ public final class Generator {
           }
 
           final PsiExpressionList argumentList = callExpression.getArgumentList();
-          if (argumentList == null) {
-            continue;
-          }
 
           final PsiExpression[] expressions = argumentList.getExpressions();
-          if (expressions == null || expressions.length != 1) {
+          if (expressions.length != 1) {
             continue;
           }
 
-          if (!(expressions[0]instanceof PsiMethodCallExpression)) {
+          if (!(expressions[0] instanceof PsiMethodCallExpression)) {
             continue;
           }
 

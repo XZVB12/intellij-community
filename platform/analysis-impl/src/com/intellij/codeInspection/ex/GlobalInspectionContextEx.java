@@ -13,10 +13,10 @@ import com.intellij.codeInspection.ui.AggregateResultsExporter;
 import com.intellij.codeInspection.ui.GlobalReportedProblemFilter;
 import com.intellij.codeInspection.ui.ReportedProblemFilter;
 import com.intellij.configurationStore.JbXmlOutputter;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.ConcurrencyUtil;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.ContainerUtil;
@@ -32,6 +32,7 @@ import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +48,8 @@ public class GlobalInspectionContextEx extends GlobalInspectionContextBase {
   protected volatile Path myOutputDir;
   protected GlobalReportedProblemFilter myGlobalReportedProblemFilter;
   private ReportedProblemFilter myReportedProblemFilter;
+  Map<Path, Long> myProfile;
+  protected InspectionProblemConsumer myProblemConsumer = null;
 
   public GlobalInspectionContextEx(@NotNull Project project) {super(project);}
 
@@ -68,19 +71,18 @@ public class GlobalInspectionContextEx extends GlobalInspectionContextBase {
     final Runnable action = () -> {
       myOutputDir = outputDir;
       try {
-        performInspectionsWithProgress(scope, runGlobalToolsOnly, isOfflineInspections);
-        exportResultsSmart(inspectionsResults, outputDir);
+        try {
+          performInspectionsWithProgress(scope, runGlobalToolsOnly, isOfflineInspections);
+        }
+        finally {
+          exportResultsSmart(inspectionsResults, outputDir);
+        }
       }
       finally {
         myOutputDir = null;
       }
     };
-    if (isOfflineInspections) {
-      ApplicationManager.getApplication().runReadAction(action);
-    }
-    else {
-      action.run();
-    }
+    action.run();
   }
 
   protected void exportResults(@NotNull List<? super Path> inspectionsResults,
@@ -292,5 +294,28 @@ public class GlobalInspectionContextEx extends GlobalInspectionContextBase {
 
   public @Nullable Path getOutputPath() {
     return myOutputDir;
+  }
+
+  public void startPathProfiling() {
+    myProfile = new ConcurrentHashMap<>();
+  }
+
+  public Map<Path, Long> getPathProfile() {
+    return myProfile;
+  }
+
+  void updateProfile(VirtualFile virtualFile, long millis) {
+    if (myProfile != null) {
+      Path path = Paths.get(virtualFile.getPath());
+      myProfile.merge(path, millis, Long::sum);
+    }
+  }
+
+  public InspectionProblemConsumer getProblemConsumer() {
+    return myProblemConsumer;
+  }
+
+  public void setProblemConsumer(InspectionProblemConsumer problemConsumer) {
+    myProblemConsumer = problemConsumer;
   }
 }

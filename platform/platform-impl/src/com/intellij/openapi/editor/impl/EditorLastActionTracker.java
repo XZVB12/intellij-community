@@ -1,12 +1,10 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.editor.impl;
 
-import com.intellij.injected.editor.EditorWindow;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.AnActionListener;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.event.EditorFactoryEvent;
 import com.intellij.openapi.editor.event.EditorFactoryListener;
@@ -29,11 +27,7 @@ public final class EditorLastActionTracker {
 
   @NotNull
   public static EditorLastActionTracker getInstance() {
-    return ServiceManager.getService(EditorLastActionTracker.class);
-  }
-
-  private static boolean is(Editor currentEditor, EditorImpl killedEditor) {
-    return currentEditor == killedEditor || currentEditor instanceof EditorWindow && ((EditorWindow)currentEditor).getDelegate() == killedEditor;
+    return ApplicationManager.getApplication().getService(EditorLastActionTracker.class);
   }
 
   /**
@@ -64,10 +58,10 @@ public final class EditorLastActionTracker {
     public void editorReleased(@NotNull EditorFactoryEvent event) {
       EditorLastActionTracker tracker = getInstance();
       EditorImpl killedEditor = (EditorImpl)event.getEditor();
-      if (is(tracker.myCurrentEditor, killedEditor)) {
+      if (tracker.myCurrentEditor == killedEditor) {
         tracker.myCurrentEditor = null;
       }
-      if (is(tracker.myLastEditor, killedEditor)) {
+      if (tracker.myLastEditor == killedEditor) {
         tracker.myLastEditor = null;
       }
     }
@@ -83,7 +77,7 @@ public final class EditorLastActionTracker {
   final static class MyAnActionListener implements AnActionListener {
     @Override
     public void beforeActionPerformed(@NotNull AnAction action, @NotNull DataContext dataContext, @NotNull AnActionEvent event) {
-      Editor editor = CommonDataKeys.EDITOR.getData(dataContext);
+      Editor editor = CommonDataKeys.HOST_EDITOR.getData(dataContext);
       EditorLastActionTracker tracker = editor == null ? getTrackerIfCreated() : getInstance();
       if (tracker == null) {
         return;

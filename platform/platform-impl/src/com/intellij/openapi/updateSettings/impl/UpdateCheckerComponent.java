@@ -3,19 +3,16 @@ package com.intellij.openapi.updateSettings.impl;
 
 import com.intellij.execution.process.ProcessIOExecutorService;
 import com.intellij.ide.AppLifecycleListener;
-import com.intellij.ide.ApplicationInitializedListener;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeBundle;
+import com.intellij.ide.actions.WhatsNewAction;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.ide.plugins.InstalledPluginsState;
 import com.intellij.ide.plugins.PluginManagerConfigurable;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.util.PropertiesComponent;
-import com.intellij.notification.Notification;
-import com.intellij.notification.NotificationAction;
 import com.intellij.notification.NotificationListener;
 import com.intellij.notification.NotificationType;
-import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.application.*;
@@ -23,7 +20,6 @@ import com.intellij.openapi.application.ex.ApplicationInfoEx;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.ExtensionNotApplicableException;
 import com.intellij.openapi.extensions.PluginId;
-import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.impl.HTMLEditorProvider;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupActivity;
@@ -31,11 +27,11 @@ import com.intellij.openapi.updateSettings.UpdateStrategyCustomization;
 import com.intellij.openapi.util.AtomicNotNullLazyValue;
 import com.intellij.openapi.util.BuildNumber;
 import com.intellij.openapi.util.NotNullLazyValue;
-import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.text.HtmlBuilder;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.testFramework.LightVirtualFile;
-import com.intellij.util.LineSeparator;
 import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.DateFormatUtil;
 import org.jdom.JDOMException;
 import org.jetbrains.annotations.NotNull;
@@ -45,6 +41,9 @@ import java.awt.*;
 import java.awt.event.InputEvent;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.ScheduledFuture;
@@ -67,16 +66,14 @@ final class UpdateCheckerComponent {
 
   private volatile ScheduledFuture<?> myScheduledCheck;
 
-  static final class MyApplicationInitializedListener implements ApplicationInitializedListener {
-    MyApplicationInitializedListener() {
+  static final class MyAppLifecycleListener implements AppLifecycleListener {
+    @Override
+    public void appStarted() {
       Application app = ApplicationManager.getApplication();
       if (app.isCommandLine() || app.isHeadlessEnvironment()) {
-        throw ExtensionNotApplicableException.INSTANCE;
+        return;
       }
-    }
 
-    @Override
-    public void componentsInitialized() {
       UpdateSettings settings = UpdateSettings.getInstance();
       updateDefaultChannel(settings);
       if (settings.isCheckNeeded()) {
@@ -98,7 +95,7 @@ final class UpdateCheckerComponent {
     @Override
     public void runActivity(@NotNull Project project) {
       if (Experiments.getInstance().isFeatureEnabled("whats.new.notification") && !updateFailed.getValue()) {
-        showWhatsNewNotification(project);
+        showWhatsNew(project);
       }
 
       showUpdatedPluginsNotification(project);
@@ -115,27 +112,12 @@ final class UpdateCheckerComponent {
     if (future != null) future.cancel(false);
   }
 
-  private static void showWhatsNewNotification(@NotNull Project project) {
-    PropertiesComponent properties = PropertiesComponent.getInstance();
-    String updateHtmlMessage = properties.getValue(UPDATE_WHATS_NEW_MESSAGE);
-    if (updateHtmlMessage == null) {
-      LOG.warn("Cannot show what's new notification: no content found.");
-      return;
-    }
-
-    String title = IdeBundle.message("update.whats.new.notification.title", ApplicationNamesInfo.getInstance().getFullProductName());
-    UpdateChecker.getNotificationGroup().createNotification(title, null, null, NotificationType.INFORMATION)
-      .addAction(new NotificationAction(IdeBundle.message("update.whats.new.notification.action")) {
-        @Override
-        public void actionPerformed(@NotNull AnActionEvent e, @NotNull Notification notification) {
-          LightVirtualFile file = new LightVirtualFile(IdeBundle.message("update.whats.new.file.name", ApplicationInfo.getInstance().getFullVersion()), updateHtmlMessage);
-          file.putUserData(HTMLEditorProvider.Companion.getHTML_CONTENT_TYPE(), true);
-          FileEditorManager.getInstance(project).openFile(file, true);
-          IdeUpdateUsageTriggerCollector.trigger("update.whats.new");
-          notification.expire();
-        }
-      }).notify(project);
-    properties.setValue(UPDATE_WHATS_NEW_MESSAGE, null);
+  private static void showWhatsNew(@NotNull Project project) {
+    String title = IdeBundle.message("update.whats.new", ApplicationInfo.getInstance().getFullVersion());
+    String whatsNewUrl = ApplicationInfoEx.getInstanceEx().getWhatsNewUrl();
+    String url = whatsNewUrl + WhatsNewAction.getEmbeddedSuffix();
+    HTMLEditorProvider.Companion.openEditor(project, title, url, null, WhatsNewAction.getTimeoutCallbackHTML(whatsNewUrl));
+    IdeUpdateUsageTriggerCollector.trigger("update.whats.new");
   }
 
   private static boolean checkIfPreviousUpdateFailed() {
@@ -150,7 +132,7 @@ final class UpdateCheckerComponent {
     return true;
   }
 
-  private static void updateDefaultChannel(@NotNull UpdateSettings settings) {
+  private static void updateDefaultChannel(UpdateSettings settings) {
     ChannelStatus current = settings.getSelectedChannelStatus();
     LOG.info("channel: " + current.getCode());
     boolean eap = ApplicationInfoEx.getInstanceEx().isMajorEAP();
@@ -159,9 +141,9 @@ final class UpdateCheckerComponent {
       settings.setSelectedChannelStatus(ChannelStatus.EAP);
       LOG.info("channel forced to 'eap'");
       if (!ConfigImportHelper.isFirstSession()) {
-        String title = IdeBundle.message("update.notifications.title");
+        String title = IdeBundle.message("updates.notification.title", ApplicationNamesInfo.getInstance().getFullProductName());
         String message = IdeBundle.message("update.channel.enforced", ChannelStatus.EAP);
-        UpdateChecker.getNotificationGroup().createNotification(title, message, NotificationType.INFORMATION, null).notify(null);
+        UpdateChecker.getNotificationGroup().createNotification(title, message, NotificationType.INFORMATION, null, "ide.update.channel.switched").notify(null);
       }
     }
 
@@ -171,7 +153,7 @@ final class UpdateCheckerComponent {
     }
   }
 
-  private static void scheduleFirstCheck(@NotNull UpdateSettings settings) {
+  private static void scheduleFirstCheck(UpdateSettings settings) {
     BuildNumber currentBuild = ApplicationInfo.getInstance().getBuild();
     BuildNumber lastBuildChecked = BuildNumber.fromString(settings.getLastBuildChecked());
     long timeSinceLastCheck = max(System.currentTimeMillis() - settings.getLastTimeChecked(), 0);
@@ -194,7 +176,7 @@ final class UpdateCheckerComponent {
     UpdateChecker.updateAndShowResult().doWhenProcessed(() -> getInstance().queueNextCheck(CHECK_INTERVAL));
   }
 
-  private static void snapPackageNotification(@NotNull UpdateSettings settings) {
+  private static void snapPackageNotification(UpdateSettings settings) {
     if (ExternalUpdateManager.ACTUAL != ExternalUpdateManager.SNAP) {
       return;
     }
@@ -203,7 +185,7 @@ final class UpdateCheckerComponent {
     BuildNumber lastBuildChecked = BuildNumber.fromString(settings.getLastBuildChecked());
     if (lastBuildChecked == null) {
       // first IDE start, just save info about build
-      UpdateSettings.getInstance().saveLastCheckedInfo();
+      UpdateSettings.getInstance().saveLastCheckedInfo(true);
       return;
     }
 
@@ -236,16 +218,16 @@ final class UpdateCheckerComponent {
       }
     }
 
-    String title = IdeBundle.message("update.notifications.title");
+    String title = IdeBundle.message("updates.notification.title", ApplicationNamesInfo.getInstance().getFullProductName());
     String message = blogPost == null ? IdeBundle.message("update.snap.message")
                                       : IdeBundle.message("update.snap.message.with.blog.post", StringUtil.escapeXmlEntities(blogPost));
     UpdateChecker.getNotificationGroup().createNotification(
-      title, message, NotificationType.INFORMATION, NotificationListener.URL_OPENING_LISTENER).notify(null);
+      title, message, NotificationType.INFORMATION, NotificationListener.URL_OPENING_LISTENER, "ide.updated.by.snap").notify(null);
 
-    UpdateSettings.getInstance().saveLastCheckedInfo();
+    UpdateSettings.getInstance().saveLastCheckedInfo(true);
   }
 
-  private static void showUpdatedPluginsNotification(@NotNull Project project) {
+  private static void showUpdatedPluginsNotification(Project project) {
     if (ApplicationManager.getApplication().isUnitTestMode()) {
       return;
     }
@@ -264,7 +246,7 @@ final class UpdateCheckerComponent {
         }
 
         try {
-          FileUtil.writeToFile(getUpdatedPluginsFile(), StringUtil.join(list, LineSeparator.getSystemLineSeparator().getSeparatorString()));
+          Files.write(getUpdatedPluginsFile(), list);
         }
         catch (IOException e) {
           LOG.warn(e);
@@ -292,41 +274,34 @@ final class UpdateCheckerComponent {
     }
 
     String title = IdeBundle.message("update.installed.notification.title");
-    String message = "<html>" + StringUtil.join(descriptors, descriptor -> {
-      return "<a href='" + descriptor.getPluginId().getIdString() + "'>" + descriptor.getName() + "</a>";
-    }, ", ") + "</html>";
+    String message = new HtmlBuilder()
+      .appendWithSeparators(HtmlChunk.text(", "), ContainerUtil.map(descriptors, d -> HtmlChunk.link(d.getPluginId().getIdString(), d.getName())))
+      .wrapWith("html").toString();
 
     UpdateChecker.getNotificationGroup().createNotification(title, message, NotificationType.INFORMATION, (notification, event) -> {
       String id = event.getDescription();
-      if (id == null) {
-        return;
-      }
+      if (id == null) return;
 
       PluginId pluginId = PluginId.findId(id);
-      if (pluginId == null) {
-        return;
-      }
+      if (pluginId == null) return;
 
       IdeaPluginDescriptor descriptor = PluginManagerCore.getPlugin(pluginId);
-      if (descriptor == null) {
-        return;
-      }
+      if (descriptor == null) return;
 
       InputEvent inputEvent = event.getInputEvent();
       Component component = inputEvent == null ? null : inputEvent.getComponent();
       DataProvider provider = component == null ? null : DataManager.getDataProvider((JComponent)component);
 
       PluginManagerConfigurable.showPluginConfigurable(provider == null ? null : CommonDataKeys.PROJECT.getData(provider), descriptor);
-    }).notify(project);
+    }, "plugins.updated.after.restart").notify(project);
   }
 
-  @NotNull
   private static Set<String> getUpdatedPlugins() {
     try {
-      File file = getUpdatedPluginsFile();
-      if (file.isFile()) {
-        List<String> list = FileUtil.loadLines(file);
-        FileUtil.delete(file);
+      Path file = getUpdatedPluginsFile();
+      if (Files.isRegularFile(file)) {
+        List<String> list = Files.readAllLines(file);
+        Files.delete(file);
         return new HashSet<>(list);
       }
     }
@@ -336,8 +311,7 @@ final class UpdateCheckerComponent {
     return new HashSet<>();
   }
 
-  @NotNull
-  private static File getUpdatedPluginsFile() {
-    return new File(PathManager.getConfigPath(), ".updated_plugins_list");
+  private static Path getUpdatedPluginsFile() {
+    return Paths.get(PathManager.getConfigPath(), ".updated_plugins_list");
   }
 }

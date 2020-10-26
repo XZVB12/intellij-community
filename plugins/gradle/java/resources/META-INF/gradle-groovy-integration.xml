@@ -1,7 +1,9 @@
 <idea-plugin>
   <extensionPoints>
-    <extensionPoint qualifiedName="org.jetbrains.plugins.gradle.resolve.contributor" interface="org.jetbrains.plugins.gradle.service.resolve.GradleMethodContextContributor"/>
-    <extensionPoint qualifiedName="org.jetbrains.plugins.gradle.pluginDescriptions" interface="org.jetbrains.plugins.gradle.codeInsight.GradlePluginDescriptionsExtension"/>
+    <extensionPoint qualifiedName="org.jetbrains.plugins.gradle.resolve.contributor" interface="org.jetbrains.plugins.gradle.service.resolve.GradleMethodContextContributor"
+                    dynamic="true"/>
+    <extensionPoint qualifiedName="org.jetbrains.plugins.gradle.pluginDescriptions" interface="org.jetbrains.plugins.gradle.codeInsight.GradlePluginDescriptionsExtension"
+                    dynamic="true"/>
   </extensionPoints>
 
   <extensions defaultExtensionNs="org.jetbrains.plugins.gradle">
@@ -45,6 +47,12 @@
                               implementationClass="org.jetbrains.plugins.gradle.execution.GradleGroovyRunLineMarkerProvider"/>
 
     <fileTypeUsageSchemaDescriptor schema="Gradle" implementationClass="org.jetbrains.plugins.gradle.config.GradleScriptTypeDetector"/>
+    <psi.symbolReferenceProvider hostLanguage="Groovy"
+                                 hostElementClass="org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrLiteral"
+                                 targetClass="org.jetbrains.plugins.gradle.service.resolve.GradleProjectSymbol"
+                                 implementationClass="org.jetbrains.plugins.gradle.service.resolve.GradleProjectReferenceProvider"/>
+    <searcher forClass="com.intellij.model.search.PsiSymbolReferenceSearchParameters"
+              implementationClass="org.jetbrains.plugins.gradle.service.resolve.GradleProjectReferenceSearcher"/>
   </extensions>
 
   <extensions defaultExtensionNs="org.intellij.groovy">
@@ -76,7 +84,7 @@
   </extensions>
 
   <actions>
-    <group>
+    <group id="GenerateGradleDslGroup">
       <action id="AddGradleDslPluginAction" class="org.jetbrains.plugins.gradle.codeInsight.actions.AddGradleDslPluginAction"/>
       <add-to-group group-id="Gradle.GenerateGroup" anchor="first"/>
     </group>

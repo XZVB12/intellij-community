@@ -1,20 +1,4 @@
-/* ==========================================================================
- * Copyright 2006 Mevenide Team
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- * =========================================================================
- */
-
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.idea.maven.project;
 
 import com.intellij.CommonBundle;
@@ -22,16 +6,15 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.PanelWithAnchor;
 import com.intellij.ui.components.JBLabel;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.maven.execution.MavenExecutionOptions;
 import org.jetbrains.idea.maven.utils.ComboBoxUtil;
 
 import javax.swing.*;
 import java.util.Arrays;
 
-/**
- * @author Ralf Quebbemann (ralfq@codehaus.org)
- */
 public class MavenGeneralPanel implements PanelWithAnchor {
   private JCheckBox checkboxWorkOffline;
   private JPanel panel;
@@ -45,7 +28,6 @@ public class MavenGeneralPanel implements PanelWithAnchor {
   private JBLabel myMultiProjectBuildFailPolicyLabel;
   private JCheckBox alwaysUpdateSnapshotsCheckBox;
   private JTextField threadsEditor;
-  private JCheckBox updateIndicesOnProjectOpen;
   private final DefaultComboBoxModel outputLevelComboModel = new DefaultComboBoxModel();
   private final DefaultComboBoxModel checksumPolicyComboModel = new DefaultComboBoxModel();
   private final DefaultComboBoxModel failPolicyComboModel = new DefaultComboBoxModel();
@@ -97,7 +79,6 @@ public class MavenGeneralPanel implements PanelWithAnchor {
     data.setFailureBehavior((MavenExecutionOptions.FailureMode)ComboBoxUtil.getSelectedValue(failPolicyComboModel));
     data.setPluginUpdatePolicy((MavenExecutionOptions.PluginUpdatePolicy)ComboBoxUtil.getSelectedValue(pluginUpdatePolicyComboModel));
     data.setAlwaysUpdateSnapshots(alwaysUpdateSnapshotsCheckBox.isSelected());
-    data.setUpdateIndicesOnProjectOpen(updateIndicesOnProjectOpen.isSelected());
     data.setThreads(threadsEditor.getText());
 
     data.endUpdate();
@@ -112,7 +93,6 @@ public class MavenGeneralPanel implements PanelWithAnchor {
     checkboxUsePluginRegistry.setSelected(data.isUsePluginRegistry());
     checkboxRecursive.setSelected(!data.isNonRecursive());
     alwaysUpdateSnapshotsCheckBox.setSelected(data.isAlwaysUpdateSnapshots());
-    updateIndicesOnProjectOpen.setSelected(data.isUpdateIndicesOnProjectOpen());
     threadsEditor.setText(StringUtil.notNullize(data.getThreads()));
 
     ComboBoxUtil.select(outputLevelComboModel, data.getOutputLevel());
@@ -136,5 +116,10 @@ public class MavenGeneralPanel implements PanelWithAnchor {
     this.anchor = anchor;
     myMultiProjectBuildFailPolicyLabel.setAnchor(anchor);
     mavenPathsForm.setAnchor(anchor);
+  }
+
+  @ApiStatus.Internal
+  public void applyTargetEnvironmentConfiguration(@Nullable String targetName) {
+    mavenPathsForm.apply(targetName);
   }
 }

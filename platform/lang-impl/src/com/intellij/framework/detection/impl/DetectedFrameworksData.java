@@ -1,21 +1,8 @@
-/*
- * Copyright 2000-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.framework.detection.impl;
 
 import com.intellij.framework.detection.DetectedFrameworkDescription;
+import com.intellij.openapi.application.PathManagerEx;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectUtil;
@@ -23,11 +10,11 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.indexing.FileBasedIndex;
 import com.intellij.util.io.DataExternalizer;
-import com.intellij.util.io.EnumeratorIntegerDescriptor;
+import com.intellij.util.io.EnumeratorStringDescriptor;
 import com.intellij.util.io.PersistentHashMap;
+import gnu.trove.THashMap;
 import gnu.trove.TIntHashSet;
 import gnu.trove.TIntIterator;
-import gnu.trove.TIntObjectHashMap;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.DataInput;
@@ -36,25 +23,25 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 
-public class DetectedFrameworksData {
+public final class DetectedFrameworksData {
   private static final Logger LOG = Logger.getInstance(DetectedFrameworksData.class);
-  private PersistentHashMap<Integer,TIntHashSet> myExistentFrameworkFiles;
-  private final TIntObjectHashMap<TIntHashSet> myNewFiles;
-  private final MultiMap<Integer, DetectedFrameworkDescription> myDetectedFrameworks;
+  private PersistentHashMap<String, TIntHashSet> myExistentFrameworkFiles;
+  private final Map<String, TIntHashSet> myNewFiles;
+  private final MultiMap<String, DetectedFrameworkDescription> myDetectedFrameworks;
   private final Object myLock = new Object();
 
-  public DetectedFrameworksData(Project project) {
+  public DetectedFrameworksData(@NotNull Project project) {
     myDetectedFrameworks = new MultiMap<>();
-    Path file = ProjectUtil.getProjectCachePath(project, FrameworkDetectorRegistryImpl.getDetectionDirPath(), true).resolve("files");
-    myNewFiles = new TIntObjectHashMap<>();
+    Path file = ProjectUtil.getProjectCachePath(project, getDetectionDirPath(), true).resolve("files");
+    myNewFiles = new THashMap<>();
     try {
-      myExistentFrameworkFiles = new PersistentHashMap<>(file, EnumeratorIntegerDescriptor.INSTANCE, new TIntHashSetExternalizer());
+      myExistentFrameworkFiles = new PersistentHashMap<>(file, EnumeratorStringDescriptor.INSTANCE, new TIntHashSetExternalizer());
     }
     catch (IOException e) {
       LOG.info(e);
       PersistentHashMap.deleteFilesStartingWith(file.toFile());
       try {
-        myExistentFrameworkFiles = new PersistentHashMap<>(file, EnumeratorIntegerDescriptor.INSTANCE, new TIntHashSetExternalizer());
+        myExistentFrameworkFiles = new PersistentHashMap<>(file, EnumeratorStringDescriptor.INSTANCE, new TIntHashSetExternalizer());
       }
       catch (IOException e1) {
         LOG.error(e1);
@@ -71,7 +58,7 @@ public class DetectedFrameworksData {
     }
   }
 
-  public Collection<VirtualFile> retainNewFiles(@NotNull Integer detectorId, @NotNull Collection<? extends VirtualFile> files) {
+  public Collection<VirtualFile> retainNewFiles(@NotNull String detectorId, @NotNull Collection<? extends VirtualFile> files) {
     synchronized (myLock) {
       TIntHashSet oldSet = myNewFiles.get(detectorId);
       if (oldSet == null) {
@@ -103,13 +90,13 @@ public class DetectedFrameworksData {
     }
   }
 
-  public Set<Integer> getDetectorsForDetectedFrameworks() {
+  public Set<String> getDetectorsForDetectedFrameworks() {
     synchronized (myLock) {
       return new HashSet<>(myDetectedFrameworks.keySet());
     }
   }
 
-  public Collection<? extends DetectedFrameworkDescription> updateFrameworksList(Integer detectorId,
+  public Collection<? extends DetectedFrameworkDescription> updateFrameworksList(String detectorId,
                                                                                  Collection<? extends DetectedFrameworkDescription> frameworks) {
     synchronized (myLock) {
       final Collection<DetectedFrameworkDescription> oldFrameworks = myDetectedFrameworks.remove(detectorId);
@@ -121,7 +108,7 @@ public class DetectedFrameworksData {
     }
   }
 
-  public void putExistentFrameworkFiles(Integer id, Collection<? extends VirtualFile> files) {
+  public void putExistentFrameworkFiles(String id, Collection<? extends VirtualFile> files) {
     synchronized (myLock) {
       TIntHashSet set = null;
       try {
@@ -164,5 +151,10 @@ public class DetectedFrameworksData {
       }
       return set;
     }
+  }
+
+  @NotNull
+  private static Path getDetectionDirPath() {
+    return PathManagerEx.getAppSystemDir().resolve("frameworks").resolve("detection");
   }
 }

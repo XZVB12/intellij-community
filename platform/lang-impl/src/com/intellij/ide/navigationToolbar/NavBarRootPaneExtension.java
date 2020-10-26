@@ -28,7 +28,7 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension {
   private JComponent myWrapperPanel;
   @NonNls public static final String NAV_BAR = "NavBar";
   @SuppressWarnings("StatefulEp")
-  private Project myProject;
+  private final Project myProject;
   private NavBarPanel myNavigationBar;
   private JPanel myRunPanel;
   private final boolean myNavToolbarGroupExist;
@@ -38,16 +38,20 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension {
     myProject = project;
 
     myProject.getMessageBus().connect().subscribe(UISettingsListener.TOPIC, uiSettings -> {
-      toggleRunPanel(!uiSettings.getShowMainToolbar() && uiSettings.getShowNavigationBar() && !uiSettings.getPresentationMode());
+      toggleRunPanel(isShowToolPanel(uiSettings));
     });
 
     myNavToolbarGroupExist = runToolbarExists();
   }
 
+  private static boolean isShowToolPanel(@NotNull UISettings uiSettings) {
+    return uiSettings.getShowToolbarInNavigationBar() && !uiSettings.getPresentationMode();
+  }
+
   @Override
   public void revalidate() {
     final UISettings settings = UISettings.getInstance();
-    if (!settings.getShowMainToolbar() && settings.getShowNavigationBar() && !UISettings.getInstance().getPresentationMode()) {
+    if (isShowToolPanel(settings)) {
       toggleRunPanel(false);
       toggleRunPanel(true);
     }
@@ -59,7 +63,8 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension {
   }
 
   public boolean isMainToolbarVisible() {
-    return !UISettings.getInstance().getPresentationMode() && (UISettings.getInstance().getShowMainToolbar() || !myNavToolbarGroupExist);
+    return !UISettings.getInstance().getPresentationMode() &&
+           (UISettings.getInstance().getShowMainToolbar() || !myNavToolbarGroupExist);
   }
 
   public static boolean runToolbarExists() {
@@ -87,7 +92,7 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension {
 
       addNavigationBarPanel(myWrapperPanel);
 
-      toggleRunPanel(!UISettings.getInstance().getShowMainToolbar() && !UISettings.getInstance().getPresentationMode());
+      toggleRunPanel(isShowToolPanel(UISettings.getInstance()));
     }
     return myWrapperPanel;
   }
@@ -114,7 +119,8 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension {
       Insets insets = container.getInsets();
       Dimension d = c.getPreferredSize();
       Rectangle r = container.getBounds();
-      c.setBounds(insets.left, (r.height - d.height - insets.top - insets.bottom) / 2 + insets.top, r.width - insets.left - insets.right, d.height);
+      c.setBounds(insets.left, (r.height - d.height - insets.top - insets.bottom) / 2 + insets.top, r.width - insets.left - insets.right,
+                  d.height);
     }
   }
 
@@ -122,8 +128,10 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension {
     if (show && myRunPanel == null && runToolbarExists()) {
       final ActionManager manager = ActionManager.getInstance();
       AnAction toolbarRunGroup = CustomActionsSchema.getInstance().getCorrectedAction("NavBarToolBar");
+
       if (toolbarRunGroup instanceof ActionGroup && myWrapperPanel != null) {
-        final ActionToolbar actionToolbar = manager.createActionToolbar(ActionPlaces.NAVIGATION_BAR_TOOLBAR, (ActionGroup)toolbarRunGroup, true);
+        final ActionToolbar actionToolbar =
+          manager.createActionToolbar(ActionPlaces.NAVIGATION_BAR_TOOLBAR, (ActionGroup)toolbarRunGroup, true);
         final JComponent component = actionToolbar.getComponent();
         myRunPanel = new JPanel(new BorderLayout()) {
           @Override
@@ -198,12 +206,8 @@ public final class NavBarRootPaneExtension extends IdeRootPaneNorthExtension {
         Insets insets = getInsets();
         Rectangle r = navBar.getBounds();
 
-        Graphics2D g2d = (Graphics2D) g.create();
+        Graphics2D g2d = (Graphics2D)g.create();
         g2d.translate(r.x, r.y);
-
-        Rectangle rectangle = new Rectangle(0, 0, r.width + insets.left + insets.right, r.height + insets.top + insets.bottom);
-        NavBarUIManager.getUI().doPaintNavBarPanel(g2d, rectangle, isMainToolbarVisible(), isUndocked());
-
         g2d.dispose();
       }
 

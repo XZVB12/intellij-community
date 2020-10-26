@@ -25,4 +25,6 @@ public class DataFlowInspection14Test extends DataFlowInspectionTestCase {
     myFixture.addClass("package java.lang.constant; public interface ConstantDesc {}");
     doTest();
   }
+  public void testSwitchExpressionAndLambdaInlining() { doTest(); }
+  public void testRecordAccessorStability() { doTest(); }
 }

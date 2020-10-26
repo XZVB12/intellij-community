@@ -12,6 +12,7 @@ import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -261,6 +262,7 @@ public class GeneralIdBasedToSMTRunnerEventsConvertor extends GeneralTestEventsP
     Node activeNode = findActiveNode();
     SMTestProxy activeProxy = activeNode.getProxy();
     activeProxy.addOutput(text, outputType);
+    myEventPublisher.onUncapturedOutput(activeProxy, text, outputType);
   }
 
   @Override
@@ -358,7 +360,9 @@ public class GeneralIdBasedToSMTRunnerEventsConvertor extends GeneralTestEventsP
       logProblem("Test wasn't started! But " + testOutputEvent + "!");
       return;
     }
-    node.getProxy().addOutput(testOutputEvent.getText(), testOutputEvent.getOutputType());
+    SMTestProxy proxy = node.getProxy();
+    proxy.addOutput(testOutputEvent.getText(), testOutputEvent.getOutputType());
+    myEventPublisher.onTestOutput(proxy, testOutputEvent);
   }
 
   @Override
@@ -484,7 +488,7 @@ public class GeneralIdBasedToSMTRunnerEventsConvertor extends GeneralTestEventsP
         convertor.logProblem("Illegal state change [" + myState + " -> " + newState + "]: " + toString(), false);
       }
 
-      if (myState.ordinal() < newState.ordinal()) {
+      if (myState.compareTo(newState) < 0) {
         // for example State.FINISHED comes later than State.FAILED, do not update state in this case
         myState = newState;
       }

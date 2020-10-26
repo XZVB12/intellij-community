@@ -18,7 +18,9 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 /**
- * For project level extension points please use {@link ProjectExtensionPointName}.
+ * Provides access to an <a href="https://www.jetbrains.org/intellij/sdk/docs/basics/plugin_structure/plugin_extension_points.html">extension point</a>. Instances of this class can be safely stored in static final fields.
+ * <p>For project-level and module-level extension points use {@link ProjectExtensionPointName} instead to make it evident that corresponding
+ * {@link AreaInstance} must be passed.</p>
  */
 public final class ExtensionPointName<T> extends BaseExtensionPointName<T> {
   public ExtensionPointName(@NotNull @NonNls String name) {
@@ -51,7 +53,7 @@ public final class ExtensionPointName<T> extends BaseExtensionPointName<T> {
     return ExtensionProcessingHelper.findFirstSafe(predicate, getPointImpl(null));
   }
 
-  public @Nullable <R> R computeSafeIfAny(@NotNull Function<T, R> processor) {
+  public @Nullable <R> R computeSafeIfAny(@NotNull Function<? super T, ? extends R> processor) {
     return ExtensionProcessingHelper.computeSafeIfAny(processor, getPointImpl(null));
   }
 
@@ -96,9 +98,10 @@ public final class ExtensionPointName<T> extends BaseExtensionPointName<T> {
   }
 
   /**
-   * @deprecated Use application level extension point. Avoid project level - extension should be stateless and operate on passed context.
-   * @see {@link ProjectExtensionPointName}
+   * @deprecated use {@link #getPoint()} to access application-level extensions and {@link ProjectExtensionPointName#getPoint(AreaInstance)}
+   * to access project-level and module-level extensions
    */
+  @Deprecated
   @SuppressWarnings("DeprecatedIsStillUsed")
   public @NotNull ExtensionPoint<T> getPoint(@Nullable AreaInstance areaInstance) {
     return getPointImpl(areaInstance);
@@ -121,6 +124,11 @@ public final class ExtensionPointName<T> extends BaseExtensionPointName<T> {
     return getPointImpl(null).findExtension(instanceOf, true, ThreeState.NO);
   }
 
+  /**
+   * @deprecated use {@link #findExtensionOrFail(Class)} to access application-level extensions and
+   * {@link ProjectExtensionPointName#findExtensionOrFail(Class, AreaInstance)} to access project-level and module-level extensions
+   */
+  @Deprecated
   public @NotNull <V extends T> V findExtensionOrFail(@NotNull Class<V> instanceOf, @Nullable AreaInstance areaInstance) {
     //noinspection ConstantConditions
     return getPointImpl(areaInstance).findExtension(instanceOf, true, ThreeState.UNSURE);
@@ -170,10 +178,13 @@ public final class ExtensionPointName<T> extends BaseExtensionPointName<T> {
    * Build cache by arbitrary key using provided key to value mapper. Values with the same key merge into list. Return values by key.
    * <p>
    * To exclude extension from cache, return null key.
+   *
+   * {@code cacheId} is required because it's dangerous to rely on identity of functional expressions.
+   * JLS doesn't specify whether a new instance is produced or some common instance is reused for lambda expressions (see 15.27.4).
    */
   @ApiStatus.Experimental
-  public final <@NotNull K> @NotNull List<T> getByGroupingKey(@NotNull K key, @NotNull Function<@NotNull T, @Nullable K> keyMapper) {
-    return ExtensionProcessingHelper.getByGroupingKey(getPointImpl(null), key, keyMapper);
+  public final <@NotNull K> @NotNull List<T> getByGroupingKey(@NotNull K key, @NotNull Class<?> cacheId, @NotNull Function<? super @NotNull T, ? extends @Nullable K> keyMapper) {
+    return ExtensionProcessingHelper.getByGroupingKey(getPointImpl(null), cacheId, key, keyMapper);
   }
 
   /**
@@ -182,8 +193,8 @@ public final class ExtensionPointName<T> extends BaseExtensionPointName<T> {
    * To exclude extension from cache, return null key.
    */
   @ApiStatus.Experimental
-  public final <@NotNull K> @Nullable T getByKey(@NotNull K key, @NotNull Function<@NotNull T, @Nullable K> keyMapper) {
-    return ExtensionProcessingHelper.getByKey(getPointImpl(null), key, keyMapper);
+  public final <@NotNull K> @Nullable T getByKey(@NotNull K key, @NotNull Class<?> cacheId, @NotNull Function<? super @NotNull T, ? extends @Nullable K> keyMapper) {
+    return ExtensionProcessingHelper.getByKey(getPointImpl(null), key, cacheId, keyMapper);
   }
 
   /**
@@ -193,14 +204,16 @@ public final class ExtensionPointName<T> extends BaseExtensionPointName<T> {
    */
   @ApiStatus.Experimental
   public final <@NotNull K, @NotNull V> @Nullable V getByKey(@NotNull K key,
-                                                             @NotNull Function<@NotNull T, @Nullable K> keyMapper,
-                                                             @NotNull Function<@NotNull T, @Nullable V> valueMapper) {
-    return ExtensionProcessingHelper.getByKey(getPointImpl(null), key, keyMapper, valueMapper);
+                                                             @NotNull Class<?> cacheId,
+                                                             @NotNull Function<? super @NotNull T, ? extends @Nullable K> keyMapper,
+                                                             @NotNull Function<? super @NotNull T, ? extends @Nullable V> valueMapper) {
+    return ExtensionProcessingHelper.getByKey(getPointImpl(null), key, cacheId, keyMapper, valueMapper);
   }
 
   @ApiStatus.Experimental
   public final <@NotNull K, @NotNull V> @NotNull V computeIfAbsent(@NotNull K key,
-                                                                   @NotNull Function<@NotNull K, @NotNull V> valueMapper) {
-    return ExtensionProcessingHelper.computeIfAbsent(getPointImpl(null), key, valueMapper);
+                                                                   @NotNull Class<?> cacheId,
+                                                                   @NotNull Function<? super @NotNull K, ? extends @NotNull V> valueMapper) {
+    return ExtensionProcessingHelper.computeIfAbsent(getPointImpl(null), key, cacheId, valueMapper);
   }
 }

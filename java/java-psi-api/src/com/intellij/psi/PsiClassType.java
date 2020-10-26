@@ -10,6 +10,7 @@ import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.ArrayFactory;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -242,6 +243,15 @@ public abstract class PsiClassType extends PsiType implements JvmReferenceType {
     return getClassName();
   }
 
+  /**
+   * If class-type is created from the explicit reference in the code returns that reference.
+   * @return reference which the type is created from. Returns null if not applicable.
+   */
+  @ApiStatus.Experimental
+  public @Nullable PsiElement getPsiContext() {
+    return null;
+  }
+  
   @Nullable
   @Override
   public JvmTypeResolveResult resolveType() {

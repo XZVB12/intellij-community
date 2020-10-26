@@ -1,10 +1,13 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.inspections;
 
 import com.intellij.codeInspection.LocalInspectionToolSession;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.codeInspection.util.InspectionMessage;
+import com.intellij.codeInspection.util.IntentionFamilyName;
+import com.intellij.codeInspection.util.IntentionName;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.ModuleUtilCore;
@@ -19,6 +22,7 @@ import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.roots.ui.configuration.ProjectSettingsService;
 import com.intellij.openapi.roots.ui.configuration.projectRoot.ProjectSdksModel;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
@@ -31,25 +35,20 @@ import com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable;
 import com.jetbrains.python.psi.LanguageLevel;
 import com.jetbrains.python.psi.PyFile;
 import com.jetbrains.python.sdk.*;
-import com.jetbrains.python.sdk.pipenv.PipenvKt;
-import com.jetbrains.python.sdk.pipenv.UsePipEnvQuickFix;
+import com.jetbrains.python.sdk.configuration.PyProjectSdkConfiguration;
+import com.jetbrains.python.sdk.configuration.PyProjectSdkConfigurationExtension;
 import com.jetbrains.python.ui.PyUiUtil;
 import one.util.streamex.StreamEx;
-import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class PyInterpreterInspection extends PyInspection {
-
+public final class PyInterpreterInspection extends PyInspection {
   @NotNull
   private static final Pattern NAME = Pattern.compile("Python (?<version>\\d\\.\\d+)\\s*(\\((?<name>.+?)\\))?");
 
@@ -69,24 +68,83 @@ public class PyInterpreterInspection extends PyInspection {
     }
 
     @Override
-    public void visitPyFile(PyFile node) {
+    public void visitPyFile(@NotNull PyFile node) {
       Module module = guessModule(node);
       if (module == null || isFileIgnored(node)) return;
       final Sdk sdk = PythonSdkUtil.findPythonSdk(module);
 
       final boolean pyCharm = PythonIdeLanguageCustomization.isMainlyPythonIde();
 
-      final String interpreterOwner = pyCharm ? "project" : "module";
       final List<LocalQuickFix> fixes = new ArrayList<>();
-      // TODO: Introduce an inspection extension
-      if (UsePipEnvQuickFix.Companion.isApplicable(module)) {
-        fixes.add(new UsePipEnvQuickFix(sdk, module));
+      if (sdk == null) {
+        Optional<PyInterpreterInspectionQuickFixData> fixData = PySdkProvider.EP_NAME.extensions()
+          .map(ext -> ext.createMissingSdkFix(module, node))
+          .filter(it -> it != null)
+          .findFirst();
+
+        final @InspectionMessage String message;
+        if (fixData.isPresent()) {
+          fixes.add(fixData.get().getQuickFix());
+          // noinspection HardCodedStringLiteral
+          message = fixData.get().getMessage();
+        }
+        else if (pyCharm) {
+          message = PyPsiBundle.message("INSP.interpreter.no.python.interpreter.configured.for.project");
+        }
+        else {
+          message = PyPsiBundle.message("INSP.interpreter.no.python.interpreter.configured.for.module");
+        }
+        registerProblemWithCommonFixes(node, message, module, null, fixes, pyCharm);
       }
+      else {
+        final @NlsSafe String associatedModulePath = PySdkExtKt.getAssociatedModulePath(sdk);
+        if (associatedModulePath == null || PySdkExtKt.isAssociatedWithAnotherModule(sdk, module)) {
+          final PyInterpreterInspectionQuickFixData fixData = PySdkProvider.EP_NAME.extensions()
+            .map(ext -> ext.createEnvironmentAssociationFix(module, sdk, pyCharm, associatedModulePath))
+            .filter(it -> it != null)
+            .findFirst()
+            .orElse(null);
+
+          if (fixData != null) {
+            fixes.add(fixData.getQuickFix());
+            // noinspection HardCodedStringLiteral
+            registerProblemWithCommonFixes(node, fixData.getMessage(), module, sdk, fixes, pyCharm);
+            return;
+          }
+        }
+
+        if (PythonSdkUtil.isInvalid(sdk)) {
+          final @InspectionMessage String message;
+          if (pyCharm) {
+            message = PyPsiBundle.message("INSP.interpreter.invalid.python.interpreter.selected.for.project");
+          }
+          else {
+            message = PyPsiBundle.message("INSP.interpreter.invalid.python.interpreter.selected.for.module");
+          }
+          registerProblemWithCommonFixes(node, message, module, sdk, fixes, pyCharm);
+        }
+        else {
+          final LanguageLevel languageLevel = PythonSdkType.getLanguageLevelForSdk(sdk);
+          if (!LanguageLevel.SUPPORTED_LEVELS.contains(languageLevel)) {
+            final @InspectionMessage String message;
+            if (pyCharm) {
+              message = PyPsiBundle.message("INSP.interpreter.python.has.reached.its.end.of.life.and.is.no.longer.supported.in.pycharm",
+                                         languageLevel);
+            }
+            else {
+              message = PyPsiBundle.message("INSP.interpreter.python.has.reached.its.end.life.and.is.no.longer.supported.in.python.plugin",
+                                         languageLevel);
+            }
+            registerProblemWithCommonFixes(node, message, module, sdk, fixes, pyCharm);
+          }
+        }
+      }
+    }
+
+    private void registerProblemWithCommonFixes(PyFile node, @InspectionMessage String message, Module module, Sdk sdk, List<LocalQuickFix> fixes, boolean pyCharm) {
       if (pyCharm && sdk == null) {
         final String sdkName = ProjectRootManager.getInstance(node.getProject()).getProjectSdkName();
-        if (sdkName != null) {
-          ContainerUtil.addIfNotNull(fixes, getSuitableSdkFix(sdkName, module));
-        }
+        ContainerUtil.addIfNotNull(fixes, getSuitableSdkFix(sdkName, module));
       }
       if (pyCharm) {
         fixes.add(new ConfigureInterpreterFix());
@@ -95,41 +153,11 @@ public class PyInterpreterInspection extends PyInspection {
         fixes.add(new InterpreterSettingsQuickFix(module));
       }
 
-      final String product = pyCharm ? "PyCharm" : "Python plugin";
-
-      if (sdk == null) {
-        registerProblem(node, PyPsiBundle.message("python.sdk.no.interpreter.configured.owner", interpreterOwner), fixes.toArray(LocalQuickFix.EMPTY_ARRAY));
-      }
-      else {
-        final Module associatedModule = PySdkExtKt.getAssociatedModule(sdk);
-        final String associatedName = associatedModule != null ? associatedModule.getName() : PySdkExtKt.getAssociatedModulePath(sdk);
-        // TODO: Introduce an inspection extension
-        if (PipenvKt.isPipEnv(sdk) && associatedModule != module) {
-          final String message = associatedName != null ?
-                                 "Pipenv interpreter is associated with another " + interpreterOwner + ": '" + associatedName + "'" :
-                                 "Pipenv interpreter is not associated with any " + interpreterOwner;
-          registerProblem(node, message, fixes.toArray(LocalQuickFix.EMPTY_ARRAY));
-        }
-        else if (PythonSdkUtil.isInvalid(sdk)) {
-          registerProblem(node,
-                          "Invalid Python interpreter selected for the " + interpreterOwner,
-                          fixes.toArray(LocalQuickFix.EMPTY_ARRAY));
-        }
-        else {
-          final LanguageLevel languageLevel = PythonSdkType.getLanguageLevelForSdk(sdk);
-          if (!LanguageLevel.SUPPORTED_LEVELS.contains(languageLevel)) {
-            registerProblem(
-              node,
-              "Python " + languageLevel + " has reached its end-of-life date and it is no longer supported in " + product + ".",
-              fixes.toArray(LocalQuickFix.EMPTY_ARRAY)
-            );
-          }
-        }
-      }
+      registerProblem(node, message, fixes.toArray(LocalQuickFix.EMPTY_ARRAY));
     }
 
     @Nullable
-    private static LocalQuickFix getSuitableSdkFix(@NotNull String name, @NotNull Module module) {
+    private static LocalQuickFix getSuitableSdkFix(@Nullable String name, @NotNull Module module) {
       // this method is based on com.jetbrains.python.sdk.PySdkExtKt.suggestAssociatedSdkName
 
       final List<Sdk> existingSdks = getExistingSdks();
@@ -144,6 +172,11 @@ public class PyInterpreterInspection extends PyInspection {
         .orElse(null);
 
       if (detectedAssociatedSdk != null) return new UseDetectedInterpreterFix(detectedAssociatedSdk, existingSdks, true, module);
+
+      final var extension = PyProjectSdkConfigurationExtension.getEP_NAME().findFirstSafe(e -> e.isApplicable(module));
+      if (extension != null) return new UseProvidedInterpreterFix(module, extension);
+
+      if (name == null) return null;
 
       final Matcher matcher = NAME.matcher(name);
       if (!matcher.matches()) return null;
@@ -300,9 +333,9 @@ public class PyInterpreterInspection extends PyInspection {
   }
 
   public static final class ConfigureInterpreterFix implements LocalQuickFix {
-    @NotNull
+
     @Override
-    public String getFamilyName() {
+    public @IntentionFamilyName @NotNull String getFamilyName() {
       return PyPsiBundle.message("INSP.interpreter.configure.python.interpreter");
     }
 
@@ -323,6 +356,35 @@ public class PyInterpreterInspection extends PyInspection {
     }
   }
 
+  private static final class UseProvidedInterpreterFix implements LocalQuickFix {
+
+    @NotNull
+    private final Module myModule;
+
+    @NotNull
+    private final PyProjectSdkConfigurationExtension myExtension;
+
+    private UseProvidedInterpreterFix(@NotNull Module module, @NotNull PyProjectSdkConfigurationExtension extension) {
+      myModule = module;
+      myExtension = extension;
+    }
+
+    @Override
+    public @IntentionFamilyName @NotNull String getFamilyName() {
+      return PyPsiBundle.message("INSP.interpreter.use.suggested.interpreter");
+    }
+
+    @Override
+    public @IntentionName @NotNull String getName() {
+      return myExtension.getIntentionName(myModule);
+    }
+
+    @Override
+    public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+      PyProjectSdkConfiguration.INSTANCE.configureSdkUsingExtension(myModule, myExtension, () -> myExtension.createAndAddSdkForInspection(myModule));
+    }
+  }
+
   private static abstract class UseInterpreterFix<T extends Sdk> implements LocalQuickFix {
 
     @NotNull
@@ -332,15 +394,13 @@ public class PyInterpreterInspection extends PyInspection {
       mySdk = sdk;
     }
 
-    @Nls(capitalization = Nls.Capitalization.Sentence)
     @Override
-    public @NotNull String getFamilyName() {
+    public @IntentionFamilyName @NotNull String getFamilyName() {
       return PyPsiBundle.message("INSP.interpreter.use.suggested.interpreter");
     }
 
-    @Nls(capitalization = Nls.Capitalization.Sentence)
     @Override
-    public @NotNull String getName() {
+    public @IntentionName @NotNull String getName() {
       return PyPsiBundle.message("INSP.interpreter.use.interpreter", PySdkPopupFactory.Companion.shortenNameInPopup(mySdk, 75));
     }
 
@@ -363,8 +423,7 @@ public class PyInterpreterInspection extends PyInspection {
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
       PyUiUtil.clearFileLevelInspectionResults(project);
-      SdkConfigurationUtil.setDirectoryProjectSdk(project, mySdk);
-      PySdkExtKt.excludeInnerVirtualEnv(myModule, mySdk);
+      PyProjectSdkConfiguration.INSTANCE.setReadyToUseSdk(project, myModule, mySdk);
     }
   }
 
@@ -398,8 +457,7 @@ public class PyInterpreterInspection extends PyInspection {
 
       SdkConfigurationUtil.addSdk(newSdk);
       if (myAssociate) PySdkExtKt.associateWithModule(newSdk, myModule, null);
-      SdkConfigurationUtil.setDirectoryProjectSdk(project, newSdk);
-      if (myAssociate) PySdkExtKt.excludeInnerVirtualEnv(myModule, newSdk);
+      PyProjectSdkConfiguration.INSTANCE.setReadyToUseSdk(project, myModule, newSdk);
     }
   }
 }

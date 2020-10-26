@@ -18,9 +18,10 @@ import com.intellij.debugger.engine.JVMName;
 import com.intellij.debugger.engine.JVMNameUtil;
 import com.intellij.debugger.engine.evaluation.*;
 import com.intellij.debugger.impl.DebuggerUtilsEx;
+import com.intellij.ide.highlighter.JavaFileType;
+import com.intellij.lang.java.parser.ExpressionParser;
 import com.intellij.lang.jvm.JvmModifier;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
@@ -44,7 +45,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
-public class EvaluatorBuilderImpl implements EvaluatorBuilder {
+public final class EvaluatorBuilderImpl implements EvaluatorBuilder {
   private static final EvaluatorBuilderImpl ourInstance = new EvaluatorBuilderImpl();
 
   private EvaluatorBuilderImpl() {
@@ -73,7 +74,7 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
     return new Builder(position).buildElement(codeFragment);
   }
 
-  private static class Builder extends JavaElementVisitor {
+  private static final class Builder extends JavaElementVisitor {
     private static final Logger LOG = Logger.getInstance(EvaluatorBuilderImpl.class);
     private Evaluator myResult = null;
     private PsiClass myContextPsiClass;
@@ -578,7 +579,7 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
         }
       }
       // unary numeric promotion if applicable
-      else if (operation == JavaTokenType.GTGT || operation == JavaTokenType.LTLT || operation == JavaTokenType.GTGTGT) {
+      else if (ExpressionParser.SHIFT_OPS.contains(operation)) {
         lResult = handleUnaryNumericPromotion(lType, lResult);
         rResult = handleUnaryNumericPromotion(rType, rResult);
       }
@@ -944,8 +945,14 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
       try {
         CaptureTraverser traverser = CaptureTraverser.create((PsiClass)targetClass, fromClass, checkInheritance);
         if (!traverser.isValid() && !fromClass.equals(myContextPsiClass)) { // do not check twice
-          return CaptureTraverser.create((PsiClass)targetClass, myContextPsiClass, checkInheritance);
+          traverser = CaptureTraverser.create((PsiClass)targetClass, myContextPsiClass, checkInheritance);
         }
+
+        if (!traverser.isValid()) {
+          LOG.warn("Unable create valid CaptureTraverser to access 'this'.");
+          traverser = CaptureTraverser.direct();
+        }
+
         return traverser;
       }
       catch (Exception e) {
@@ -1382,7 +1389,7 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
     }
 
     private Evaluator buildFromJavaCode(String code, String imports, @NotNull PsiElement context) {
-      TextWithImportsImpl text = new TextWithImportsImpl(CodeFragmentKind.CODE_BLOCK, code, imports, StdFileTypes.JAVA);
+      TextWithImportsImpl text = new TextWithImportsImpl(CodeFragmentKind.CODE_BLOCK, code, imports, JavaFileType.INSTANCE);
       JavaCodeFragment codeFragment = DefaultCodeFragmentFactory.getInstance().createCodeFragment(text, context, context.getProject());
       return accept(codeFragment);
     }

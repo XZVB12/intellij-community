@@ -258,10 +258,12 @@ public class ConfigurableWrapper implements SearchableConfigurable, Weighted {
     final UnnamedConfigurable configurable = getConfigurable();
     return configurable instanceof SearchableConfigurable
            ? ((SearchableConfigurable)configurable).getOriginalClass()
-           : configurable.getClass();
+           : configurable != null
+             ? configurable.getClass()
+             : getClass();
   }
 
-  private static class CompositeWrapper extends ConfigurableWrapper implements Configurable.Composite {
+  private static final class CompositeWrapper extends ConfigurableWrapper implements Configurable.Composite {
 
     private Configurable[] myKids;
     private Comparator<Configurable> myComparator;

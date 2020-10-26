@@ -4,20 +4,18 @@ package com.intellij.application.options
 import com.intellij.openapi.application.PathMacroContributor
 import com.intellij.openapi.application.PathMacros
 import com.intellij.openapi.components.*
-import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.util.ModificationTracker
 import com.intellij.util.containers.ContainerUtil
-import gnu.trove.THashSet
 import org.jdom.Element
 import org.jetbrains.jps.model.serialization.JpsGlobalLoader.PathVariablesSerializer
 import org.jetbrains.jps.model.serialization.PathMacroUtil
 import java.util.*
 import java.util.concurrent.atomic.AtomicLong
-import java.util.function.Consumer
 import kotlin.collections.HashMap
 import kotlin.collections.LinkedHashMap
 
-@State(name = "PathMacrosImpl", storages = [Storage(value = PathVariablesSerializer.STORAGE_FILE_NAME, roamingType = RoamingType.PER_OS)])
+@State(name = "PathMacrosImpl", storages = [Storage(value = PathVariablesSerializer.STORAGE_FILE_NAME, roamingType = RoamingType.PER_OS)], useLoadedStateAsExisting = false)
 open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors: Boolean = true) : PathMacros(), PersistentStateComponent<Element?>, ModificationTracker {
   @Volatile
   private var legacyMacros: Map<String, String> = emptyMap()
@@ -30,9 +28,11 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
   private var userMacroMapCache: Map<String, String>? = null
 
   companion object {
+    private val EP_NAME = ExtensionPointName<PathMacroContributor>("com.intellij.pathMacroContributor")
+
     const val IGNORED_MACRO_ELEMENT = "ignoredMacro"
     const val MAVEN_REPOSITORY = "MAVEN_REPOSITORY"
-    private val SYSTEM_MACROS: MutableSet<String> = THashSet()
+    private val SYSTEM_MACROS: MutableSet<String> = HashSet()
 
     @JvmStatic
     fun getInstanceEx() = getInstance() as PathMacrosImpl
@@ -78,7 +78,7 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
     return ContainerUtil.union(userMacroNames, systemMacroNames)
   }
 
-  override fun getValue(name: String) = macros.get(name)
+  override fun getValue(name: String) = macros[name]
 
   override fun removeAllMacros() {
     if (macros.isNotEmpty()) {
@@ -104,7 +104,7 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
       macros.remove(name)
     }
     else {
-      if (macros.get(name) == value) {
+      if (macros[name] == value) {
         return false
       }
 
@@ -146,10 +146,18 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
     }
 
     loadState(Element("state"))
+    // https://youtrack.jetbrains.com/issue/IDEA-239124
+    modificationStamp.incrementAndGet()
   }
 
   override fun loadState(element: Element) {
     val newMacros = linkedMapOf<String, String>()
+    // register first because may be overridden by user
+    val newLegacyMacros = HashMap(legacyMacros)
+    EP_NAME.forEachExtensionSafe { contributor ->
+      contributor.registerPathMacros(newMacros, newLegacyMacros)
+    }
+
     for (macro in element.getChildren(PathVariablesSerializer.MACRO_TAG)) {
       val name = macro.getAttributeValue(PathVariablesSerializer.NAME_ATTRIBUTE) ?: continue
       var value = macro.getAttributeValue(PathVariablesSerializer.VALUE_ATTRIBUTE) ?: continue
@@ -157,10 +165,10 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
         continue
       }
 
-      if (value.length > 1 && value[value.length - 1] == '/') {
+      if (value.lastOrNull() == '/') {
         value = value.substring(0, value.length - 1)
       }
-      newMacros.put(name, value)
+      newMacros[name] = value
     }
 
     val newIgnoredMacros = mutableListOf<String>()
@@ -171,10 +179,18 @@ open class PathMacrosImpl @JvmOverloads constructor(private val loadContributors
       }
     }
 
-    val newLegacyMacros = HashMap(legacyMacros)
-    PathMacroContributor.EP_NAME.forEachExtensionSafe(Consumer { contributor ->
-      contributor.registerPathMacros(newMacros, newLegacyMacros)
-    })
+    val forcedMacros = linkedMapOf<String, String>()
+    EP_NAME.forEachExtensionSafe { contributor ->
+      contributor.forceRegisterPathMacros(forcedMacros)
+    }
+
+    for (forcedMacro in forcedMacros) {
+      if (newMacros[forcedMacro.key] != forcedMacro.value) {
+        modificationStamp.incrementAndGet()
+        break
+      }
+    }
+    newMacros.putAll(forcedMacros)
 
     macros = if (newMacros.isEmpty()) emptyMap() else Collections.unmodifiableMap(newMacros)
     legacyMacros = if (newLegacyMacros.isEmpty()) emptyMap() else Collections.unmodifiableMap(newLegacyMacros)

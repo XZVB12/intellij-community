@@ -17,16 +17,16 @@ import com.intellij.openapi.wm.StatusBarWidget;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.ui.EditorTextField;
 import com.intellij.util.messages.MessageBusConnection;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
 
 public abstract class EditorBasedWidget implements StatusBarWidget, FileEditorManagerListener {
-  public static final String SWING_FOCUS_OWNER_PROPERTY = "focusOwner";
+  @NonNls public static final String SWING_FOCUS_OWNER_PROPERTY = "focusOwner";
 
-  @NotNull
-  protected final Project myProject;
+  protected final @NotNull Project myProject;
 
   protected StatusBar myStatusBar;
   protected MessageBusConnection myConnection;
@@ -37,8 +37,7 @@ public abstract class EditorBasedWidget implements StatusBarWidget, FileEditorMa
     Disposer.register(project, this);
   }
 
-  @Nullable
-  protected Editor getEditor() {
+  protected @Nullable Editor getEditor() {
     Editor editor = StatusBarUtil.getCurrentTextEditor(myStatusBar);
     if (editor != null) {
       return editor;
@@ -56,8 +55,7 @@ public abstract class EditorBasedWidget implements StatusBarWidget, FileEditorMa
            WindowManager.getInstance().getStatusBar(editor.getComponent(), editor.getProject()) == myStatusBar;
   }
 
-  @Nullable
-  Component getFocusedComponent() {
+  @Nullable Component getFocusedComponent() {
     Component focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
     if (focusOwner == null) {
       IdeFocusManager focusManager = IdeFocusManager.getInstance(myProject);
@@ -69,23 +67,20 @@ public abstract class EditorBasedWidget implements StatusBarWidget, FileEditorMa
     return focusOwner;
   }
 
-  @Nullable
-  Editor getFocusedEditor() {
+  @Nullable Editor getFocusedEditor() {
     Component component = getFocusedComponent();
     Editor editor = component instanceof EditorComponentImpl ? ((EditorComponentImpl)component).getEditor() : getEditor();
     return editor != null && !editor.isDisposed() ? editor : null;
   }
 
-  @Nullable
-  protected VirtualFile getSelectedFile() {
-    final Editor editor = getEditor();
+  protected @Nullable VirtualFile getSelectedFile() {
+    Editor editor = getEditor();
     if (editor == null) return null;
     Document document = editor.getDocument();
     return FileDocumentManager.getInstance().getFile(document);
   }
 
-  @NotNull
-  protected final Project getProject() {
+  protected final @NotNull Project getProject() {
     return myProject;
   }
 
@@ -97,7 +92,9 @@ public abstract class EditorBasedWidget implements StatusBarWidget, FileEditorMa
     myStatusBar = statusBar;
     Disposer.register(myStatusBar, this);
 
-    if (myProject.isDisposed()) return;
+    if (myProject.isDisposed()) {
+      return;
+    }
 
     myConnection = myProject.getMessageBus().connect(this);
     myConnection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, this);
@@ -107,7 +104,6 @@ public abstract class EditorBasedWidget implements StatusBarWidget, FileEditorMa
   public void dispose() {
     myDisposed = true;
     myStatusBar = null;
-    myConnection = null;
   }
 
   protected final boolean isDisposed() {

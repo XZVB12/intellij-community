@@ -1,9 +1,10 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.io;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.io.FileUtilRt;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -13,41 +14,50 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.EnumSet;
+import java.util.Set;
 
 import static com.intellij.util.io.FileChannelUtil.unInterruptible;
 
-public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
+@ApiStatus.Internal
+public final class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
   private static final Logger LOG = Logger.getInstance(ReadWriteDirectBufferWrapper.class);
+  private final boolean myReadOnly;
 
-  protected ReadWriteDirectBufferWrapper(Path file, final long offset, final long length) {
+  ReadWriteDirectBufferWrapper(Path file, long offset, long length, boolean readOnly) {
     super(file, offset, length);
     assert length <= Integer.MAX_VALUE : length;
+    myReadOnly = readOnly;
   }
 
   @Override
   protected ByteBuffer create() throws IOException {
-    try (FileContext context = new FileContext(myFile)) {
-      FileChannel channel = context.file;
+    try (FileContext context = new FileContext(myFile, myReadOnly)) {
+      FileChannel channel = context.myFile;
       assert channel != null;
-      channel.position(myPosition);
       ByteBuffer buffer = ByteBuffer.allocateDirect((int)myLength);
-      channel.read(buffer);
+      channel.read(buffer, myPosition);
       return buffer;
     }
   }
 
   static class FileContext implements AutoCloseable {
-    final FileChannel file;
+    private final FileChannel myFile;
+    private final boolean myReadOnly;
 
-    FileContext(Path path) throws IOException {
-      file = FileUtilRt.doIOOperation(new FileUtilRt.RepeatableIOOperation<FileChannel, IOException>() {
+    FileContext(Path path, boolean readOnly) throws IOException {
+      myReadOnly = readOnly;
+      myFile = FileUtilRt.doIOOperation(new FileUtilRt.RepeatableIOOperation<FileChannel, IOException>() {
         boolean parentWasCreated;
 
         @Nullable
         @Override
         public FileChannel execute(boolean finalAttempt) throws IOException {
           try {
-            return unInterruptible(FileChannel.open(path, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE));
+            Set<StandardOpenOption> options = myReadOnly
+                                              ? EnumSet.of(StandardOpenOption.READ)
+                                              : EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+            return unInterruptible(FileChannel.open(path, options));
           }
           catch (NoSuchFileException ex) {
             Path parentFile = path.getParent();
@@ -69,12 +79,7 @@ public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
 
     @Override
     public void close() {
-      try {
-        if (file != null) file.close();
-      }
-      catch (IOException ex) {
-        LOG.error(ex);
-      }
+      IOUtil.closeSafe(LOG, myFile);
     }
   }
 
@@ -83,7 +88,7 @@ public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
     if (buffer != null && isDirty()) {
       try {
         if (fileContext == null) {
-          fileContext = new FileContext(myFile);
+          fileContext = new FileContext(myFile, myReadOnly);
         }
         doFlush(fileContext, buffer);
       }
@@ -95,11 +100,10 @@ public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
   }
 
   private void doFlush(FileContext fileContext, ByteBuffer buffer) throws IOException {
-    FileChannel channel = fileContext.file;
+    FileChannel channel = fileContext.myFile;
     assert channel != null;
-    channel.position(myPosition);
     buffer.rewind();
-    channel.write(buffer);
+    channel.write(buffer, myPosition);
     myDirty = false;
   }
 
@@ -107,12 +111,17 @@ public class ReadWriteDirectBufferWrapper extends DirectBufferWrapper {
   public void flush() {
     ByteBuffer buffer = getCachedBuffer();
     if (buffer != null && isDirty()) {
-      try (FileContext context = new FileContext(myFile)) {
+      try (FileContext context = new FileContext(myFile, myReadOnly)) {
         doFlush(context, buffer);
       }
       catch (IOException e) {
         LOG.error(e);
       }
     }
+  }
+
+  @Override
+  protected boolean isReadOnly() {
+    return myReadOnly;
   }
 }

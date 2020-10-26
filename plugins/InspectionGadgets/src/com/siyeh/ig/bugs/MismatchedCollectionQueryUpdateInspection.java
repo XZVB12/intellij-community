@@ -38,6 +38,7 @@ import com.siyeh.ig.ui.ExternalizableStringSet;
 import com.siyeh.ig.ui.UiUtils;
 import one.util.streamex.StreamEx;
 import org.intellij.lang.annotations.Pattern;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -46,7 +47,6 @@ import java.awt.*;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static com.siyeh.ig.psiutils.ClassUtils.isImmutable;
 
@@ -68,9 +68,9 @@ public class MismatchedCollectionQueryUpdateInspection
       CallMatcher.instanceCall(CommonClassNames.JAVA_UTIL_COLLECTION, "addAll", "removeAll", "containsAll", "remove"),
       CallMatcher.instanceCall(CommonClassNames.JAVA_UTIL_MAP, "putAll", "remove")
     );
-  private static final Set<String> COLLECTIONS_QUERIES =
+  private static final @NonNls Set<String> COLLECTIONS_QUERIES =
     ContainerUtil.set("binarySearch", "disjoint", "indexOfSubList", "lastIndexOfSubList", "max", "min");
-  private static final Set<String> COLLECTIONS_UPDATES = ContainerUtil.set("addAll", "fill", "copy", "replaceAll", "sort");
+  private static final @NonNls Set<String> COLLECTIONS_UPDATES = ContainerUtil.set("addAll", "fill", "copy", "replaceAll", "sort");
   private static final Set<String> COLLECTIONS_ALL =
     StreamEx.of(COLLECTIONS_QUERIES).append(COLLECTIONS_UPDATES).toImmutableSet();
   @SuppressWarnings("PublicField")
@@ -188,8 +188,10 @@ public class MismatchedCollectionQueryUpdateInspection
           return;
         }
         PsiElement parent = reference.getParent();
-        if (parent instanceof PsiExpressionList) {
-          PsiExpressionList args = (PsiExpressionList)parent;
+        PsiElement grandParent = skipAssigmentExprUp(parent);
+        if (parent instanceof PsiExpressionList ||
+            (parent instanceof PsiAssignmentExpression && grandParent instanceof PsiExpressionList)) {
+          PsiExpressionList args = (PsiExpressionList)(parent instanceof PsiExpressionList ? parent : grandParent);
           PsiCallExpression surroundingCall = ObjectUtils.tryCast(args.getParent(), PsiCallExpression.class);
           if (surroundingCall != null) {
             if (surroundingCall instanceof PsiMethodCallExpression &&
@@ -257,7 +259,7 @@ public class MismatchedCollectionQueryUpdateInspection
         if (method != null &&
             (!PsiType.VOID.equals(method.getReturnType()) &&
              !PsiType.VOID.equals(LambdaUtil.getFunctionalInterfaceReturnType(expression)) ||
-             Stream.of(method.getParameterList().getParameters()).anyMatch(p -> LambdaUtil.isFunctionalType(p.getType())))) {
+             ContainerUtil.or(method.getParameterList().getParameters(), p -> LambdaUtil.isFunctionalType(p.getType())))) {
           makeQueried();
         }
       }
@@ -446,6 +448,14 @@ public class MismatchedCollectionQueryUpdateInspection
       }
     }
     return immutable && !SideEffectChecker.mayHaveSideEffects(call);
+  }
+
+  private static PsiElement skipAssigmentExprUp(@Nullable PsiElement parent) {
+    parent = PsiUtil.skipParenthesizedExprUp(parent);
+    while (parent instanceof PsiAssignmentExpression) {
+      parent = PsiUtil.skipParenthesizedExprUp(parent.getParent());
+    }
+    return parent;
   }
 
   static class QueryUpdateInfo {

@@ -1,8 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-
-/*
- * @author max
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.indexing;
 
 import com.intellij.openapi.application.Application;
@@ -21,7 +17,6 @@ import com.intellij.util.concurrency.SequentialTaskExecutor;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.ide.PooledThreadExecutor;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -31,7 +26,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
-public class IndexInfrastructure {
+public final class IndexInfrastructure {
   private static final String STUB_VERSIONS = ".versions";
   private static final String PERSISTENT_INDEX_DIRECTORY_NAME = ".persistent";
   private static final boolean ourDoParallelIndicesInitialization = SystemProperties
@@ -152,7 +147,7 @@ public class IndexInfrastructure {
 
       if (ourDoParallelIndicesInitialization) {
         ExecutorService taskExecutor = AppExecutorUtil.createBoundedApplicationPoolExecutor(
-          "IndexInfrastructure.DataInitialization.RunParallelNestedInitializationTasks", PooledThreadExecutor.INSTANCE,
+          "IndexInfrastructure.DataInitialization.RunParallelNestedInitializationTasks", AppExecutorUtil.getAppExecutorService(),
           UnindexedFilesUpdater.getNumberOfIndexingThreads());
 
         for (ThrowableRunnable<?> callable : myNestedInitializationTasks) {

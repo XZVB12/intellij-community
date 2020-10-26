@@ -1,11 +1,13 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.gradle.service.project.open
 
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.ServiceManager
+import com.intellij.openapi.application.invokeLater
+import com.intellij.openapi.externalSystem.autolink.UnlinkedProjectNotificationAware
 import com.intellij.openapi.externalSystem.importing.AbstractOpenProjectProvider
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.DataNode
+import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.model.internal.InternalExternalProjectInfo
 import com.intellij.openapi.externalSystem.model.project.ProjectData
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode.MODAL_SYNC
@@ -17,40 +19,36 @@ import com.intellij.openapi.externalSystem.settings.ExternalProjectSettings
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.projectRoots.Sdk
-import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.util.text.nullize
-import org.jetbrains.plugins.gradle.service.GradleInstallationManager
-import org.jetbrains.plugins.gradle.settings.DistributionType
 import org.jetbrains.plugins.gradle.settings.GradleProjectSettings
 import org.jetbrains.plugins.gradle.settings.GradleSettings
-import org.jetbrains.plugins.gradle.startup.GradleUnlinkedProjectProcessor
-import org.jetbrains.plugins.gradle.util.*
 import org.jetbrains.plugins.gradle.util.GradleConstants.BUILD_FILE_EXTENSIONS
 import org.jetbrains.plugins.gradle.util.GradleConstants.SYSTEM_ID
+import org.jetbrains.plugins.gradle.util.setupGradleJvm
+import org.jetbrains.plugins.gradle.util.updateGradleJvm
+import org.jetbrains.plugins.gradle.util.validateJavaHome
+import java.nio.file.Path
 
 internal class GradleOpenProjectProvider : AbstractOpenProjectProvider() {
+  override val systemId = SYSTEM_ID
+
   override fun isProjectFile(file: VirtualFile): Boolean {
     return !file.isDirectory && BUILD_FILE_EXTENSIONS.any { file.name.endsWith(it) }
   }
 
-  override fun linkAndRefreshProject(projectDirectory: String, project: Project) {
-    val projectSdk = ProjectRootManager.getInstance(project).projectSdk
+  override fun linkAndRefreshProject(projectDirectory: Path, project: Project) {
+    val gradleSettings = GradleSettings.getInstance(project)
+    gradleSettings.setupGradleSettings()
     val gradleProjectSettings = GradleProjectSettings()
-    setupGradleSettings(gradleProjectSettings, projectDirectory, project, projectSdk)
-    attachGradleProjectAndRefresh(gradleProjectSettings, project)
-    validateJavaHome(project, projectDirectory, gradleProjectSettings.resolveGradleVersion())
-  }
+    gradleProjectSettings.setupGradleProjectSettings(projectDirectory)
 
-  override fun openProject(projectFile: VirtualFile, projectToClose: Project?, forceOpenInNewFrame: Boolean): Project? {
-    val project = super.openProject(projectFile, projectToClose, forceOpenInNewFrame)
-    if (project != null) {
-      GradleUnlinkedProjectProcessor.enableNotifications(project)
-    }
-    return project
+    val gradleVersion = gradleProjectSettings.resolveGradleVersion()
+    setupGradleJvm(project, gradleProjectSettings, gradleVersion)
+
+    attachGradleProjectAndRefresh(gradleProjectSettings, project)
+
+    validateJavaHome(project, projectDirectory, gradleVersion)
   }
 
   private fun attachGradleProjectAndRefresh(settings: ExternalProjectSettings, project: Project) {
@@ -66,35 +64,6 @@ internal class GradleOpenProjectProvider : AbstractOpenProjectProvider() {
     ExternalSystemUtil.refreshProject(externalProjectPath,
                                       ImportSpecBuilder(project, SYSTEM_ID)
                                         .callback(createFinalImportCallback(project, externalProjectPath)))
-  }
-
-  fun setupGradleSettings(settings: GradleProjectSettings, projectDirectory: String, project: Project, projectSdk: Sdk? = null) {
-    GradleSettings.getInstance(project).setupGradleSettings()
-    settings.setupGradleProjectSettings(projectDirectory, project, projectSdk)
-  }
-
-  private fun GradleSettings.setupGradleSettings() {
-    gradleVmOptions = GradleEnvironment.Headless.GRADLE_VM_OPTIONS ?: gradleVmOptions
-    isOfflineWork = GradleEnvironment.Headless.GRADLE_OFFLINE?.toBoolean() ?: isOfflineWork
-    serviceDirectoryPath = GradleEnvironment.Headless.GRADLE_SERVICE_DIRECTORY ?: serviceDirectoryPath
-    storeProjectFilesExternally = true
-  }
-
-  private fun GradleProjectSettings.setupGradleProjectSettings(projectDirectory: String, project: Project, projectSdk: Sdk? = null) {
-    externalProjectPath = projectDirectory
-    isUseQualifiedModuleNames = true
-    distributionType = GradleEnvironment.Headless.GRADLE_DISTRIBUTION_TYPE?.let(DistributionType::valueOf)
-                       ?: DistributionType.DEFAULT_WRAPPED
-    gradleHome = GradleEnvironment.Headless.GRADLE_HOME ?: suggestGradleHome()
-    setupGradleJvm(project, projectSdk, this, projectDirectory, resolveGradleVersion())
-  }
-
-  private fun suggestGradleHome(): String? {
-    val installationManager = ServiceManager.getService(GradleInstallationManager::class.java)
-    val lastUsedGradleHome = GradleUtil.getLastUsedGradleHome().nullize()
-    if (lastUsedGradleHome != null) return lastUsedGradleHome
-    val gradleHome = installationManager.autodetectedGradleHome ?: return null
-    return FileUtil.toCanonicalPath(gradleHome.path)
   }
 
   private fun createFinalImportCallback(project: Project, externalProjectPath: String): ExternalProjectRefreshCallback {

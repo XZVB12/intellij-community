@@ -4,10 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonIOException;
 import com.google.gson.JsonSyntaxException;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.FactoryMap;
 import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NotNull;
@@ -40,7 +38,8 @@ public class VSCBundle extends Bundle {
   @Override
   public Collection<File> getGrammarFiles() {
     loadExtensions();
-    return ContainerUtil.map(grammarToExtensions.keySet(), (path) -> new File(bundleFile, path));
+    //noinspection SSBasedInspection
+    return grammarToExtensions.keySet().stream().map((path) -> new File(bundleFile, path)).collect(Collectors.toList());
 
   }
 
@@ -81,7 +80,7 @@ public class VSCBundle extends Bundle {
                   }
                   Object configuration = ((Map)language).get("configuration");
                   if (configuration instanceof String) {
-                    idToConfig.put((String)id, (String)configuration);
+                    idToConfig.put((String)id, FileUtilRt.toSystemIndependentName((String)configuration));
                   }
                 }
               }
@@ -121,26 +120,31 @@ public class VSCBundle extends Bundle {
         }
       }
     }
-    catch (FileNotFoundException ignored) {
+    catch (FileNotFoundException | JsonSyntaxException ignored) {
     }
   }
 
   @NotNull
   @Override
   public Collection<File> getPreferenceFiles() {
-    return ContainerUtil.map(configToScopes.keySet(), (String config) -> new File(bundleFile, config));
+    //noinspection SSBasedInspection
+    return configToScopes.keySet().stream().map(config -> new File(bundleFile, config)).collect(Collectors.toList());
   }
 
   @Override
-  public List<Pair<String, Plist>> loadPreferenceFile(@NotNull File file, @NotNull PlistReader plistReader) throws IOException {
+  public List<Map.Entry<String, Plist>> loadPreferenceFile(@NotNull File file, @NotNull PlistReader plistReader) throws IOException {
     Plist fromJson = loadLanguageConfig(file);
-    return ContainerUtil.map(configToScopes.get(FileUtilRt.getRelativePath(bundleFile, file)), (String scope) -> Pair.create(scope, fromJson));
+    //noinspection SSBasedInspection
+    return configToScopes.get(FileUtilRt.toSystemIndependentName(
+      Objects.requireNonNull(FileUtilRt.getRelativePath(bundleFile, file)))).stream()
+      .map(scope -> new AbstractMap.SimpleImmutableEntry<>(scope, fromJson))
+      .collect(Collectors.toList());
   }
 
   @NotNull
   private static Plist loadLanguageConfig(File languageConfig) throws IOException {
+    Gson gson = new GsonBuilder().setLenient().create();
     try {
-      Gson gson = new GsonBuilder().setLenient().create();
       Object json = gson.fromJson(new FileReader(languageConfig), Object.class);
       Plist settings = new Plist();
       if (json instanceof Map) {

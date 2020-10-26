@@ -2,8 +2,10 @@
 package com.intellij.codeInsight.template;
 
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -20,7 +22,7 @@ public interface TemplateBuilder {
    * @param element the element to replace.
    * @param replacementText the initial value for the replacement.
    */
-  void replaceElement(@NotNull PsiElement element, String replacementText);
+  void replaceElement(@NotNull PsiElement element, @NlsSafe String replacementText);
 
   void replaceElement(@NotNull PsiElement element, TextRange rangeWithinElement, String replacementText);
 
@@ -34,11 +36,18 @@ public interface TemplateBuilder {
 
   void replaceElement(@NotNull PsiElement element, TextRange rangeWithinElement, Expression expression);
 
-  /**
-   * Creates a replacement box for the specified text range within the container element.
-   * @param rangeWithinElement range within the container element.
-   * @param replacementText the initial value for the replacement.
-   */
+  @ApiStatus.Experimental
+  void replaceElement(PsiElement element, @NlsSafe String varName, Expression expression, boolean alwaysStopAt);
+
+  @ApiStatus.Experimental
+  void replaceElement (PsiElement element, @NlsSafe String varName, String dependantVariableName, boolean alwaysStopAt);
+
+
+    /**
+     * Creates a replacement box for the specified text range within the container element.
+     * @param rangeWithinElement range within the container element.
+     * @param replacementText the initial value for the replacement.
+     */
   void replaceRange(TextRange rangeWithinElement, String replacementText);
 
   /**
@@ -54,6 +63,14 @@ public interface TemplateBuilder {
    */
   @Deprecated
   void run();
+
+  /**
+   * Run the template without any interactivity - no UI, no editor is requested.
+   * Consider using this method in the backend applications.
+   * It simply fills the variables with provided replacements and commit the document.
+   * @param inline if true then inline template will be created, regular otherwise
+   */
+  void runNonInteractively(boolean inline);
 
   /**
    * Shows the live template and initiates editing process.

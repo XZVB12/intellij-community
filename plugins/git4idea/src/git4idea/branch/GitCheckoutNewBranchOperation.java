@@ -16,8 +16,9 @@
 package git4idea.branch;
 
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.text.HtmlBuilder;
 import com.intellij.openapi.vcs.VcsNotifier;
-import com.intellij.util.ui.UIUtil;
 import git4idea.commands.Git;
 import git4idea.commands.GitCommandResult;
 import git4idea.commands.GitCompoundResult;
@@ -36,15 +37,12 @@ import static git4idea.util.GitUIUtil.code;
  * Create new branch (starting from the current branch) and check it out.
  */
 class GitCheckoutNewBranchOperation extends GitBranchOperation {
-
-  @NotNull private final Project myProject;
   @NotNull private final String myNewBranchName;
 
   GitCheckoutNewBranchOperation(@NotNull Project project, @NotNull Git git, @NotNull GitBranchUiHandler uiHandler,
                                 @NotNull Collection<? extends GitRepository> repositories, @NotNull String newBranchName) {
     super(project, git, uiHandler, repositories);
     myNewBranchName = newBranchName;
-    myProject = project;
   }
 
   @Override
@@ -92,12 +90,13 @@ class GitCheckoutNewBranchOperation extends GitBranchOperation {
   @NotNull
   @Override
   protected String getRollbackProposal() {
-    return GitBundle.message("checkout.new.branch.operation.however.checkout.has.succeeded.for.the.following",
-                             getSuccessfulRepositories().size()) +
-           UIUtil.BR +
-           successfulRepositoriesJoined() +
-           UIUtil.BR +
-           GitBundle.message("checkout.new.branch.operation.you.may.rollback.not.to.let.branches.diverge", myNewBranchName);
+    return new HtmlBuilder().append(GitBundle.message("checkout.new.branch.operation.however.checkout.has.succeeded.for.the.following",
+                                                      getSuccessfulRepositories().size()))
+      .br()
+      .appendRaw(successfulRepositoriesJoined())
+      .br()
+      .append(GitBundle.message("checkout.new.branch.operation.you.may.rollback.not.to.let.branches.diverge", myNewBranchName))
+      .toString();
   }
 
   @NotNull
@@ -127,10 +126,11 @@ class GitCheckoutNewBranchOperation extends GitBranchOperation {
                  code(myNewBranchName),
                  repositories.size(),
                  successfulRepositoriesJoined());
-      VcsNotifier.getInstance(myProject).notifySuccess(GitBundle.message("checkout.new.branch.operation.rollback.successful"), message);
+      VcsNotifier.getInstance(myProject).notifySuccess("git.checkout.new.branch.operation.rollback.successful",
+                                                       GitBundle.message("checkout.new.branch.operation.rollback.successful"), message);
     }
     else {
-      StringBuilder message = new StringBuilder();
+      @NlsContexts.NotificationContent StringBuilder message = new StringBuilder();
       if (!checkoutResult.totalSuccess()) {
         message.append(GitBundle.message("checkout.new.branch.operation.errors.during.checkout"));
         message.append(checkoutResult.getErrorOutputWithReposIndication());
@@ -140,7 +140,10 @@ class GitCheckoutNewBranchOperation extends GitBranchOperation {
         message.append(deleteResult.getErrorOutputWithReposIndication());
       }
       VcsNotifier.getInstance(myProject)
-        .notifyError(GitBundle.message("checkout.new.branch.operation.error.during.rollback"), message.toString(), true);
+        .notifyError("git.checkout.new.branch.operation.rollback.error",
+                     GitBundle.message("checkout.new.branch.operation.error.during.rollback"),
+                     message.toString(),
+                     true);
     }
   }
 

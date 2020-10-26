@@ -1,10 +1,13 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.internal.statistics.logger
 
+import com.intellij.internal.statistic.FUCounterCollectorTestCase
 import com.intellij.internal.statistic.eventLog.*
+import com.intellij.internal.statistic.eventLog.events.*
 import com.intellij.internal.statistics.StatisticsTestEventFactory.DEFAULT_SESSION_ID
 import com.intellij.internal.statistics.StatisticsTestEventFactory.newEvent
 import com.intellij.internal.statistics.StatisticsTestEventFactory.newStateEvent
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.testFramework.UsefulTestCase
 import org.junit.Test
@@ -265,26 +268,10 @@ class FeatureUsageEventLoggerTest : HeavyPlatformTestCase() {
 
   @Test
   fun testLogSystemEventId() {
-    getSystemEventIdFile().delete()
     val logger = TestFeatureUsageFileEventLogger(DEFAULT_SESSION_ID, "999.999", "0", "1",
-                                                 TestFeatureUsageEventWriter())
-    logger.log(EventLogGroup("group.id.1", 1), "test.action.1", false)
-    logger.log(EventLogGroup("group.id.2", 1), "test.action.2", false)
-    logger.dispose()
-    val logged = logger.testWriter.logged
-    UsefulTestCase.assertSize(2, logged)
-    assertEquals(logged[0].event.data["system_event_id"], 0.toLong())
-    assertEquals(logged[1].event.data["system_event_id"], 1.toLong())
-  }
-
-
-  @Test
-  fun testLogSystemEventIdFromFile() {
-    getSystemEventIdFile().writeText("42")
-    val logger = TestFeatureUsageFileEventLogger(DEFAULT_SESSION_ID, "999.999", "0", "1",
-                                                 TestFeatureUsageEventWriter())
-    logger.log(EventLogGroup("group.id.1", 1), "test.action.1", false)
-    logger.log(EventLogGroup("group.id.2", 1), "test.action.2", false)
+                                                 TestFeatureUsageEventWriter(), TestSystemEventIdProvider(42L))
+    logger.logAsync(EventLogGroup("group.id.1", 1), "test.action.1", false)
+    logger.logAsync(EventLogGroup("group.id.2", 1), "test.action.2", false)
     logger.dispose()
     val logged = logger.testWriter.logged
     UsefulTestCase.assertSize(2, logged)
@@ -292,9 +279,199 @@ class FeatureUsageEventLoggerTest : HeavyPlatformTestCase() {
     assertEquals(logged[1].event.data["system_event_id"], 43.toLong())
   }
 
-  private fun getSystemEventIdFile() =
-    EventLogConfiguration.getEventLogSettingsPath().resolve("test_system_event_id").toFile()
+  @Test
+  fun testLogHeadlessModeEnabled() {
+    doTestHeadlessMode(true) {
+      assertEquals(it.event.data["system_headless"], true)
+    }
+  }
 
+  @Test
+  fun testLogHeadlessModeDisabled() {
+    doTestHeadlessMode(false) {
+      assertFalse(it.event.data.containsKey("system_headless"))
+    }
+  }
+
+  private fun doTestHeadlessMode(headless: Boolean, assertion: (LogEvent) -> Unit) {
+    val logger = TestFeatureUsageFileEventLogger(headless = headless)
+    logger.logAsync(EventLogGroup("group.id", 1), "test.action", false)
+    logger.dispose()
+
+    val loggedEvents = logger.testWriter.logged
+    UsefulTestCase.assertSize(1, loggedEvents)
+    assertion.invoke(loggedEvents[0])
+  }
+
+  @Test
+  fun testObjectEvent() {
+    /* {
+      "intField" : 43
+      "obj": {
+        "name" : "testName",
+        "versions" : ["1", "2"]
+      }
+    } */
+
+    class TestObjDescription : ObjectDescription() {
+      var name by field(EventFields.StringValidatedByCustomRule("name", "name_rule"))
+      var versions by field(EventFields.StringListValidatedByCustomRule("versions", "version_rule"))
+    }
+
+    val group = EventLogGroup("newGroup", 1)
+    val event = group.registerEvent("testEvent", EventFields.Int("intField"),
+                                    ObjectEventField("obj", TestObjDescription()))
+
+    val intValue = 43
+    val testName = "testName"
+    val versionsValue = listOf("1", "2")
+    val events = FUCounterCollectorTestCase.collectLogEvents {
+      event.log(intValue, ObjectDescription.build(::TestObjDescription) {
+        versions = versionsValue
+        name = testName
+      })
+    }
+    UsefulTestCase.assertSize(1, events)
+    val eventData = events.first().event.data
+    UsefulTestCase.assertEquals(intValue, eventData["intField"])
+    val objEventData = eventData["obj"] as Map<*, *>
+    UsefulTestCase.assertEquals(testName, objEventData["name"])
+    val versions = objEventData["versions"] as List<*>
+    UsefulTestCase.assertEquals(versionsValue, versions)
+  }
+
+  @Test
+  fun testObjectVarargEvent() {
+    class TestObjDescription : ObjectDescription() {
+      var name by field(EventFields.StringValidatedByCustomRule("name", "name_rule"))
+      var versions by field(EventFields.StringListValidatedByCustomRule("versions", "version_rule"))
+    }
+
+    val group = EventLogGroup("newGroup", 1)
+    val intEventField = EventFields.Int("intField")
+    val objectEventField = ObjectEventField("obj", TestObjDescription())
+    val event = group.registerVarargEvent("testEvent", intEventField, objectEventField)
+
+    val intValue = 43
+    val testName = "testName"
+    val versionsValue = listOf("1", "2")
+    val events = FUCounterCollectorTestCase.collectLogEvents {
+      event.log(intEventField with intValue, objectEventField with ObjectDescription.build(::TestObjDescription) {
+        versions = versionsValue
+        name = testName
+      })
+    }
+    UsefulTestCase.assertSize(1, events)
+    val eventData = events.first().event.data
+    UsefulTestCase.assertEquals(intValue, eventData["intField"])
+    val objEventData = eventData["obj"] as Map<*, *>
+    UsefulTestCase.assertEquals(testName, objEventData["name"])
+    val versions = objEventData["versions"] as List<*>
+    UsefulTestCase.assertEquals(versionsValue, versions)
+  }
+
+  @Test
+  fun testObjectListEventByDescription() {
+    class TestObjDescription : ObjectDescription() {
+      var name by field(EventFields.StringValidatedByCustomRule("name", "name_rule"))
+      var version by field(EventFields.StringValidatedByCustomRule("versions", "version_rule"))
+    }
+
+    val group = EventLogGroup("newGroup", 1)
+    val objectListField: EventField<List<ObjectEventData>> = ObjectListEventField("objects", TestObjDescription())
+    val event = group.registerVarargEvent("testEvent", objectListField)
+
+    val events = FUCounterCollectorTestCase.collectLogEvents {
+      val objList = mutableListOf<ObjectEventData>()
+      objList.add(ObjectDescription.build(::TestObjDescription) {
+        name = "name1"
+        version = "version1"
+      })
+      objList.add(ObjectDescription.build(::TestObjDescription) {
+        name = "name2"
+        version = "version2"
+      })
+
+      event.log(objectListField with objList)
+    }
+    UsefulTestCase.assertSize(1, events)
+    val eventData = events.first().event.data
+    val objectsEventData = eventData["objects"] as List<*>
+    UsefulTestCase.assertSize(2, objectsEventData)
+  }
+
+  @Test
+  fun testObjectInObjectEvent() {
+    /* {
+      "intField" : 43
+      "obj1": {
+        "name" : "testName",
+        "obj2" : {
+          "foo": "fooValue",
+          "bar": "barValue",
+        }
+      }
+    } */
+
+    class InnerObjDescription : ObjectDescription() {
+      var foo by field(EventFields.StringValidatedByCustomRule("foo", "foo_rule"))
+      var bar by field(EventFields.StringValidatedByCustomRule("bar", "bar_rule"))
+    }
+
+    class OuterObjDescription : ObjectDescription() {
+      var name by field(EventFields.StringValidatedByCustomRule("name", "name_rule"))
+      var obj1 by field(ObjectEventField("obj2", InnerObjDescription()))
+    }
+
+    val group = EventLogGroup("newGroup", 1)
+    val event = group.registerEvent("testEvent", EventFields.Int("intField"),
+                                    ObjectEventField("obj1", OuterObjDescription()))
+
+    val events = FUCounterCollectorTestCase.collectLogEvents {
+      val objectValue = ObjectDescription.build(::OuterObjDescription) {
+        name = "testName"
+        obj1 = ObjectDescription.build(::InnerObjDescription) {
+          bar = "barValue"
+          foo = "fooValue"
+        }
+      }
+      event.log(43, objectValue)
+    }
+
+    UsefulTestCase.assertSize(1, events)
+    val eventData = events.first().event.data
+    UsefulTestCase.assertEquals(43, eventData["intField"])
+    val obj1EventData = eventData["obj1"] as Map<*, *>
+    val obj2EventData = obj1EventData["obj2"] as Map<*, *>
+    UsefulTestCase.assertEquals("barValue", obj2EventData["bar"])
+  }
+
+  @Test
+  fun testEnumInObjectField() {
+    /* {
+      "obj": {
+        "enumField" : "foo"
+      }
+    } */
+
+    class TestObjDescription : ObjectDescription() {
+      var enumField by field(EnumEventField("enumField", TestEnum::class.java) { StringUtil.toLowerCase(it.name) })
+    }
+
+    val group = EventLogGroup("newGroup", 1)
+    val event = group.registerEvent("testEvent", ObjectEventField("obj", TestObjDescription()))
+
+    val events = FUCounterCollectorTestCase.collectLogEvents {
+      event.log(ObjectDescription.build(::TestObjDescription) {
+        enumField = TestEnum.FOO
+      })
+    }
+    UsefulTestCase.assertSize(1, events)
+    val objEventData = events.first().event.data["obj"] as Map<*, *>
+    UsefulTestCase.assertEquals("foo", objEventData["enumField"])
+  }
+
+  enum class TestEnum { FOO, BAR }
 
   private fun testLogger(callback: (TestFeatureUsageFileEventLogger) -> Unit, vararg expected: LogEvent) {
     val logger = TestFeatureUsageFileEventLogger(DEFAULT_SESSION_ID, "999.999", "0", "1", TestFeatureUsageEventWriter())
@@ -340,12 +517,16 @@ class FeatureUsageEventLoggerTest : HeavyPlatformTestCase() {
   }
 }
 
-class TestFeatureUsageFileEventLogger(session: String,
-                                      build: String,
-                                      bucket: String,
-                                      recorderVersion: String,
-                                      writer: TestFeatureUsageEventWriter) :
-  StatisticsFileEventLogger("TEST", session, build, bucket, recorderVersion, writer) {
+private const val TEST_RECORDER = "TEST"
+
+class TestFeatureUsageFileEventLogger(session: String = DEFAULT_SESSION_ID,
+                                      build: String = "999.999",
+                                      bucket: String = "0",
+                                      recorderVersion: String = "1",
+                                      writer: TestFeatureUsageEventWriter = TestFeatureUsageEventWriter(),
+                                      systemEventIdProvider: StatisticsSystemEventIdProvider = TestSystemEventIdProvider(0),
+                                      headless: Boolean = false) :
+  StatisticsFileEventLogger(TEST_RECORDER, session, headless, build, bucket, recorderVersion, writer, systemEventIdProvider) {
   val testWriter = writer
 
   override fun dispose() {
@@ -365,4 +546,14 @@ class TestFeatureUsageEventWriter : StatisticsEventLogWriter {
   override fun getLogFilesProvider(): EventLogFilesProvider = EmptyEventLogFilesProvider
   override fun cleanup() = Unit
   override fun rollOver() = Unit
+}
+
+class TestSystemEventIdProvider(var value: Long) : StatisticsSystemEventIdProvider {
+  override fun getSystemEventId(recorderId: String): Long {
+    return value
+  }
+
+  override fun setSystemEventId(recorderId: String, eventId: Long) {
+    value = eventId
+  }
 }

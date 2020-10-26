@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.siyeh.ig.migration;
 
 import com.intellij.codeInsight.Nullability;
@@ -402,7 +402,7 @@ public class IfCanBeSwitchInspection extends BaseInspection {
     }
   }
 
-  private static void appendElement(PsiElement element, boolean renameBreakElements, String breakLabelString, StringBuilder switchStatementText) {
+  private static void appendElement(PsiElement element, boolean renameBreakElements, String breakLabelString, @NonNls StringBuilder switchStatementText) {
     final String text = element.getText();
     if (!renameBreakElements) {
       switchStatementText.append(text);
@@ -426,18 +426,9 @@ public class IfCanBeSwitchInspection extends BaseInspection {
       switchStatementText.append(text);
     }
     final PsiElement lastChild = element.getLastChild();
-    if (isEndOfLineComment(lastChild)) {
+    if (JavaCommentUtil.isEndOfLineComment(lastChild)) {
       switchStatementText.append('\n');
     }
-  }
-
-  private static boolean isEndOfLineComment(PsiElement element) {
-    if (!(element instanceof PsiComment)) {
-      return false;
-    }
-    final PsiComment comment = (PsiComment)element;
-    final IElementType tokenType = comment.getTokenType();
-    return JavaTokenType.END_OF_LINE_COMMENT.equals(tokenType);
   }
 
   @Override

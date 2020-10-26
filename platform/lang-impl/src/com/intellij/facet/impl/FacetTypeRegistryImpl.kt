@@ -10,7 +10,9 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.extensions.ExtensionPointListener
 import com.intellij.openapi.extensions.PluginDescriptor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectBundle
 import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.roots.ex.ProjectRootManagerEx
 import org.jetbrains.jps.model.serialization.facet.FacetState
 import java.util.*
 
@@ -52,17 +54,13 @@ class FacetTypeRegistryImpl : FacetTypeRegistry() {
 
   @Synchronized
   override fun unregisterFacetType(facetType: FacetType<*, *>) {
-    try {
-      ProjectManager.getInstance().openProjects.forEach {
-        convertFacetsToInvalid(it, facetType)
-      }
-    }
-    finally {
-      val id = facetType.id
-      val stringId = facetType.stringId
-      LOG.assertTrue(myFacetTypes.remove(id) != null, "Facet type '$stringId' is not registered")
-      myFacetTypes.remove(id)
-      myTypeIds.remove(stringId)
+    val id = facetType.id
+    val stringId = facetType.stringId
+    LOG.assertTrue(myFacetTypes.remove(id) != null, "Facet type '$stringId' is not registered")
+    myFacetTypes.remove(id)
+    myTypeIds.remove(stringId)
+    ProjectManager.getInstance().openProjects.forEach {
+      convertFacetsToInvalid(it, facetType)
     }
   }
 
@@ -75,13 +73,18 @@ class FacetTypeRegistryImpl : FacetTypeRegistry() {
       for (facet in facets) {
         val facetState = saveFacetWithSubFacets(facet, subFacets) ?: continue
         val pluginName = facetType.pluginDescriptor?.name?.let { " '$it'" } ?: ""
-        val errorMessage = "Plugin$pluginName which provides support for '${facetType.presentableName}' facets is unloaded"
+        val errorMessage = ProjectBundle.message("error.message.plugin.for.facets.unloaded", pluginName, facetType.presentableName)
         val reportError = !ApplicationManager.getApplication().isUnitTestMode
         val invalidFacet = FacetManagerBase.createInvalidFacet(module, facetState, facet.underlyingFacet, errorMessage, true, reportError)
         removeAllSubFacets(model, facet, subFacets)
         model.replaceFacet(facet, invalidFacet)
       }
       model.commit()
+    }
+    if (modulesWithFacets.isNotEmpty()) {
+      /* this is needed to recompute RootIndex, otherwise its DirectoryInfoImpl instances will keep references to SourceFolderBridges,
+         which will keep references to Facet instances from unloaded plugin via WorkspaceEntityStorage making it impossible to unload plugins without restart */
+      ProjectRootManagerEx.getInstanceEx(project).makeRootsChange({}, false, true)
     }
   }
 

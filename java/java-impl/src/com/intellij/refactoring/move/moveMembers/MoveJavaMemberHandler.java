@@ -5,10 +5,12 @@ import com.intellij.codeInsight.ChangeContextUtil;
 import com.intellij.codeInsight.ExpectedTypeInfo;
 import com.intellij.codeInsight.ExpectedTypesProvider;
 import com.intellij.codeInsight.highlighting.ReadWriteAccessDetector;
+import com.intellij.java.JavaBundle;
+import com.intellij.java.refactoring.JavaRefactoringBundle;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.source.resolve.JavaResolveUtil;
-import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.*;
@@ -90,7 +92,7 @@ public class MoveJavaMemberHandler implements MoveMemberHandler {
                                                    RefactoringUIUtil.getDescription(member, false),
                                                    visibility,
                                                    RefactoringUIUtil.getDescription(ConflictsUtil.getContainer(element), true));
-        conflicts.putValue(member, CommonRefactoringUtil.capitalize(message));
+        conflicts.putValue(member, StringUtil.capitalize(message));
       }
     }
 
@@ -99,8 +101,9 @@ public class MoveJavaMemberHandler implements MoveMemberHandler {
       if (accessDetector != null) {
         ReadWriteAccessDetector.Access access = accessDetector.getExpressionAccess(element);
         if (access != ReadWriteAccessDetector.Access.Read) {
-          String message = RefactoringUIUtil.getDescription(member, true) + " has write access but is moved to an interface";
-          conflicts.putValue(element, CommonRefactoringUtil.capitalize(message));
+          String message =
+            JavaRefactoringBundle.message("move.member.write.access.in.interface.conflict", RefactoringUIUtil.getDescription(member, true));
+          conflicts.putValue(element, StringUtil.capitalize(message));
         }
       }
     } else if (member instanceof PsiField &&
@@ -108,11 +111,11 @@ public class MoveJavaMemberHandler implements MoveMemberHandler {
                member.hasModifierProperty(PsiModifier.FINAL) &&
                PsiUtil.isAccessedForWriting((PsiExpression)usageInfo.reference) &&
                !RefactoringHierarchyUtil.willBeInTargetClass(usageInfo.reference, membersToMove, targetClass, true)) {
-      conflicts.putValue(usageInfo.member, "final variable initializer won't be available after move.");
+      conflicts.putValue(usageInfo.member, JavaBundle.message("move.member.final.initializer.conflict"));
     }
 
     if (toBeConvertedToEnum(moveMembersOptions, member, targetClass) && !isEnumAcceptable(element, targetClass)) {
-      conflicts.putValue(element, "Enum type won't be applicable in the current context");
+      conflicts.putValue(element, JavaBundle.message("move.member.enum.conflict"));
     }
 
     final PsiReference reference = usageInfo.getReference();
@@ -142,7 +145,7 @@ public class MoveJavaMemberHandler implements MoveMemberHandler {
     if (member instanceof PsiMethod && hasMethod(targetClass, (PsiMethod)member) ||
         member instanceof PsiField && hasField(targetClass, (PsiField)member)) {
       String message = RefactoringBundle.message("0.already.exists.in.the.target.class", RefactoringUIUtil.getDescription(member, false));
-      conflicts.putValue(member, CommonRefactoringUtil.capitalize(message));
+      conflicts.putValue(member, StringUtil.capitalize(message));
     }
 
     RefactoringConflictsUtil.checkUsedElements(member, member, membersToMove, null, targetClass, targetClass, conflicts);
@@ -179,8 +182,7 @@ public class MoveJavaMemberHandler implements MoveMemberHandler {
         }
         else {
           final Project project = element.getProject();
-          final PsiClass targetClass =
-            JavaPsiFacade.getInstance(project).findClass(options.getTargetClassName(), GlobalSearchScope.projectScope(project));
+          PsiClass targetClass = JavaPsiFacade.getInstance(project).findClass(options.getTargetClassName(), element.getResolveScope());
           if (targetClass != null) {
             final PsiReferenceParameterList parameterList = refExpr.getParameterList();
             if ((targetClass.isEnum() || PsiTreeUtil.isAncestor(targetClass, element, true)) && parameterList != null && parameterList.getTypeArguments().length == 0 && !(refExpr instanceof PsiMethodReferenceExpression)) {

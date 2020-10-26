@@ -4,6 +4,7 @@ package org.jetbrains.idea.devkit.run;
 import com.intellij.execution.JUnitPatcher;
 import com.intellij.execution.configurations.JavaParameters;
 import com.intellij.execution.configurations.ParametersList;
+import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
@@ -21,6 +22,7 @@ import com.intellij.psi.PsiClass;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.lang.UrlClassLoader;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.devkit.module.PluginModuleType;
@@ -47,24 +49,33 @@ public class JUnitDevKitPatcher extends JUnitPatcher {
 
     ParametersList vm = javaParameters.getVMParametersList();
 
-    if (PsiUtil.isIdeaProject(project) && !vm.hasProperty(SYSTEM_CL_PROPERTY)) {
-      String qualifiedName = UrlClassLoader.class.getName();
-      if (loaderValid(project, module, qualifiedName, jdk)) {
-        vm.addProperty(SYSTEM_CL_PROPERTY, qualifiedName);
+    if (PsiUtil.isIdeaProject(project)) {
+      if (!vm.hasProperty(SYSTEM_CL_PROPERTY)) {
+        String qualifiedName = UrlClassLoader.class.getName();
+        if (loaderValid(project, module, qualifiedName, jdk)) {
+          vm.addProperty(SYSTEM_CL_PROPERTY, qualifiedName);
+        }
+      }
+      String basePath = project.getBasePath();
+      if (!vm.hasProperty(PathManager.PROPERTY_SYSTEM_PATH)) {
+        vm.addProperty(PathManager.PROPERTY_SYSTEM_PATH, new File(basePath, "system/test").getAbsolutePath());
+      }
+      if (!vm.hasProperty(PathManager.PROPERTY_CONFIG_PATH)) {
+        vm.addProperty(PathManager.PROPERTY_CONFIG_PATH, new File(basePath, "config/test").getAbsolutePath());
       }
     }
-    
+
     if (Registry.is("idea.lazy.classloading.caches") &&
-        vm.hasProperty(SYSTEM_CL_PROPERTY) && 
-        UrlClassLoader.class.getName().equals(vm.getPropertyValue(SYSTEM_CL_PROPERTY))) {
+        vm.hasProperty(SYSTEM_CL_PROPERTY) &&
+        "com.intellij.util.lang.UrlClassLoader".equals(vm.getPropertyValue(SYSTEM_CL_PROPERTY))) {
       vm.addProperty("idea.lazy.classloading.caches", "true");
     }
 
     jdk = IdeaJdk.findIdeaJdk(jdk);
     if (jdk == null) return;
 
-    String libPath = jdk.getHomePath() + File.separator + "lib";
-    String bootJarPath = libPath + File.separator + "boot.jar";
+    @NonNls String libPath = jdk.getHomePath() + File.separator + "lib";
+    @NonNls String bootJarPath = libPath + File.separator + "boot.jar";
     if (new File(bootJarPath).exists()) {
       //there is no need to add boot.jar in modern IDE builds (181.*)
       vm.add("-Xbootclasspath/a:" + bootJarPath);
@@ -81,7 +92,7 @@ public class JUnitDevKitPatcher extends JUnitPatcher {
 
     File sandboxHome = getSandboxPath(jdk);
     if (sandboxHome != null) {
-      if (!vm.hasProperty("idea.home.path")) {
+      if (!vm.hasProperty(PathManager.PROPERTY_HOME_PATH)) {
         File homeDir = new File(sandboxHome, "test");
         FileUtil.createDirectory(homeDir);
         String buildNumber = IdeaJdk.getBuildNumber(jdk.getHomePath());
@@ -96,10 +107,10 @@ public class JUnitDevKitPatcher extends JUnitPatcher {
         else {
           LOG.warn("Cannot determine build number for " + jdk.getHomePath());
         }
-        vm.defineProperty("idea.home.path", homeDir.getAbsolutePath());
+        vm.defineProperty(PathManager.PROPERTY_HOME_PATH, homeDir.getAbsolutePath());
       }
-      if (!vm.hasProperty("idea.plugins.path")) {
-        vm.defineProperty("idea.plugins.path", new File(sandboxHome, "plugins").getAbsolutePath());
+      if (!vm.hasProperty(PathManager.PROPERTY_PLUGINS_PATH)) {
+        vm.defineProperty(PathManager.PROPERTY_PLUGINS_PATH, new File(sandboxHome, "plugins").getAbsolutePath());
       }
     }
 
@@ -108,23 +119,28 @@ public class JUnitDevKitPatcher extends JUnitPatcher {
     javaParameters.getClassPath().addFirst(((JavaSdkType)jdk.getSdkType()).getToolsPath(jdk));
   }
 
-  private static final Key<Boolean> LOADER_VALID = Key.create("LOADER_VALID");
+  private static final Key<Boolean> LOADER_VALID_8 = Key.create("LOADER_VALID_8");
+  private static final Key<Boolean> LOADER_VALID_9 = Key.create("LOADER_VALID_9");
 
   private static boolean loaderValid(Project project, Module module, String qualifiedName, Sdk jdk) {
+    boolean jdk9 = JavaSdk.getInstance().isOfVersionOrHigher(jdk, JavaSdkVersion.JDK_1_9);
+    if (jdk9 && !Registry.is("idea.use.loader.for.jdk9")) {
+      return false;
+    }
     UserDataHolder holder = module != null ? module : project;
-    Boolean res = holder.getUserData(LOADER_VALID);
+    Key<Boolean> cacheKey = jdk9 ? LOADER_VALID_9 : LOADER_VALID_8;
+    Boolean res = holder.getUserData(cacheKey);
     if (res == null) {
       res = ReadAction.compute(() -> {
         //noinspection RedundantCast
         return DumbService.getInstance(project).computeWithAlternativeResolveEnabled((ThrowableComputable<Boolean, RuntimeException>)() -> {
-          PsiClass aClass = JavaPsiFacade.getInstance(project).findClass(qualifiedName, module != null ? GlobalSearchScope
-            .moduleWithDependenciesAndLibrariesScope(module) : GlobalSearchScope.allScope(project));
+          GlobalSearchScope scope = module != null ? GlobalSearchScope.moduleRuntimeScope(module, true)
+                                                   : GlobalSearchScope.allScope(project);
+          PsiClass aClass = JavaPsiFacade.getInstance(project).findClass(qualifiedName, scope);
           if (aClass != null) {
-            if (JavaSdk.getInstance().isOfVersionOrHigher(jdk, JavaSdkVersion.JDK_1_9)) {
-              if (Registry.is("idea.use.loader.for.jdk9")) {
-                PsiClass builder = aClass.findInnerClassByName(UrlClassLoader.Builder.class.getSimpleName(), false);
-                return builder != null && !ArrayUtil.isEmpty(builder.findMethodsByName("urlsFromAppClassLoader"));
-              }
+            if (jdk9) {
+              PsiClass builder = aClass.findInnerClassByName(UrlClassLoader.Builder.class.getSimpleName(), false);
+              return builder != null && !ArrayUtil.isEmpty(builder.findMethodsByName("urlsFromAppClassLoader"));
             }
             else {
               return true;
@@ -133,7 +149,7 @@ public class JUnitDevKitPatcher extends JUnitPatcher {
           return false;
         });
       });
-      holder.putUserData(LOADER_VALID, res);
+      holder.putUserData(cacheKey, res);
     }
     return res;
   }

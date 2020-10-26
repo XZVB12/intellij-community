@@ -62,6 +62,8 @@ public abstract class ApplicationInfoEx extends ApplicationInfo {
 
   public abstract boolean showLicenseeInfo();
 
+  public abstract String getCopyrightStart();
+
   public abstract boolean isEAP();
 
   /**
@@ -104,6 +106,8 @@ public abstract class ApplicationInfoEx extends ApplicationInfo {
 
   public abstract long getAboutForeground();
 
+  public abstract long getAboutLinkColor();
+
   public interface UpdateUrls {
     String getCheckingUrl();
     String getPatchesUrl();
@@ -116,7 +120,11 @@ public abstract class ApplicationInfoEx extends ApplicationInfo {
 
   public abstract boolean isEssentialPlugin(@NotNull PluginId pluginId);
 
+  public abstract @Nullable String getCustomizeIDEWizardDialog();
+
   public abstract @Nullable String getCustomizeIDEWizardStepsProvider();
+
+  public abstract int @Nullable [] getAboutLogoRect();
 
   public abstract String getSubscriptionFormId();
 
@@ -150,4 +158,6 @@ public abstract class ApplicationInfoEx extends ApplicationInfo {
   public abstract @Nullable String getProgressTailIcon();
 
   public abstract @NotNull BuildNumber getApiVersionAsNumber();
+
+  public abstract @NotNull List<PluginId> getEssentialPluginsIds();
 }

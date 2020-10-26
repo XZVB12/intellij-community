@@ -7,7 +7,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder;
 import com.intellij.openapi.externalSystem.model.DataNode;
@@ -104,10 +103,6 @@ public abstract class AbstractExternalProjectImportBuilder<C extends AbstractImp
   @Override
   public boolean isMarked(DataNode<ProjectData> element) {
     return true;
-  }
-
-  @Override
-  public void setList(List<DataNode<ProjectData>> externalSystemProjects) {
   }
 
   @Override
@@ -265,7 +260,7 @@ public abstract class AbstractExternalProjectImportBuilder<C extends AbstractImp
         if (externalProject == null) {
           return;
         }
-        ServiceManager.getService(ProjectDataManager.class).importData(externalProject, project, false);
+        ApplicationManager.getApplication().getService(ProjectDataManager.class).importData(externalProject, project, false);
       }
     };
   }

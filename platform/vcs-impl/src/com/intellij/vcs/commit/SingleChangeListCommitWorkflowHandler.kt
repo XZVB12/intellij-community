@@ -1,12 +1,14 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.vcs.commit
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vcs.CheckinProjectPanel
-import com.intellij.openapi.vcs.changes.ChangeListManagerImpl
+import com.intellij.openapi.vcs.VcsConfiguration
+import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.changes.ChangesUtil.getAffectedVcses
-import com.intellij.openapi.vcs.changes.ChangesUtil.getAffectedVcsesForFiles
+import com.intellij.openapi.vcs.changes.ChangesUtil.getAffectedVcsesForFilePaths
+import com.intellij.openapi.vcs.changes.CommitExecutor
 import com.intellij.openapi.vcs.changes.CommitResultHandler
 import com.intellij.openapi.vcs.checkin.CheckinHandler
 import com.intellij.openapi.vcs.impl.LineStatusTrackerManager
@@ -84,6 +86,14 @@ class SingleChangeListCommitWorkflowHandler(
     }
   }
 
+  override fun isExecutorEnabled(executor: CommitExecutor): Boolean =
+    super.isExecutorEnabled(executor) && (!isCommitEmpty() || !executor.areChangesRequired())
+
+  override fun checkCommit(executor: CommitExecutor?): Boolean =
+    getCommitMessage().isNotEmpty() ||
+    !VcsConfiguration.getInstance(project).FORCE_NON_EMPTY_COMMENT ||
+    ui.confirmCommitWithEmptyMessage()
+
   override fun updateWorkflow() {
     workflow.commitState = getCommitState()
   }
@@ -116,8 +126,8 @@ class SingleChangeListCommitWorkflowHandler(
   }
 
   private fun updateCommitOptionsVisibility() {
-    val unversionedFiles = ChangeListManagerImpl.getInstanceImpl(project).unversionedFiles
-    val vcses = getAffectedVcses(getChangeList().changes, project) + getAffectedVcsesForFiles(unversionedFiles, project)
+    val unversionedFiles = ChangeListManager.getInstance(project).unversionedFilesPaths
+    val vcses = getAffectedVcses(getChangeList().changes, project) + getAffectedVcsesForFilePaths(unversionedFiles, project)
 
     ui.commitOptionsUi.setVisible(vcses)
   }

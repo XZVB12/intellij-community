@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection.optionalToIf;
 
 import com.intellij.codeInspection.streamToLoop.ChainContext;
@@ -13,7 +13,9 @@ import com.siyeh.ig.psiutils.VariableAccessUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import static com.intellij.util.ObjectUtils.tryCast;
 
@@ -26,6 +28,7 @@ class OptionalToIfContext extends ChainContext {
 
   private String myInitializer;
   private String myElseBranch;
+  private  List<String> myLambdaNames = new ArrayList<>();
 
   OptionalToIfContext(@NotNull PsiExpression chainExpression, @NotNull ChainExpressionModel model) {
     super(chainExpression);
@@ -82,6 +85,14 @@ class OptionalToIfContext extends ChainContext {
     String negated = BoolUtils.getNegatedExpressionText(conditional, new CommentTracker());
     return "if(" + negated + ")" + myElseBranch +
            code;
+  }
+
+  boolean isUsedLambdaVarName(String name) {
+    return myLambdaNames.contains(name);
+  }
+
+  void addLambdaVarName(@NotNull String name) {
+    myLambdaNames.add(name);
   }
 
   @Nullable
@@ -148,7 +159,7 @@ class OptionalToIfContext extends ChainContext {
     }
   }
 
-  private static class ChainReturn extends ChainExpressionModel {
+  private static final class ChainReturn extends ChainExpressionModel {
 
     private final PsiReturnStatement myChainReturnCopy;
     private PsiExpression myChainExpressionCopy;
@@ -192,7 +203,7 @@ class OptionalToIfContext extends ChainContext {
     }
   }
 
-  private static class ChainAssignment extends ChainExpressionModel {
+  private static final class ChainAssignment extends ChainExpressionModel {
 
     private final String myName;
 

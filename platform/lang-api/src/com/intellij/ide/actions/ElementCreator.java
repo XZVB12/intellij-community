@@ -27,6 +27,7 @@ import com.intellij.openapi.command.UndoConfirmationPolicy;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
@@ -34,8 +35,6 @@ import com.intellij.psi.SmartPointerManager;
 import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.openapi.util.NlsContexts;
-import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -47,7 +46,7 @@ import java.util.List;
 public abstract class ElementCreator implements WriteActionAware {
   private static final Logger LOG = Logger.getInstance(ElementCreator.class);
   private final Project myProject;
-  private final String myErrorTitle;
+  private final @NlsContexts.DialogTitle String myErrorTitle;
 
   protected ElementCreator(Project project, @NlsContexts.DialogTitle String errorTitle) {
     myProject = project;
@@ -55,7 +54,6 @@ public abstract class ElementCreator implements WriteActionAware {
   }
 
   protected abstract PsiElement[] create(@NotNull String newName) throws Exception;
-  @Nls
   @NlsContexts.Command
   protected abstract String getActionName(String newName);
 
@@ -81,7 +79,7 @@ public abstract class ElementCreator implements WriteActionAware {
   }
 
   @Nullable
-  private Exception executeCommand(String commandName, ThrowableRunnable<? extends Exception> invokeCreate) {
+  private Exception executeCommand(@NlsContexts.Command String commandName, ThrowableRunnable<? extends Exception> invokeCreate) {
     final Exception[] exception = new Exception[1];
     CommandProcessor.getInstance().executeCommand(myProject, () -> {
       LocalHistoryAction action = LocalHistory.getInstance().startAction(commandName);
@@ -108,7 +106,7 @@ public abstract class ElementCreator implements WriteActionAware {
     Messages.showMessageDialog(myProject, errorMessage, myErrorTitle, Messages.getErrorIcon());
   }
 
-  public static String getErrorMessage(Throwable t) {
+  public static @NlsContexts.DialogMessage String getErrorMessage(Throwable t) {
     String errorMessage = CreateElementActionBase.filterMessage(t.getMessage());
     if (StringUtil.isEmpty(errorMessage)) {
       errorMessage = t.toString();

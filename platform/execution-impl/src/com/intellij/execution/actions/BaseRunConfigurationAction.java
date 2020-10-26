@@ -2,7 +2,6 @@
 
 package com.intellij.execution.actions;
 
-import com.intellij.execution.ExecutionBundle;
 import com.intellij.execution.ProgramRunnerUtil;
 import com.intellij.execution.RunnerAndConfigurationSettings;
 import com.intellij.execution.configurations.ConfigurationType;
@@ -14,25 +13,17 @@ import com.intellij.ide.IdeEventQueue;
 import com.intellij.ide.macro.MacroManager;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.progress.util.ProgressIndicatorUtils;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.popup.JBPopupFactory;
-import com.intellij.openapi.ui.popup.ListPopup;
-import com.intellij.openapi.ui.popup.PopupStep;
-import com.intellij.openapi.ui.popup.util.BaseListPopupStep;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.ui.awt.RelativePoint;
 import com.intellij.util.ThreeState;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import java.awt.event.InputEvent;
-import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -128,39 +119,7 @@ public abstract class BaseRunConfigurationAction extends ActionGroup {
     if (existing == null) {
       final List<ConfigurationFromContext> producers = getConfigurationsFromContext(context);
       if (producers.isEmpty()) return;
-      if (producers.size() > 1) {
-        final Editor editor = CommonDataKeys.EDITOR.getData(dataContext);
-        producers.sort(ConfigurationFromContext.NAME_COMPARATOR);
-        final ListPopup popup =
-          JBPopupFactory.getInstance().createListPopup(new BaseListPopupStep<ConfigurationFromContext>(ExecutionBundle.message("configuration.action.chooser.title"), producers) {
-            @Override
-            @NotNull
-            public String getTextFor(final ConfigurationFromContext producer) {
-              return childActionName(producer);
-            }
-
-            @Override
-            public Icon getIconFor(final ConfigurationFromContext producer) {
-              return producer.getConfigurationType().getIcon();
-            }
-
-            @Override
-            public PopupStep<?> onChosen(ConfigurationFromContext producer, boolean finalChoice) {
-              perform(producer, context);
-              return FINAL_CHOICE;
-            }
-          });
-        final InputEvent event = e.getInputEvent();
-        if (event instanceof MouseEvent) {
-          popup.show(new RelativePoint((MouseEvent)event));
-        } else if (editor != null) {
-          popup.showInBestPositionFor(editor);
-        } else {
-          popup.showInBestPositionFor(dataContext);
-        }
-      } else {
-        perform(producers.get(0), context);
-      }
+      perform(producers.get(0), context);
       return;
     }
 
@@ -251,7 +210,7 @@ public abstract class BaseRunConfigurationAction extends ActionGroup {
         //todo[nik,anna] it's dirty fix. Otherwise wrong configuration will be returned from context.getConfiguration()
         context.setConfiguration(fromContext.get(0).getConfigurationSettings());
       }
-      final String name = suggestRunActionName((LocatableConfiguration)configuration.getConfiguration());
+      final String name = suggestRunActionName(configuration.getConfiguration());
       updatePresentation(presentation, existing != null || fromContext.size() <= 1 ? name : "", context);
     }
   }
@@ -262,14 +221,19 @@ public abstract class BaseRunConfigurationAction extends ActionGroup {
   }
 
   @NotNull
-  public static String suggestRunActionName(@NotNull LocatableConfiguration configuration) {
-    if (configuration instanceof LocatableConfigurationBase && configuration.isGeneratedName()) {
+  public static String suggestRunActionName(@NotNull RunConfiguration configuration) {
+    if (configuration instanceof LocatableConfigurationBase && ((LocatableConfigurationBase<?>)configuration).isGeneratedName()) {
       String actionName = ((LocatableConfigurationBase<?>)configuration).getActionName();
       if (actionName != null) {
         return actionName;
       }
     }
-    return ProgramRunnerUtil.shortenName(configuration.getName(), 0);
+    return ProgramRunnerUtil.shortenName(configuration.getName(), 0); 
+  }
+  
+  @NotNull
+  public static String suggestRunActionName(@NotNull LocatableConfiguration configuration) {
+    return suggestRunActionName((RunConfiguration)configuration);
   }
 
   @NotNull
@@ -285,7 +249,7 @@ public abstract class BaseRunConfigurationAction extends ActionGroup {
       }
     }
 
-    return StringUtil.unquoteString(suggestRunActionName((LocatableConfiguration)configurationFromContext.getConfiguration()));
+    return StringUtil.unquoteString(suggestRunActionName(configurationFromContext.getConfiguration()));
   }
 
   protected abstract void updatePresentation(Presentation presentation, @NotNull String actionText, ConfigurationContext context);

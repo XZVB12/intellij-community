@@ -1,5 +1,6 @@
 SHELL_SCRIPT
-  PsiComment(shebang)('#!/bin/bash\n')
+  PsiComment(shebang)('#!/bin/bash')
+  PsiElement(\n)('\n')
   PsiElement(\n)('\n')
   COMMANDS_LIST
     ASSIGNMENT_COMMAND
@@ -2111,7 +2112,7 @@ SHELL_SCRIPT
                   FOR_CLAUSE
                     PsiElement(word)('D1')
                     PsiWhiteSpace(' ')
-                    PsiElement(word)('in')
+                    PsiElement(in)('in')
                     PsiWhiteSpace(' ')
                     STRING
                       PsiElement(OPEN_QUOTE)('"')
@@ -2144,7 +2145,7 @@ SHELL_SCRIPT
                         FOR_CLAUSE
                           PsiElement(word)('D2')
                           PsiWhiteSpace(' ')
-                          PsiElement(word)('in')
+                          PsiElement(in)('in')
                           PsiWhiteSpace(' ')
                           STRING
                             PsiElement(OPEN_QUOTE)('"')
@@ -2195,10 +2196,8 @@ SHELL_SCRIPT
                                 PsiWhiteSpace(' ')
                                 PsiElement(&&)('&&')
                                 PsiWhiteSpace(' ')
-                                SIMPLE_COMMAND
-                                  GENERIC_COMMAND_DIRECTIVE
-                                    LITERAL
-                                      PsiElement(word)('test')
+                                TEST_COMMAND
+                                  PsiElement(test)('test')
                                   PsiWhiteSpace(' ')
                                   LITERAL
                                     PsiElement(word)('-d')
@@ -2211,10 +2210,8 @@ SHELL_SCRIPT
                                 PsiWhiteSpace(' ')
                                 PsiElement(&&)('&&')
                                 PsiWhiteSpace(' ')
-                                SIMPLE_COMMAND
-                                  GENERIC_COMMAND_DIRECTIVE
-                                    LITERAL
-                                      PsiElement(word)('test')
+                                TEST_COMMAND
+                                  PsiElement(test)('test')
                                   PsiWhiteSpace(' ')
                                   LITERAL
                                     PsiElement(word)('-d')
@@ -2560,7 +2557,7 @@ SHELL_SCRIPT
                   FOR_CLAUSE
                     PsiElement(word)('D')
                     PsiWhiteSpace(' ')
-                    PsiElement(word)('in')
+                    PsiElement(in)('in')
                     PsiWhiteSpace(' ')
                     STRING
                       PsiElement(OPEN_QUOTE)('"')

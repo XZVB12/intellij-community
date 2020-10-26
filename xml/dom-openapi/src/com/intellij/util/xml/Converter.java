@@ -15,6 +15,7 @@
  */
 package com.intellij.util.xml;
 
+import com.intellij.codeInspection.util.InspectionMessage;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.Nullable;
 
@@ -40,9 +41,10 @@ public abstract class Converter<T> {
    * @param context context
    * @return error message used to highlight the errors somewhere in the UI, most often - like unresolved references in XML
    */
+  @InspectionMessage
   @Nullable
   public String getErrorMessage(@Nullable String s, final ConvertContext context) {
-    return XmlDomBundle.message("error.cannot.convert.default.message", s);
+    return XmlDomBundle.message("dom.converter.cannot.convert.default", s);
   }
 
 
@@ -69,7 +71,7 @@ public abstract class Converter<T> {
 
     @Override
     public String getErrorMessage(final String s, final ConvertContext context) {
-      return XmlDomBundle.message("value.should.be.integer");
+      return XmlDomBundle.message("dom.converter.value.should.be.integer");
     }
   };
 

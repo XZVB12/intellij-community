@@ -8,10 +8,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.ArrayFactory;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.containers.ContainerUtil;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.annotations.*;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -161,6 +158,13 @@ public class IElementType {
 
   @Override
   public String toString() {
+    return getDebugName();
+  }
+
+  @NonNls
+  @NotNull
+  @ApiStatus.Internal
+  public String getDebugName() {
     return myDebugName;
   }
 
@@ -239,7 +243,7 @@ public class IElementType {
   }
 
   public static class TombstoneElementType extends IElementType {
-    public TombstoneElementType(@NotNull String debugName) {
+    public TombstoneElementType(@NotNull @NonNls String debugName) {
       super(debugName, Language.ANY);
     }
   }

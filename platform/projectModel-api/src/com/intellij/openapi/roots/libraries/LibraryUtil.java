@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.openapi.roots.libraries;
 
@@ -20,13 +6,12 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.*;
-import com.intellij.openapi.roots.impl.libraries.LibraryEx;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.PathUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.StringTokenizer;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -36,7 +21,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-public class LibraryUtil {
+public final class LibraryUtil {
   private LibraryUtil() {
   }
 
@@ -159,19 +144,12 @@ public class LibraryUtil {
     return null;
   }
 
+  /**
+   * @deprecated use {@link Library#getPresentableName()} instead
+   */
+  @Deprecated
   @NotNull
-  public static String getPresentableName(@NotNull Library library) {
-    final String name = library.getName();
-    if (name != null) {
-      return name;
-    }
-    if (library instanceof LibraryEx && ((LibraryEx)library).isDisposed()) {
-      return "Disposed Library";
-    }
-    String[] urls = library.getUrls(OrderRootType.CLASSES);
-    if (urls.length > 0) {
-      return PathUtil.getFileName(VfsUtilCore.urlToPath(urls[0]));
-    }
-    return "Empty Library";
+  public static @Nls(capitalization = Nls.Capitalization.Title) String getPresentableName(@NotNull Library library) {
+    return library.getPresentableName();
   }
 }

@@ -51,7 +51,7 @@ public class PathRelativizerService {
     initialize(null, null, null);
   }
 
-  private void initialize(@Nullable String projectPath, @Nullable String buildDirPath, @Nullable Set<JpsSdk<?>> javaSdks) {
+  private void initialize(@Nullable String projectPath, @Nullable String buildDirPath, @Nullable Set<? extends JpsSdk<?>> javaSdks) {
     String normalizedProjectPath = projectPath != null ? normalizePath(projectPath) : null;
     String normalizedBuildDirPath = buildDirPath != null ? normalizePath(buildDirPath) : null;
     myRelativizers.add(new CommonPathRelativizer(normalizedBuildDirPath, BUILD_DIR_IDENTIFIER));
@@ -100,7 +100,7 @@ public class PathRelativizerService {
     if (LOG.isDebugEnabled()) {
       final StringBuilder logBuilder = new StringBuilder();
       myUnhandledPaths.forEach(it -> logBuilder.append(it).append("\n"));
-      LOG.debug("Unhandled by relativizer paths:" + "\n" + logBuilder.toString());
+      LOG.debug("Unhandled by relativizer paths:" + "\n" + logBuilder);
       myUnhandledPaths.clear();
     }
   }

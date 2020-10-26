@@ -14,18 +14,21 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Caret
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFileSystemItem
 import com.intellij.util.PlatformUtils.*
 import com.intellij.util.io.encodeUrlQueryParameter
+import org.jetbrains.annotations.NonNls
 import java.util.stream.Collectors
 import java.util.stream.IntStream
 
 object CopyTBXReferenceAction {
   private val LOG = Logger.getInstance(CopyTBXReferenceAction::class.java)
   private const val JETBRAINS_NAVIGATE = JetBrainsProtocolHandler.PROTOCOL
+  @NlsSafe
   private val IDE_TAGS = mapOf(IDEA_PREFIX to "idea",
                                IDEA_CE_PREFIX to "idea",
                                APPCODE_PREFIX to "appcode",
@@ -33,6 +36,7 @@ object CopyTBXReferenceAction {
                                PYCHARM_PREFIX to "pycharm",
                                PYCHARM_CE_PREFIX to "pycharm",
                                PYCHARM_EDU_PREFIX to "pycharm",
+                               PYCHARM_DS_PREFIX to "pycharm",
                                PHP_PREFIX to "php-storm",
                                RUBY_PREFIX to "rubymine",
                                WEB_PREFIX to "web-storm",
@@ -82,9 +86,9 @@ object CopyTBXReferenceAction {
     }
 
     val selectionParameters = getSelectionParameters(editor) ?: ""
-    val projectParameter = "$PROJECT_NAME_KEY=${project.name}"
+    val projectParameter = "$PROJECT_NAME_KEY=${project.name}" // NON-NLS
 
-    return "$JETBRAINS_NAVIGATE$tool/$NAVIGATE_COMMAND/$REFERENCE_TARGET?$projectParameter$refsParameters$selectionParameters"
+    return "$JETBRAINS_NAVIGATE$tool/$NAVIGATE_COMMAND/$REFERENCE_TARGET?$projectParameter$refsParameters$selectionParameters" // NON-NLS
   }
 
   private fun getSelectionParameters(editor: Editor?): String? {
@@ -103,8 +107,12 @@ object CopyTBXReferenceAction {
     }
   }
 
+  @NonNls
   private fun getSelectionParameters(editor: Editor, caret: Caret, index: String): String? =
-    getSelectionRange(editor, caret)?.let { "&$SELECTION$index=$it" }
+    getSelectionRange(editor, caret)?.let {
+      @Suppress("HardCodedStringLiteral")
+      "&$SELECTION$index=$it"
+    }
 
   private fun getSelectionRange(editor: Editor, caret: Caret): String? {
     if (!caret.hasSelection()) {

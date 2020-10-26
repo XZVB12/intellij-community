@@ -3,6 +3,7 @@ package com.intellij.util.lang;
 
 import com.intellij.ReviseWhenPortedToJDK;
 import com.intellij.openapi.diagnostic.LoggerRt;
+import com.intellij.util.UrlUtilRt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -221,7 +222,7 @@ public final class ClassPath {
     }
     if (file.isFile()) {
       boolean isSigned = myURLsWithProtectionDomain.contains(url);
-      JarLoader loader = isSigned ? new SecureJarLoader(url, file, index, this) : new JarLoader(url, file, index, this);
+      JarLoader loader = isSigned ? new SecureJarLoader(url, file.getPath(), index, this) : new JarLoader(url, file.getPath(), index, this);
       if (processRecursively) {
         String[] referencedJars = loadManifestClasspath(loader);
         if (referencedJars != null) {
@@ -229,7 +230,7 @@ public final class ClassPath {
           List<URL> urls = new ArrayList<URL>(referencedJars.length);
           for (String referencedJar:referencedJars) {
             try {
-              urls.add(UrlClassLoader.internProtocol(new URI(referencedJar).toURL()));
+              urls.add(UrlUtilRt.internProtocol(new URI(referencedJar).toURL()));
             }
             catch (Exception e) {
               LoggerRt.getInstance(ClassPath.class).warn("url: " + url + " / " + referencedJar, e);
@@ -282,7 +283,7 @@ public final class ClassPath {
     }
   }
 
-  private class MyEnumeration implements Enumeration<URL> {
+  private final class MyEnumeration implements Enumeration<URL> {
     private int myIndex;
     private Resource myRes;
     @NotNull
@@ -362,7 +363,7 @@ public final class ClassPath {
     }
   }
 
-  private static class ResourceStringLoaderIterator extends ClasspathCache.LoaderIterator<Resource, String, ClassPath> {
+  private static final class ResourceStringLoaderIterator extends ClasspathCache.LoaderIterator<Resource, String, ClassPath> {
     @Override
     Resource process(@NotNull Loader loader, @NotNull String s, @NotNull ClassPath classPath, @NotNull String shortName) {
       return loader.containsName(s, shortName) ? findInLoader(loader, s, classPath) : null;
@@ -428,7 +429,7 @@ public final class ClassPath {
 
   static final boolean ourClassLoadingInfo = Boolean.getBoolean("idea.log.classpath.info");
 
-  static final Set<String> ourLoadedClasses = ourClassLoadingInfo ? Collections.synchronizedSet(new LinkedHashSet<String>()) : null;
+  private static final Set<String> ourLoadedClasses = ourClassLoadingInfo ? Collections.synchronizedSet(new LinkedHashSet<String>()) : null;
   private static final AtomicLong ourTotalTime = new AtomicLong();
   private static final AtomicInteger ourTotalRequests = new AtomicInteger();
   private static final ThreadLocal<Boolean> ourDoingTiming = new ThreadLocal<Boolean>();

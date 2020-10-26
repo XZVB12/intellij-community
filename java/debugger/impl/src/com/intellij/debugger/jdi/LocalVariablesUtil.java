@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.debugger.jdi;
 
 import com.intellij.debugger.SourcePosition;
@@ -80,7 +80,7 @@ import java.util.*;
       }
       return map;
  */
-public class LocalVariablesUtil {
+public final class LocalVariablesUtil {
   private static final Logger LOG = Logger.getInstance(LocalVariablesUtil.class);
 
   private static final boolean ourInitializationOk;
@@ -324,7 +324,7 @@ public class LocalVariablesUtil {
       throw e;
     }
     catch (Exception e) {
-      if (vm.canBeModified()) { // do not care in read only vms
+      if (!vm.canBeModified()) { // do not care in read only vms
         LOG.debug(e);
       }
       else {

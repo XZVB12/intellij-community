@@ -1,8 +1,9 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.builtInWebServer
 
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
 import com.google.common.base.Function
-import com.google.common.cache.Cache
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
 import com.intellij.ProjectTopics
@@ -32,7 +33,7 @@ private const val cacheSize: Long = 4096 * 4
  * Implement [WebServerRootsProvider] to add your provider
  */
 class WebServerPathToFileManager(private val project: Project) {
-  val pathToInfoCache: Cache<String, PathInfo> = CacheBuilder.newBuilder().maximumSize(cacheSize).expireAfterAccess(10, TimeUnit.MINUTES).build<String, PathInfo>()!!
+  val pathToInfoCache: Cache<String, PathInfo> = Caffeine.newBuilder().maximumSize(cacheSize).expireAfterAccess(10, TimeUnit.MINUTES).build<String, PathInfo>()
   // time to expire should be greater than pathToFileCache
   private val virtualFileToPathInfo = CacheBuilder.newBuilder().maximumSize(cacheSize).expireAfterAccess(11, TimeUnit.MINUTES).build<VirtualFile, PathInfo>()
 
@@ -147,7 +148,7 @@ class WebServerPathToFileManager(private val project: Project) {
   }
 
   internal fun doFindByRelativePath(path: String, pathQuery: PathQuery): PathInfo? {
-    val result = WebServerRootsProvider.EP_NAME.extensions().asSequence().map { it.resolve(path, project, pathQuery) }.find { it != null } ?: return null
+    val result = WebServerRootsProvider.EP_NAME.extensionList.asSequence().map { it.resolve(path, project, pathQuery) }.find { it != null } ?: return null
     result.file?.let {
       virtualFileToPathInfo.put(it, result)
     }

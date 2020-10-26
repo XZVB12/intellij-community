@@ -11,6 +11,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.util.ui.ColumnInfo;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -34,13 +35,13 @@ public abstract class CoverageViewExtension {
   }
 
   @Nullable
-  public abstract String getSummaryForNode(AbstractTreeNode<?> node);
+  public abstract @Nls String getSummaryForNode(@NotNull AbstractTreeNode<?> node);
 
   @Nullable
-  public abstract String getSummaryForRootNode(AbstractTreeNode<?> childNode);
+  public abstract @Nls String getSummaryForRootNode(@NotNull AbstractTreeNode<?> childNode);
 
   @Nullable
-  public abstract String getPercentage(int columnIdx, AbstractTreeNode<?> node);
+  public abstract String getPercentage(int columnIdx, @NotNull AbstractTreeNode<?> node);
 
   public abstract List<AbstractTreeNode<?>> getChildrenNodes(AbstractTreeNode<?> node);
 

@@ -1,11 +1,16 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.maddyhome.idea.copyright.util;
 
+import com.intellij.ide.highlighter.HtmlFileType;
+import com.intellij.ide.highlighter.XmlFileType;
 import com.intellij.lang.Commenter;
 import com.intellij.lang.LanguageCommenters;
-import com.intellij.openapi.components.ServiceManager;
-import com.intellij.openapi.fileTypes.*;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.fileTypes.FileType;
+import com.intellij.openapi.fileTypes.LanguageFileType;
+import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -15,12 +20,16 @@ import com.intellij.psi.PsiFile;
 import com.maddyhome.idea.copyright.CopyrightUpdaters;
 import com.maddyhome.idea.copyright.options.LanguageOptions;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
 
-public class FileTypeUtil {
+public class FileTypeUtil implements Disposable {
+
   public static synchronized FileTypeUtil getInstance() {
-    return ServiceManager.getService(FileTypeUtil.class);
+    return ApplicationManager.getApplication().getService(FileTypeUtil.class);
   }
 
   public FileTypeUtil() {
@@ -177,7 +186,7 @@ public class FileTypeUtil {
     return preview.substring(0, preview.length() - 1);
   }
 
-  public boolean isSupportedFile(@NotNull VirtualFile file) {
+  public static boolean isSupportedFile(@NotNull VirtualFile file) {
     if (file.isDirectory()) {
       return false;
     }
@@ -186,7 +195,7 @@ public class FileTypeUtil {
     return isSupportedType(file.getFileType());
   }
 
-  public static boolean isSupportedFile(PsiFile file) {
+  public static boolean isSupportedFile(@Nullable PsiFile file) {
     if (file == null || file instanceof PsiDirectory || file instanceof PsiCodeFragment) {
       return false;
     }
@@ -196,7 +205,7 @@ public class FileTypeUtil {
     return isSupportedType(virtualFile.getFileType());
   }
 
-  public Set<FileType> getSupportedTypes() {
+  public static Set<FileType> getSupportedTypes() {
     return CopyrightUpdaters.INSTANCE.getAllRegisteredExtensions().keySet();
   }
 
@@ -220,8 +229,8 @@ public class FileTypeUtil {
   }
 
   private void createMappings() {
-    noSeparators.add(StdFileTypes.XML);
-    noSeparators.add(StdFileTypes.HTML);
+    noSeparators.add(XmlFileType.INSTANCE);
+    noSeparators.add(HtmlFileType.INSTANCE);
     noSeparators.add(StdFileTypes.JSP);
     noSeparators.add(StdFileTypes.JSPX);
   }
@@ -248,4 +257,6 @@ public class FileTypeUtil {
   }
 
   private final Set<FileType> noSeparators = new HashSet<>();
+  @Override
+  public void dispose() { }
 }

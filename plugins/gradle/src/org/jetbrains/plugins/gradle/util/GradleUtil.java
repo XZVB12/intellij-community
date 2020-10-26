@@ -1,4 +1,4 @@
-// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.gradle.util;
 
 import com.intellij.ide.util.PropertiesComponent;
@@ -14,14 +14,15 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
 import com.intellij.openapi.fileChooser.FileTypeDescriptor;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.io.FileFilters;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.util.BooleanFunction;
 import com.intellij.util.containers.Stack;
 import org.gradle.tooling.model.GradleProject;
 import org.gradle.tooling.model.gradle.GradleScript;
 import org.gradle.util.GUtil;
+import org.gradle.util.GradleVersion;
 import org.gradle.wrapper.WrapperConfiguration;
 import org.gradle.wrapper.WrapperExecutor;
 import org.jetbrains.annotations.ApiStatus;
@@ -38,6 +39,7 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.stream.Stream;
 
 import static com.intellij.openapi.util.text.StringUtil.*;
 import static org.jetbrains.plugins.gradle.util.GradleConstants.EXTENSION;
@@ -48,7 +50,7 @@ import static org.jetbrains.plugins.gradle.util.GradleConstants.KOTLIN_DSL_SCRIP
  *
  * @author Denis Zhdanov
  */
-public class GradleUtil {
+public final class GradleUtil {
   private static final String LAST_USED_GRADLE_HOME_KEY = "last.used.gradle.home";
 
   private GradleUtil() { }
@@ -64,7 +66,7 @@ public class GradleUtil {
   @NotNull
   public static FileChooserDescriptor getGradleProjectFileChooserDescriptor() {
     return new FileChooserDescriptor(true, false, false, false, false, false)
-      .withFileFilter(file -> SystemInfo.isFileSystemCaseSensitive
+      .withFileFilter(file -> file.isCaseSensitive()
                               ? endsWith(file.getName(), "." + EXTENSION) || endsWith(file.getName(), "." + KOTLIN_DSL_SCRIPT_EXTENSION)
                               : endsWithIgnoreCase(file.getName(), "." + EXTENSION) || endsWithIgnoreCase(file.getName(), "." + KOTLIN_DSL_SCRIPT_EXTENSION));
   }
@@ -244,11 +246,16 @@ public class GradleUtil {
   }
 
   private static boolean containsGradleSettingsFile(Path directory) throws IOException {
-    return Files.isDirectory(directory) && Files.walk(directory, 1)
-      .map(Path::getFileName)
-      .filter(Objects::nonNull)
-      .map(Path::toString)
-      .anyMatch(name -> name.startsWith("settings.gradle"));
+    if (!Files.isDirectory(directory)) {
+      return false;
+    }
+    try (Stream<Path> stream = Files.walk(directory, 1)) {
+      return stream
+        .map(Path::getFileName)
+        .filter(Objects::nonNull)
+        .map(Path::toString)
+        .anyMatch(name -> name.startsWith("settings.gradle"));
+    }
   }
 
   /**
@@ -274,5 +281,14 @@ public class GradleUtil {
     if (projectNode == null) return null;
     BooleanFunction<DataNode<ModuleData>> predicate = node -> projectPath.equals(node.getData().getLinkedExternalProjectPath());
     return ExternalSystemApiUtil.find(projectNode, ProjectKeys.MODULE, predicate);
+  }
+
+  /**
+   * @deprecated to be removed in the next release
+   */
+  @ApiStatus.Internal
+  @Deprecated
+  public static boolean isCustomSerializationEnabled(@NotNull GradleVersion gradleVersion) {
+    return Registry.is("gradle.tooling.custom.serializer", true) && gradleVersion.compareTo(GradleVersion.version("3.0")) >= 0;
   }
 }

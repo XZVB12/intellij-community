@@ -1,24 +1,9 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.refactoring.extractMethod;
 
 import com.intellij.codeInsight.PsiEquivalenceUtil;
 import com.intellij.java.refactoring.JavaRefactoringBundle;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.controlFlow.*;
 import com.intellij.psi.search.LocalSearchScope;
@@ -26,12 +11,13 @@ import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 
-public class ControlFlowWrapper {
+public final class ControlFlowWrapper {
   private static final Logger LOG = Logger.getInstance(ControlFlowWrapper.class);
 
   private final ControlFlow myControlFlow;
@@ -41,12 +27,12 @@ public class ControlFlowWrapper {
   private boolean myGenerateConditionalExit;
   private Collection<PsiStatement> myExitStatements;
   private PsiStatement myFirstExitStatementCopy;
-  private IntArrayList myExitPoints;
+  private IntList myExitPoints;
 
-  public ControlFlowWrapper(Project project, PsiElement codeFragment, PsiElement[] elements) throws PrepareFailedException {
+  public ControlFlowWrapper(PsiElement codeFragment, PsiElement[] elements) throws PrepareFailedException {
     try {
-      myControlFlow =
-        ControlFlowFactory.getInstance(project).getControlFlow(codeFragment, new LocalsControlFlowPolicy(codeFragment), false, false);
+      myControlFlow = ControlFlowFactory.getControlFlow(codeFragment, new LocalsControlFlowPolicy(codeFragment),
+                                          ControlFlowOptions.NO_CONST_EVALUATE);
     }
     catch (AnalysisCanceledException e) {
       throw new PrepareFailedException(JavaRefactoringBundle.message("extract.method.control.flow.analysis.failed"), e.getErrorElement());
@@ -101,7 +87,7 @@ public class ControlFlowWrapper {
     if (LOG.isDebugEnabled()) {
       LOG.debug("exit points:");
       for (int i = 0; i < myExitPoints.size(); i++) {
-        LOG.debug("  " + myExitPoints.get(i));
+        LOG.debug("  " + myExitPoints.getInt(i));
       }
       LOG.debug("exit statements:");
       for (PsiStatement exitStatement : myExitStatements) {
@@ -159,7 +145,7 @@ public class ControlFlowWrapper {
   }
 
   PsiVariable @NotNull [] getOutputVariables(boolean collectVariablesAtExitPoints) {
-    PsiVariable[] myOutputVariables = ControlFlowUtil.getOutputVariables(myControlFlow, myFlowStart, myFlowEnd, myExitPoints.toArray());
+    PsiVariable[] myOutputVariables = ControlFlowUtil.getOutputVariables(myControlFlow, myFlowStart, myFlowEnd, myExitPoints.toIntArray());
     if (collectVariablesAtExitPoints) {
       //variables declared in selected block used in return statements are to be considered output variables when extracting guard methods
       final Set<PsiVariable> outputVariables = ContainerUtil.set(myOutputVariables);
@@ -244,13 +230,11 @@ public class ControlFlowWrapper {
   public List<PsiVariable> getInputVariables(final PsiElement codeFragment, PsiElement[] elements, PsiVariable[] outputVariables) {
     final List<PsiVariable> inputVariables = ControlFlowUtil.getInputVariables(myControlFlow, myFlowStart, myFlowEnd);
     List<PsiVariable> myInputVariables;
+    List<PsiVariable> inputVariableList = new ArrayList<>(inputVariables);
     if (skipVariablesFromExitStatements(outputVariables)) {
-      List<PsiVariable> inputVariableList = new ArrayList<>(inputVariables);
       removeParametersUsedInExitsOnly(codeFragment, inputVariableList);
-      myInputVariables = inputVariableList;
     }
     else {
-      List<PsiVariable> inputVariableList = new ArrayList<>(inputVariables);
       for (Iterator<PsiVariable> iterator = inputVariableList.iterator(); iterator.hasNext(); ) {
         PsiVariable variable = iterator.next();
         for (PsiElement element : elements) {
@@ -260,8 +244,8 @@ public class ControlFlowWrapper {
           }
         }
       }
-      myInputVariables = inputVariableList;
     }
+    myInputVariables = inputVariableList;
     //varargs variables go last, otherwise order is induced by original ordering
     myInputVariables.sort((v1, v2) -> {
       if (v1.getType() instanceof PsiEllipsisType) {

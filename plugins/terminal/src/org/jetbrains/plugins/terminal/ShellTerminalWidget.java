@@ -8,19 +8,30 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.terminal.JBTerminalPanel;
 import com.intellij.terminal.JBTerminalSystemSettingsProviderBase;
 import com.intellij.terminal.JBTerminalWidget;
+import com.intellij.terminal.actions.TerminalActionUtil;
+import com.intellij.util.Consumer;
+import com.intellij.util.ObjectUtils;
+import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.util.containers.ContainerUtil;
 import com.jediterm.terminal.ProcessTtyConnector;
 import com.jediterm.terminal.Terminal;
 import com.jediterm.terminal.TtyConnector;
 import com.jediterm.terminal.model.TerminalLine;
 import com.jediterm.terminal.model.TerminalTextBuffer;
+import com.jediterm.terminal.ui.TerminalAction;
+import com.pty4j.unix.UnixPtyProcess;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.terminal.action.RenameTerminalSessionActionKt;
 
 import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 public class ShellTerminalWidget extends JBTerminalWidget {
@@ -33,6 +44,7 @@ public class ShellTerminalWidget extends JBTerminalWidget {
   private boolean myPromptUpdateNeeded = true;
   private String myPrompt = "";
   private final Queue<String> myPendingCommandsToExecute = new LinkedList<>();
+  private final Queue<Consumer<TtyConnector>> myPendingActionsToExecute = new LinkedList<>();
   private final TerminalShellCommandHandlerHelper myShellCommandHandlerHelper;
 
   public ShellTerminalWidget(@NotNull Project project,
@@ -47,22 +59,15 @@ public class ShellTerminalWidget extends JBTerminalWidget {
       if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
         myEscapePressed = true;
       }
-      if (myPromptUpdateNeeded) {
-        myPrompt = getLineAtCursor();
-        if (LOG.isDebugEnabled()) {
-          LOG.info("Guessed shell prompt: " + myPrompt);
-        }
-        myPromptUpdateNeeded = false;
-      }
+      handleAnyKeyPressed();
 
-      if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-        String command = getTypedShellCommand();
+      if (e.getKeyCode() == KeyEvent.VK_ENTER || TerminalShellCommandHandlerHelper.matchedExecutor(e) != null) {
         TerminalUsageTriggerCollector.Companion.triggerCommandExecuted(myProject);
-        if (myShellCommandHandlerHelper.processEnterKeyPressed(command, e)) {
+        if (myShellCommandHandlerHelper.processEnterKeyPressed(e)) {
           e.consume();
         }
         if (!e.isConsumed()) {
-          myPromptUpdateNeeded = true;
+          handleEnterPressed();
           myEscapePressed = false;
         }
       }
@@ -75,6 +80,20 @@ public class ShellTerminalWidget extends JBTerminalWidget {
   @NotNull
   Project getProject() {
     return myProject;
+  }
+
+  public void handleEnterPressed() {
+    myPromptUpdateNeeded = true;
+  }
+
+  public void handleAnyKeyPressed() {
+    if (myPromptUpdateNeeded) {
+      myPrompt = getLineAtCursor();
+      if (LOG.isDebugEnabled()) {
+        LOG.info("Guessed shell prompt: " + myPrompt);
+      }
+      myPromptUpdateNeeded = false;
+    }
   }
 
   public void setCommandHistoryFilePath(@Nullable String commandHistoryFilePath) {
@@ -133,9 +152,19 @@ public class ShellTerminalWidget extends JBTerminalWidget {
     }
   }
 
+  public void executeWithTtyConnector(@NotNull Consumer<TtyConnector> consumer) {
+    TtyConnector connector = getTtyConnector();
+    if (connector != null) {
+      consumer.consume(connector);
+    } else {
+      myPendingActionsToExecute.add(consumer);
+    }
+  }
+
   @Override
   public void setTtyConnector(@NotNull TtyConnector ttyConnector) {
     super.setTtyConnector(ttyConnector);
+
     String command;
     while ((command = myPendingCommandsToExecute.poll()) != null) {
       try {
@@ -144,6 +173,11 @@ public class ShellTerminalWidget extends JBTerminalWidget {
       catch (IOException e) {
         LOG.warn("Cannot execute " + command, e);
       }
+    }
+
+    Consumer<TtyConnector> consumer;
+    while ((consumer = myPendingActionsToExecute.poll()) != null) {
+      consumer.consume(ttyConnector);
     }
   }
 
@@ -160,9 +194,53 @@ public class ShellTerminalWidget extends JBTerminalWidget {
   public boolean hasRunningCommands() throws IllegalStateException {
     TtyConnector connector = getTtyConnector();
     if (connector == null) return false;
-    if (connector instanceof ProcessTtyConnector) {
-      return TerminalUtil.hasRunningCommands((ProcessTtyConnector)connector);
+
+    ProcessTtyConnector processTtyConnector = getProcessTtyConnector(connector);
+    if (processTtyConnector != null) {
+      return TerminalUtil.hasRunningCommands(processTtyConnector);
     }
     throw new IllegalStateException("Cannot determine if there are running processes for " + connector.getClass()); //NON-NLS
+  }
+
+  @Override
+  public void terminateProcess() {
+    TtyConnector connector = getTtyConnector();
+    ProcessTtyConnector processTtyConnector = getProcessTtyConnector(connector);
+    if (processTtyConnector != null) {
+      UnixPtyProcess process = ObjectUtils.tryCast((processTtyConnector).getProcess(), UnixPtyProcess.class);
+      if (process != null) {
+        process.hangup();
+        AppExecutorUtil.getAppScheduledExecutorService().schedule(() -> {
+          if (process.isAlive()) {
+            LOG.info("Terminal hasn't been terminated by SIGHUP, performing default termination");
+            super.terminateProcess();
+          }
+        }, 1000, TimeUnit.MILLISECONDS);
+        return;
+      }
+    }
+    super.terminateProcess();
+  }
+
+  @Override
+  public List<TerminalAction> getActions() {
+    List<TerminalAction> baseActions = super.getActions();
+    if (TerminalView.isInTerminalToolWindow(this)) {
+      List<TerminalAction> actions = new ArrayList<>();
+      ContainerUtil.addIfNotNull(actions, TerminalActionUtil.createTerminalAction(this, RenameTerminalSessionActionKt.ACTION_ID, true));
+      return ContainerUtil.concat(baseActions, actions);
+    }
+    return baseActions;
+  }
+
+  @Nullable
+  public static ProcessTtyConnector getProcessTtyConnector(@NotNull TtyConnector connector) {
+    if (connector instanceof ProcessTtyConnector) {
+      return (ProcessTtyConnector)connector;
+    }
+    if (connector instanceof ProxyTtyConnector) {
+      return getProcessTtyConnector(((ProxyTtyConnector)connector).getConnector());
+    }
+    return null;
   }
 }

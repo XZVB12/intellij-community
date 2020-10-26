@@ -19,15 +19,18 @@ import com.intellij.util.ExceptionUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.BaseDataReader;
 import com.intellij.util.io.BaseOutputReader;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.Charset;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class OSProcessHandler extends BaseOSProcessHandler {
   private static final Logger LOG = Logger.getInstance(OSProcessHandler.class);
@@ -72,7 +75,7 @@ public class OSProcessHandler extends BaseOSProcessHandler {
    * {@code commandLine} must not be empty (for correct thread attribution in the stacktrace)
    */
   public OSProcessHandler(@NotNull Process process, /*@NotNull*/ String commandLine) {
-    this(process, commandLine, EncodingManager.getInstance().getDefaultCharset());
+    this(process, commandLine, EncodingManager.getInstance().getDefaultConsoleEncoding());
   }
 
   /**
@@ -160,7 +163,7 @@ public class OSProcessHandler extends BaseOSProcessHandler {
     if (application == null || !application.isInternal() || application.isHeadlessEnvironment()) {
       return;
     }
-    String message = null;
+    @NonNls String message = null;
     if (application.isDispatchThread()) {
       message = "Synchronous execution on EDT: ";
     }
@@ -168,7 +171,7 @@ public class OSProcessHandler extends BaseOSProcessHandler {
       message = "Synchronous execution under ReadAction: ";
     }
     if (message != null && REPORTED_EXECUTIONS.add(ExceptionUtil.currentStackTrace())) {
-      LOG.error(message + processHandler);
+      LOG.error(message + processHandler + ", see com.intellij.execution.process.OSProcessHandler#checkEdtAndReadAction() Javadoc for resolutions");
     }
   }
 
@@ -297,7 +300,7 @@ public class OSProcessHandler extends BaseOSProcessHandler {
   public static void deleteFileOnTermination(@NotNull GeneralCommandLine commandLine, @NotNull File fileToDelete) {
     Set<File> set = commandLine.getUserData(DELETE_FILES_ON_TERMINATION);
     if (set == null) {
-      set = new THashSet<>();
+      set = new HashSet<>();
       commandLine.putUserData(DELETE_FILES_ON_TERMINATION, set);
     }
     set.add(fileToDelete);

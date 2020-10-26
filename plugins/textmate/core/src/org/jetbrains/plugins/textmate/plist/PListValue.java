@@ -1,6 +1,5 @@
 package org.jetbrains.plugins.textmate.plist;
 
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -86,7 +85,7 @@ public class PListValue {
   }
 
   public static PListValue array(PListValue... value) {
-    return value(ContainerUtil.newArrayList(value), PlistValueType.ARRAY);
+    return value(Arrays.asList(value), PlistValueType.ARRAY);
   }
 
   public static PListValue dict(Plist value) {
@@ -121,7 +120,7 @@ public class PListValue {
            '}';
   }
 
-  private static class NullablePListValue extends PListValue {
+  private static final class NullablePListValue extends PListValue {
     private NullablePListValue(PlistValueType type) {
       super(null, type);
     }

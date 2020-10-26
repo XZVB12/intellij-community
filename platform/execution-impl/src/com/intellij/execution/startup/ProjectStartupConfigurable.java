@@ -102,6 +102,7 @@ final class ProjectStartupConfigurable implements SearchableConfigurable, Config
   public JComponent createComponent() {
     myModel = new ProjectStartupTasksTableModel();
     myTable = new JBTable(myModel);
+    myTable.setShowGrid(false);
     myTable.getEmptyText().setText(ExecutionBundle.message("settings.project.startup.add.run.configurations.with.the.button"));
     new TableSpeedSearch(myTable);
     DefaultCellEditor defaultEditor = (DefaultCellEditor)myTable.getDefaultEditor(Object.class);
@@ -126,12 +127,7 @@ final class ProjectStartupConfigurable implements SearchableConfigurable, Config
 
     installRenderers();
     myDecorator = ToolbarDecorator.createDecorator(myTable)
-      .setAddAction(new AnActionButtonRunnable() {
-        @Override
-        public void run(AnActionButton button) {
-          selectAndAddConfiguration(button);
-        }
-      })
+      .setAddAction(this::selectAndAddConfiguration)
       .setEditAction(new AnActionButtonRunnable() {
         @Override
         public void run(AnActionButton button) {
@@ -259,7 +255,7 @@ final class ProjectStartupConfigurable implements SearchableConfigurable, Config
 
   private void selectAndAddConfiguration(final AnActionButton button) {
     final Executor executor = DefaultRunExecutor.getRunExecutorInstance();
-    final List<ChooseRunConfigurationPopup.ItemWrapper> wrappers = new ArrayList<>();
+    final List<ChooseRunConfigurationPopup.ItemWrapper<?>> wrappers = new ArrayList<>();
     wrappers.add(createNewWrapper(button));
     final List<ChooseRunConfigurationPopup.ItemWrapper> allSettings =
       ChooseRunConfigurationPopup.createSettingsList(myProject, new ExecutorProvider() {
@@ -269,7 +265,7 @@ final class ProjectStartupConfigurable implements SearchableConfigurable, Config
         }
       }, false);
     final Set<RunnerAndConfigurationSettings> existing = new HashSet<>(myModel.getAllConfigurations());
-    for (ChooseRunConfigurationPopup.ItemWrapper setting : allSettings) {
+    for (ChooseRunConfigurationPopup.ItemWrapper<?> setting : allSettings) {
       if (setting.getValue() instanceof RunnerAndConfigurationSettings) {
         final RunnerAndConfigurationSettings settings = (RunnerAndConfigurationSettings)setting.getValue();
         if (!settings.isTemporary() && ProjectStartupRunner.canBeRun(settings) && !existing.contains(settings)) {
@@ -279,7 +275,7 @@ final class ProjectStartupConfigurable implements SearchableConfigurable, Config
     }
     final JBPopup popup = JBPopupFactory.getInstance()
       .createPopupChooserBuilder(wrappers)
-      .setRenderer(SimpleListCellRenderer.<ChooseRunConfigurationPopup.ItemWrapper>create((label, value, index) -> {
+      .setRenderer(SimpleListCellRenderer.create((label, value, index) -> {
         label.setIcon(value.getIcon());
         label.setText(value.getText());
       }))
@@ -358,7 +354,7 @@ final class ProjectStartupConfigurable implements SearchableConfigurable, Config
     final TableColumn nameColumn = myTable.getColumnModel().getColumn(ProjectStartupTasksTableModel.NAME_COLUMN);
     nameColumn.setCellRenderer(new ColoredTableCellRenderer() {
       @Override
-      protected void customizeCellRenderer(JTable table, @Nullable Object value, boolean selected, boolean hasFocus, int row, int column) {
+      protected void customizeCellRenderer(@NotNull JTable table, @Nullable Object value, boolean selected, boolean hasFocus, int row, int column) {
         final RunnerAndConfigurationSettings settings = myModel.getAllConfigurations().get(row);
         setIcon(settings.getConfiguration().getIcon());
         append(settings.getName());

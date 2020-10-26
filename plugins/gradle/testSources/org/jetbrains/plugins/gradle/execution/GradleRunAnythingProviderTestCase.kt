@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.gradle.execution
 
 import com.intellij.build.BuildTreeConsoleView
@@ -20,9 +20,10 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue
 import com.intellij.testFramework.PlatformTestUtil.waitWhileBusy
 import com.intellij.testFramework.fixtures.BuildViewTestFixture
+import com.intellij.testFramework.runInEdtAndWait
 import com.intellij.util.TimeoutUtil
 import com.intellij.util.concurrency.Semaphore
-import groovyjarjarcommonscli.Option
+import org.apache.commons.cli.Option
 import org.assertj.core.api.Assertions.assertThat
 import org.jetbrains.plugins.gradle.importing.GradleImportingTestCase
 import org.jetbrains.plugins.gradle.service.execution.cmd.GradleCommandLineOptionsProvider
@@ -121,7 +122,7 @@ abstract class GradleRunAnythingProviderTestCase : GradleImportingTestCase() {
     val buildView = result.get()!!
     val eventView = buildView.getView(BuildTreeConsoleView::class.java.name, BuildTreeConsoleView::class.java)
     val tree = eventView!!.tree
-    edt {
+    runInEdtAndWait {
       dispatchAllEventsInIdeEventQueue()
       waitWhileBusy(tree)
     }
@@ -137,7 +138,7 @@ abstract class GradleRunAnythingProviderTestCase : GradleImportingTestCase() {
     for (i in 0..5000) {
       if (!buildNode.get().isRunning) break
       TimeoutUtil.sleep(5)
-      edt {
+      runInEdtAndWait {
         dispatchAllEventsInIdeEventQueue()
         waitWhileBusy(tree)
       }

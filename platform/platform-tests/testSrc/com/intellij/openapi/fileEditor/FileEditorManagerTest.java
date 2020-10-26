@@ -25,9 +25,12 @@ import java.util.List;
 
 public class FileEditorManagerTest extends FileEditorManagerTestCase {
   public void testTabOrder() throws Exception {
-
-    openFiles(STRING);
+    openFiles(STRING.replace("pinned=\"true\"", "pinned=\"false\""));
     assertOpenFiles("1.txt", "foo.xml", "2.txt", "3.txt");
+
+    myManager.closeAllFiles();
+    openFiles(STRING);
+    assertOpenFiles("foo.xml", "1.txt", "2.txt", "3.txt");
   }
 
   @Override
@@ -65,7 +68,7 @@ public class FileEditorManagerTest extends FileEditorManagerTestCase {
     // note that foo.xml is pinned
     assertOpenFiles("foo.xml");
     myManager.openFile(getFile("/src/3.txt"), true);
-    assertOpenFiles("3.txt", "foo.xml");//limit is still 1 but pinned prevent closing tab and actual tab number may exceed the limit
+    assertOpenFiles("foo.xml", "3.txt");//limit is still 1 but pinned prevent closing tab and actual tab number may exceed the limit
 
     myManager.closeAllFiles();
 
@@ -105,8 +108,7 @@ public class FileEditorManagerTest extends FileEditorManagerTestCase {
   }
 
   public void testOpenRecentEditorTab() throws Exception {
-    FileEditorProvider.EP_FILE_EDITOR_PROVIDER
-      .getPoint(null).registerExtension(new MyFileEditorProvider(), myFixture.getTestRootDisposable());
+    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint().registerExtension(new MyFileEditorProvider(), myFixture.getTestRootDisposable());
 
     openFiles("  <component name=\"FileEditorManager\">\n" +
               "    <leaf>\n" +
@@ -128,8 +130,7 @@ public class FileEditorManagerTest extends FileEditorManagerTestCase {
   }
 
   public void testTrackSelectedEditor() {
-    FileEditorProvider.EP_FILE_EDITOR_PROVIDER
-      .getPoint(null).registerExtension(new MyFileEditorProvider(), myFixture.getTestRootDisposable());
+    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint().registerExtension(new MyFileEditorProvider(), myFixture.getTestRootDisposable());
     VirtualFile file = getFile("/src/1.txt");
     assertNotNull(file);
     FileEditor[] editors = myManager.openFile(file, true);
@@ -213,9 +214,8 @@ public class FileEditorManagerTest extends FileEditorManagerTestCase {
   }
 
   public void testOpenInDumbMode() {
-    FileEditorProvider.EP_FILE_EDITOR_PROVIDER
-      .getPoint(null).registerExtension(new MyFileEditorProvider(), myFixture.getTestRootDisposable());
-    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint(null).registerExtension(new DumbAwareProvider(), myFixture.getTestRootDisposable());
+    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint().registerExtension(new MyFileEditorProvider(), myFixture.getTestRootDisposable());
+    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint().registerExtension(new DumbAwareProvider(), myFixture.getTestRootDisposable());
     try {
       DumbServiceImpl.getInstance(getProject()).setDumb(true);
       VirtualFile file = getFile("/src/foo.bar");
@@ -231,9 +231,9 @@ public class FileEditorManagerTest extends FileEditorManagerTestCase {
   }
 
   public void testOpenSpecificTextEditor() {
-    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint(null)
+    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint()
       .registerExtension(new MyTextEditorProvider("one", 1), myFixture.getTestRootDisposable());
-    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint(null)
+    FileEditorProvider.EP_FILE_EDITOR_PROVIDER.getPoint()
       .registerExtension(new MyTextEditorProvider("two", 2), myFixture.getTestRootDisposable());
     Project project = getProject();
     VirtualFile file = getFile("/src/Test.java");
@@ -344,7 +344,7 @@ public class FileEditorManagerTest extends FileEditorManagerTestCase {
     }
   }
 
-  private static class MyTextEditorProvider implements FileEditorProvider, DumbAware {
+  private static final class MyTextEditorProvider implements FileEditorProvider, DumbAware {
     private final String myId;
     private final int myTargetOffset;
 
@@ -377,7 +377,7 @@ public class FileEditorManagerTest extends FileEditorManagerTestCase {
     }
   }
 
-  private static class MyTextEditor extends Mock.MyFileEditor implements TextEditor {
+  private static final class MyTextEditor extends Mock.MyFileEditor implements TextEditor {
     private final Editor myEditor;
     private final String myName;
     private final int myTargetOffset;

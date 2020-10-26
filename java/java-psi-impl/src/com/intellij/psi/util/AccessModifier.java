@@ -1,6 +1,8 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.util;
 
+import com.intellij.core.JavaPsiBundle;
+import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.light.LightRecordCanonicalConstructor;
 import com.intellij.util.containers.ContainerUtil;
@@ -95,13 +97,12 @@ public enum AccessModifier {
   }
 
   public boolean isWeaker(@NotNull AccessModifier other) {
-    return ordinal() < other.ordinal();
+    return compareTo(other) < 0;
   }
 
   @Override
   public String toString() {
-    String psiModifier = toPsiModifier();
-    return psiModifier.equals(PACKAGE_LOCAL.myModifier) ? "package-private" : psiModifier;
+    return JavaPsiBundle.visibilityPresentation(toPsiModifier());
   }
 
   @NotNull
@@ -115,10 +116,19 @@ public enum AccessModifier {
     if (member instanceof PsiMethod) {
       PsiMethod method = (PsiMethod)member;
       if (containingClass == null || containingClass.isEnum() && method.isConstructor()) return Collections.emptyList();
-      if (JavaPsiRecordUtil.getRecordComponentForAccessor(method) != null ||
-          JavaPsiRecordUtil.isCompactConstructor(method) ||
+      if (JavaPsiRecordUtil.getRecordComponentForAccessor(method) != null) {
+        return Collections.singletonList(PUBLIC);
+      }
+      if (JavaPsiRecordUtil.isCompactConstructor(method) ||
           JavaPsiRecordUtil.isExplicitCanonicalConstructor(method) ||
           method instanceof LightRecordCanonicalConstructor) {
+        if (PsiUtil.getLanguageLevel(member) != LanguageLevel.JDK_14_PREVIEW) {
+          PsiModifierList list = containingClass.getModifierList();
+          if (list != null) {
+            AccessModifier classModifier = fromModifierList(list);
+            return ContainerUtil.filter(ALL_MODIFIERS, m -> !classModifier.isWeaker(m));
+          }
+        }
         return Collections.singletonList(PUBLIC);
       }
       if (containingClass.isInterface()) {
